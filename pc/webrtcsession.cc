@@ -1350,6 +1350,13 @@ void WebRtcSession::DisconnectDataChannel(DataChannel* webrtc_data_channel) {
   }
 }
 
+bool WebRtcSession::IsSidAvailable(int sid) const {
+  return (sctp_transport_.get()==NULL)
+    ? true
+    : sctp_transport_->IsStreamAvailable(sid)
+    ;
+}
+
 void WebRtcSession::AddSctpDataStream(int sid) {
   if (!sctp_transport_) {
     LOG(LS_ERROR) << "AddSctpDataStream called when sctp_transport_ is NULL.";

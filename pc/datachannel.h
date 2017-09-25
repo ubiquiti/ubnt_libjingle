@@ -37,6 +37,8 @@ class DataChannelProviderInterface {
   virtual bool ConnectDataChannel(DataChannel* data_channel) = 0;
   // Disconnects from the transport signals.
   virtual void DisconnectDataChannel(DataChannel* data_channel) = 0;
+  // checks if a sid is available for usage.
+  virtual bool IsSidAvailable(int sid) const = 0;
   // Adds the data channel SID to the transport for SCTP.
   virtual void AddSctpDataStream(int sid) = 0;
   // Removes the data channel SID from the transport for SCTP.
@@ -73,18 +75,26 @@ class SctpSidAllocator {
   // Gets the first unused odd/even id based on the DTLS role. If |role| is
   // SSL_CLIENT, the allocated id starts from 0 and takes even numbers;
   // otherwise, the id starts from 1 and takes odd numbers.
-  // Returns false if no id can be allocated.
-  bool AllocateSid(rtc::SSLRole role, int* sid);
+  // Returns false if no id can be allocated. It internally checks the
+  // availability of the SID by calling |IsSidAvailable()|
+  bool AllocateSid(rtc::SSLRole role, int* sid, const DataChannelProviderInterface *pDcpi);
 
   // Attempts to reserve a specific sid. Returns false if it's unavailable.
-  bool ReserveSid(int sid);
+  // It internally checks the availability of the SID by calling |IsSidAvailable()|
+  bool ReserveSid(int sid, const DataChannelProviderInterface *pDcpi);
 
   // Indicates that |sid| isn't in use any more, and is thus available again.
   void ReleaseSid(int sid);
 
  private:
   // Checks if |sid| is available to be assigned to a new SCTP data channel.
-  bool IsSidAvailable(int sid) const;
+  // It MUST check if is currently used/reserved AND is not in ongoing closing
+  // procedure. When a channel is in closing state, it may go away from the
+  // list of used channels in this instance, but the SCTP transport might not be
+  // ready with closing it fully. The closing of SCTP channel is a multi-step procedure.
+  // This condition is therefore checked with used_sids_ member variable and with
+  // (optionally) provided |pDcpi|
+  bool IsSidAvailable(int sid, const DataChannelProviderInterface *pDcpi) const;
 
   std::set<int> used_sids_;
 };

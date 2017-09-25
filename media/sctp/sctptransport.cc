@@ -73,7 +73,34 @@ enum PayloadProtocolIdentifier {
 };
 
 typedef std::set<uint32_t> StreamSet;
+typedef std::map<uint32_t, uint8_t> ResetStreamsStatus;
+static const uint8_t kStreamResetNone = 0x00;
+static const uint8_t kStreamResetOutgoingSent = 0x01;
+static const uint8_t kStreamResetOutgoingReceived = 0x02;
+static const uint8_t kStreamResetIncomingReceived = 0x04;
+static const uint8_t kStreamResetCompleted = kStreamResetOutgoingSent
+                                            |kStreamResetOutgoingReceived
+                                            |kStreamResetIncomingReceived;
 
+
+std::string ListStreams(const ResetStreamsStatus& s) {
+  std::stringstream result;
+  bool first = true;
+  for (ResetStreamsStatus::const_iterator it = s.begin(); it != s.end(); ++it) {
+    result << (first ? "" : ", ")
+            << it->first << "("
+            << ((it->second & kStreamResetOutgoingSent) ? 'O':'.')
+            << ((it->second & kStreamResetOutgoingReceived) ? 'o':'.')
+            << ((it->second & kStreamResetIncomingReceived) ? 'i':'.')
+            << " " << (int) it->second
+            << ')'
+            ;
+    first = false;
+  }
+  return result.str();
+}
+
+#if 0
 // Returns a comma-separated, human-readable list of the stream IDs in 's'
 std::string ListStreams(const StreamSet& s) {
   std::stringstream result;
@@ -130,6 +157,7 @@ std::string ListArray(const uint16_t* array, int num_elems) {
   }
   return result.str();
 }
+#endif
 
 // Helper for logging SCTP messages.
 void DebugSctpPrintf(const char* format, ...) {
@@ -443,6 +471,12 @@ bool SctpTransport::Start(int local_sctp_port, int remote_sctp_port) {
   return true;
 }
 
+bool SctpTransport::IsStreamAvailable(int sid) const {
+  return (open_streams_.find(sid) == open_streams_.end())
+          && (reset_streams_status_.find(sid) == reset_streams_status_.end())
+          ;
+}
+
 bool SctpTransport::OpenStream(int sid) {
   RTC_DCHECK_RUN_ON(network_thread_);
   if (sid > kMaxSctpSid) {
@@ -455,12 +489,13 @@ bool SctpTransport::OpenStream(int sid) {
                     << "Not adding data stream "
                     << "with sid=" << sid << " because stream is already open.";
     return false;
-  } else if (queued_reset_streams_.find(sid) != queued_reset_streams_.end() ||
-             sent_reset_streams_.find(sid) != sent_reset_streams_.end()) {
+  } else if (reset_streams_status_.find(sid) != reset_streams_status_.end()) {
     LOG(LS_WARNING) << debug_name_ << "->OpenStream(...): "
                     << "Not adding data stream "
                     << " with sid=" << sid
-                    << " because stream is still closing.";
+                    << " because stream is still closing. "
+                    << ListStreams(reset_streams_status_)
+                    ;
     return false;
   }
 
@@ -469,23 +504,22 @@ bool SctpTransport::OpenStream(int sid) {
 }
 
 bool SctpTransport::ResetStream(int sid) {
+  //check the thread on which this call will run
   RTC_DCHECK_RUN_ON(network_thread_);
-  StreamSet::iterator found = open_streams_.find(sid);
-  if (found == open_streams_.end()) {
-    LOG(LS_WARNING) << debug_name_ << "->ResetStream(" << sid << "): "
-                    << "stream not found.";
-    return false;
-  } else {
-    LOG(LS_VERBOSE) << debug_name_ << "->ResetStream(" << sid << "): "
-                    << "Removing and queuing RE-CONFIG chunk.";
-    open_streams_.erase(found);
-  }
 
-  // SCTP won't let you have more than one stream reset pending at a time, but
-  // you can close multiple streams in a single reset.  So, we keep an internal
-  // queue of streams-to-reset, and send them as one reset message in
-  // SendQueuedStreamResets().
-  queued_reset_streams_.insert(sid);
+  //don't do anything if the stream is not opened
+  StreamSet::iterator found = open_streams_.find(sid);
+  if (found == open_streams_.end())
+    return true;
+
+  //remove it from the list of opened streams
+  LOG(LS_VERBOSE) << debug_name_ << "->ResetStream(" << sid << "): "
+                  << "Removing and queuing RE-CONFIG chunk.";
+  open_streams_.erase(found);
+
+  // add the stream to the list of the closing streams
+  if(reset_streams_status_.find(sid) == reset_streams_status_.end())
+    reset_streams_status_[sid] = kStreamResetNone;
 
   // Signal our stream-reset logic that it should try to send now, if it can.
   SendQueuedStreamResets();
@@ -757,31 +791,74 @@ void SctpTransport::CloseSctpSocket() {
 
 bool SctpTransport::SendQueuedStreamResets() {
   RTC_DCHECK_RUN_ON(network_thread_);
-  if (!sent_reset_streams_.empty() || queued_reset_streams_.empty()) {
+
+  //check if we need to send anything
+  if (reset_streams_status_.empty()) {
     return true;
   }
 
-  LOG(LS_VERBOSE) << "SendQueuedStreamResets[" << debug_name_ << "]: Sending ["
-                  << ListStreams(queued_reset_streams_) << "], Open: ["
-                  << ListStreams(open_streams_) << "], Sent: ["
-                  << ListStreams(sent_reset_streams_) << "]";
+  //count the SIDs on which we do not have kStreamResetOutgoingSent set
+  //that will be how many entries we will have in the sctp_reset_streams structure
+  size_t num_streams = 0;
+  for (ResetStreamsStatus::iterator it = reset_streams_status_.begin(); it != reset_streams_status_.end(); ++it) {
+    num_streams+=((it->second & kStreamResetOutgoingSent) == kStreamResetNone) ? 1 : 0;
+  }
 
-  const size_t num_streams = queued_reset_streams_.size();
+  //bail out if we do not have anything to send
+  if(num_streams == 0) {
+    return true;
+  }
+
+  LOG(LS_VERBOSE) << "SendQueuedStreamResets[" << debug_name_ << "]: Sending "
+                  << num_streams << " SCTP_STREAM_RESET_OUTGOING messages"
+                  ;
+
+  //compute the space required to send all necessary SCTP_STREAM_RESET_OUTGOING messages
   const size_t num_bytes =
       sizeof(struct sctp_reset_streams) + (num_streams * sizeof(uint16_t));
 
+  //allocate and populate the sctp_reset_streams structure
   std::vector<uint8_t> reset_stream_buf(num_bytes, 0);
   struct sctp_reset_streams* resetp =
       reinterpret_cast<sctp_reset_streams*>(&reset_stream_buf[0]);
   resetp->srs_assoc_id = SCTP_ALL_ASSOC;
-  resetp->srs_flags = SCTP_STREAM_RESET_INCOMING | SCTP_STREAM_RESET_OUTGOING;
+  resetp->srs_flags = SCTP_STREAM_RESET_OUTGOING;
   resetp->srs_number_streams = rtc::checked_cast<uint16_t>(num_streams);
   int result_idx = 0;
-  for (StreamSet::iterator it = queued_reset_streams_.begin();
-       it != queued_reset_streams_.end(); ++it) {
-    resetp->srs_stream_list[result_idx++] = *it;
+
+  // loop over the list of reset streams and do the following operations:
+  // 1. Add the stream ID to the sctp_reset_streams structure for reset if
+  //    and only if it was not done previously. That means it is not flagged
+  //    with kStreamResetOutgoingSent
+  // 2. If the stream ID was fully close, than simply remove it from the list
+  // 3. Update the stream status with kStreamResetOutgoingSent flag set after
+  //    it was added to sctp_reset_streams
+  for (ResetStreamsStatus::iterator it = reset_streams_status_.begin(); it != reset_streams_status_.end();) {
+    //wipe the completed resets as part of this looping
+    if ((it->second & kStreamResetCompleted) == kStreamResetCompleted){
+      reset_streams_status_.erase(it++);
+      continue;
+    }
+
+    //did we send the SCTP_STREAM_RESET_OUTGOING? If we did, go to the next
+    if ((it->second & kStreamResetOutgoingSent) != kStreamResetNone){
+      ++it;
+      continue;
+    }
+
+    //add it to the sctp_reset_streams
+    resetp->srs_stream_list[result_idx++] = it->first;
+    it->second|=kStreamResetOutgoingSent;
+
+    //did it became complete?
+    if ((it->second & kStreamResetCompleted) == kStreamResetCompleted){
+      reset_streams_status_.erase(it++);
+    } else {
+      ++it;
+    }
   }
 
+  //do the SCTP call
   int ret =
       usrsctp_setsockopt(sock_, IPPROTO_SCTP, SCTP_RESET_STREAMS, resetp,
                          rtc::checked_cast<socklen_t>(reset_stream_buf.size()));
@@ -792,9 +869,7 @@ bool SctpTransport::SendQueuedStreamResets() {
     return false;
   }
 
-  // sent_reset_streams_ is empty, and all the queued_reset_streams_ go into
-  // it now.
-  queued_reset_streams_.swap(sent_reset_streams_);
+  //done
   return true;
 }
 
@@ -1012,78 +1087,61 @@ void SctpTransport::OnNotificationAssocChange(const sctp_assoc_change& change) {
 void SctpTransport::OnStreamResetEvent(
     const struct sctp_stream_reset_event* evt) {
   RTC_DCHECK_RUN_ON(network_thread_);
-  // A stream reset always involves two RE-CONFIG chunks for us -- we always
-  // simultaneously reset a sid's sequence number in both directions.  The
-  // requesting side transmits a RE-CONFIG chunk and waits for the peer to send
-  // one back.  Both sides get this SCTP_STREAM_RESET_EVENT when they receive
-  // RE-CONFIGs.
+
+  //compute how many entries we have in the sctp_stream_reset_event structure
   const int num_sids = (evt->strreset_length - sizeof(*evt)) /
                        sizeof(evt->strreset_stream_list[0]);
-  LOG(LS_VERBOSE) << "SCTP_STREAM_RESET_EVENT(" << debug_name_
-                  << "): Flags = 0x" << std::hex << evt->strreset_flags << " ("
-                  << ListFlags(evt->strreset_flags) << ")";
-  LOG(LS_VERBOSE) << "Assoc = " << evt->strreset_assoc_id << ", Streams = ["
-                  << ListArray(evt->strreset_stream_list, num_sids)
-                  << "], Open: [" << ListStreams(open_streams_) << "], Q'd: ["
-                  << ListStreams(queued_reset_streams_) << "], Sent: ["
-                  << ListStreams(sent_reset_streams_) << "]";
 
-  // If both sides try to reset some streams at the same time (even if they're
-  // disjoint sets), we can get reset failures.
   if (evt->strreset_flags & SCTP_STREAM_RESET_FAILED) {
-    // OK, just try again.  The stream IDs sent over when the RESET_FAILED flag
-    // is set seem to be garbage values.  Ignore them.
-    queued_reset_streams_.insert(sent_reset_streams_.begin(),
-                                 sent_reset_streams_.end());
-    sent_reset_streams_.clear();
-
-  } else if (evt->strreset_flags & SCTP_STREAM_RESET_INCOMING_SSN) {
-    // Each side gets an event for each direction of a stream.  That is,
-    // closing sid k will make each side receive INCOMING and OUTGOING reset
-    // events for k.  As per RFC6525, Section 5, paragraph 2, each side will
-    // get an INCOMING event first.
-    for (int i = 0; i < num_sids; i++) {
-      const int stream_id = evt->strreset_stream_list[i];
-
-      // See if this stream ID was closed by our peer or ourselves.
-      StreamSet::iterator it = sent_reset_streams_.find(stream_id);
-
-      // The reset was requested locally.
-      if (it != sent_reset_streams_.end()) {
-        LOG(LS_VERBOSE) << "SCTP_STREAM_RESET_EVENT(" << debug_name_
-                        << "): local sid " << stream_id << " acknowledged.";
-        sent_reset_streams_.erase(it);
-
-      } else if ((it = open_streams_.find(stream_id)) != open_streams_.end()) {
-        // The peer requested the reset.
-        LOG(LS_VERBOSE) << "SCTP_STREAM_RESET_EVENT(" << debug_name_
-                        << "): closing sid " << stream_id;
-        open_streams_.erase(it);
-        SignalStreamClosedRemotely(stream_id);
-
-      } else if ((it = queued_reset_streams_.find(stream_id)) !=
-                 queued_reset_streams_.end()) {
-        // The peer requested the reset, but there was a local reset
-        // queued.
-        LOG(LS_VERBOSE) << "SCTP_STREAM_RESET_EVENT(" << debug_name_
-                        << "): double-sided close for sid " << stream_id;
-        // Both sides want the stream closed, and the peer got to send the
-        // RE-CONFIG first.  Treat it like the local Remove(Send|Recv)Stream
-        // finished quickly.
-        queued_reset_streams_.erase(it);
-
-      } else {
-        // This stream is unknown.  Sometimes this can be from an
-        // RESET_FAILED-related retransmit.
-        LOG(LS_VERBOSE) << "SCTP_STREAM_RESET_EVENT(" << debug_name_
-                        << "): Unknown sid " << stream_id;
-      }
-    }
+    // if this happens, the entire SCTP association is in quite crippled state.
+    // The SCTP session should be dismantled, and the WebRTC connectivity errored
+    // because is clear that the distant party is not playing ball: malforms the
+    // transported data
+    return;
   }
 
-  // Always try to send the queued RESET because this call indicates that the
-  // last local RESET or remote RESET has made some progress.
-  SendQueuedStreamResets();
+  // loop over the received events and properly update the reset_streams_status_
+  bool callSendQueuedStreamResets=false;
+  for (int i = 0; i < num_sids; i++) {
+    // get the stream id
+    const int stream_id = evt->strreset_stream_list[i];
+
+    // see if we have it opened. If we do, remove it and call the necessary
+    // events
+    StreamSet::iterator foundInOpenedState=open_streams_.find(stream_id);
+    if(foundInOpenedState!=open_streams_.end()) {
+      LOG(LS_VERBOSE) << "SCTP_STREAM_RESET_EVENT(" << debug_name_
+                      << "): closing sid " << stream_id;
+      open_streams_.erase(foundInOpenedState);
+      SignalStreamClosedRemotely(stream_id);
+    }
+
+    // get the current status of the stream reset
+    ResetStreamsStatus::iterator foundInResetState = reset_streams_status_.find(stream_id);
+    uint8_t status=(foundInResetState == reset_streams_status_.end())?kStreamResetNone:foundInResetState->second;
+
+    //update the status
+    status |= ((evt->strreset_flags & SCTP_STREAM_RESET_INCOMING_SSN)?kStreamResetIncomingReceived:kStreamResetNone);
+    status |= ((evt->strreset_flags & SCTP_STREAM_RESET_OUTGOING_SSN)?kStreamResetOutgoingReceived:kStreamResetNone);
+
+    //inspect the status. If this is a complete reset, simply remove it from the reset_streams_status_
+    //thus making the SID available for reuse
+    if(status==kStreamResetCompleted){
+      reset_streams_status_.erase(foundInResetState);
+      continue;
+    }
+
+    //set the state back
+    reset_streams_status_[stream_id] = status;
+
+    //ok, the stream reset still needs some more work. See if we need to send the
+    //SCTP_STREAM_RESET_OUTGOING_SSN and update the callSendQueuedStreamResets flag
+    callSendQueuedStreamResets|=((status&kStreamResetOutgoingSent)==kStreamResetNone);
+  }
+
+  // do the send of the queued stream resets if necessary
+  if(callSendQueuedStreamResets)
+    SendQueuedStreamResets();
 }
 
 }  // namespace cricket

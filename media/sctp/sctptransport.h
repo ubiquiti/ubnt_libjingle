@@ -73,6 +73,7 @@ class SctpTransport : public SctpTransportInternal,
   // SctpTransportInternal overrides (see sctptransportinternal.h for comments).
   void SetTransportChannel(rtc::PacketTransportInternal* channel) override;
   bool Start(int local_port, int remote_port) override;
+  bool IsStreamAvailable(int sid) const override;
   bool OpenStream(int sid) override;
   bool ResetStream(int sid) override;
   bool SendData(const SendDataParams& params,
@@ -154,16 +155,38 @@ class SctpTransport : public SctpTransportInternal,
   bool ready_to_send_data_ = false;
 
   typedef std::set<uint32_t> StreamSet;
-  // When a data channel opens a stream, it goes into open_streams_.  When we
-  // want to close it, the stream's ID goes into queued_reset_streams_.  When
-  // we actually transmit a RE-CONFIG chunk with that stream ID, the ID goes
-  // into sent_reset_streams_.  When we get a response RE-CONFIG chunk back
-  // acknowledging the reset, we remove the stream ID from
-  // sent_reset_streams_.  We use sent_reset_streams_ to differentiate
-  // between acknowledgment RE-CONFIG and peer-initiated RE-CONFIGs.
+
+  // This is a map to search the closing status of a sream. A stream is considered
+  // as fully freed when these 3 conditions are met:
+  // 1. Received SCTP_STREAM_RESET_INCOMING
+  // 2. Received SCTP_STREAM_RESET_OUTGOING
+  // 3. Sent SCTP_STREAM_RESET_OUTGOING
+  // The order in which those 3 conditions are fulfilled is irrelevant. However,
+  // for the sake of clarity, we have 2 possible scenarios exemplified as follows:
+  // 1. Near side closing the channel: When the near side wants to close a channel,
+  //    we will only send SCTP_STREAM_RESET_OUTGOING. Than, wait for both
+  //    SCTP_STREAM_RESET_INCOMING and SCTP_STREAM_RESET_OUTGOING to arrive back via
+  //    sctp notifications backets. We will treat them as ACK for the SCTP_STREAM_RESET_OUTGOING.
+  //    Once that is completed, than the channel can be safely discarded/discontinued,
+  //    and the SID reused.
+  // 2. Far side closing the channel: SCTP_STREAM_RESET_INCOMING will be received as
+  //    notification. That moment, SCTP_STREAM_RESET_OUTGOING should be sent, and we will
+  //    wait for the SCTP_STREAM_RESET_OUTGOING to be received as well via notifications.
+  //    Once that is completed, than the channel can be safely discarded/discontinued,
+  //    and the SID reused.
+  // When a SID is present in the map, we will consider that SID as in-flight closing, so it will
+  // not be reused. When the closing is complete by fulfilling the 3 conditions enumerated
+  // above (status == kFullResetCompleted), than the SID will be removed from the map
+  // and the SID can than be reused
+  typedef std::map<uint32_t, uint8_t> ResetStreamsStatus;
+
+  // open_streams_ will tell us the list of opened streams. The moment a reset event happens
+  // because remote sent a reset, or the local side decided to close the channel, it will
+  // be removed from open_streams_ and added to reset_streams_status_ with the appropriate
+  // status. The presence of a stream in one of these 2 places marks the stream ID as non-usable
+  // ID in bringing up new streams
   StreamSet open_streams_;
-  StreamSet queued_reset_streams_;
-  StreamSet sent_reset_streams_;
+  ResetStreamsStatus reset_streams_status_;
 
   // A static human-readable name for debugging messages.
   const char* debug_name_ = "SctpTransport";

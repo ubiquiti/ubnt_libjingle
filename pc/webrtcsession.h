@@ -308,6 +308,7 @@ class WebRtcSession :
                 cricket::SendDataResult* result) override;
   bool ConnectDataChannel(DataChannel* webrtc_data_channel) override;
   void DisconnectDataChannel(DataChannel* webrtc_data_channel) override;
+  bool IsSidAvailable(int sid) const override;
   void AddSctpDataStream(int sid) override;
   void RemoveSctpDataStream(int sid) override;
   bool ReadyToSendData() const override;

@@ -2229,11 +2229,13 @@ rtc::scoped_refptr<DataChannel> PeerConnection::InternalCreateDataChannel(
     if (new_config.id < 0) {
       rtc::SSLRole role;
       if ((session_->GetSctpSslRole(&role)) &&
-          !sid_allocator_.AllocateSid(role, &new_config.id)) {
+          !sid_allocator_.AllocateSid(role, &new_config.id,
+            (const webrtc::DataChannelProviderInterface *)session_.get())) {
         LOG(LS_ERROR) << "No id can be allocated for the SCTP data channel.";
         return nullptr;
       }
-    } else if (!sid_allocator_.ReserveSid(new_config.id)) {
+    } else if (!sid_allocator_.ReserveSid(new_config.id,
+      (const webrtc::DataChannelProviderInterface *)session_.get())) {
       LOG(LS_ERROR) << "Failed to create a SCTP data channel "
                     << "because the id is already in use or out of range.";
       return nullptr;
@@ -2279,7 +2281,8 @@ void PeerConnection::AllocateSctpSids(rtc::SSLRole role) {
   for (const auto& channel : sctp_data_channels_) {
     if (channel->id() < 0) {
       int sid;
-      if (!sid_allocator_.AllocateSid(role, &sid)) {
+      if (!sid_allocator_.AllocateSid(role, &sid,
+        (const webrtc::DataChannelProviderInterface *)session_.get())) {
         LOG(LS_ERROR) << "Failed to allocate SCTP sid.";
         continue;
       }
