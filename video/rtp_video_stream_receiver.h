@@ -112,10 +112,8 @@ class RtpVideoStreamReceiver : public RtpData,
   void OnRecoveredPacket(const uint8_t* packet, size_t packet_length) override;
 
   // Implements RtpFeedback.
-  int32_t OnInitializeDecoder(int8_t payload_type,
-                              const char payload_name[RTP_PAYLOAD_NAME_SIZE],
-                              int frequency,
-                              size_t channels,
+  int32_t OnInitializeDecoder(int payload_type,
+                              const SdpAudioFormat& audio_format,
                               uint32_t rate) override;
   void OnIncomingSSRCChanged(uint32_t ssrc) override {}
   void OnIncomingCSRCChanged(uint32_t CSRC, bool added) override {}
@@ -156,8 +154,7 @@ class RtpVideoStreamReceiver : public RtpData,
   bool AddReceiveCodec(const VideoCodec& video_codec);
   void ReceivePacket(const uint8_t* packet,
                      size_t packet_length,
-                     const RTPHeader& header,
-                     bool in_order);
+                     const RTPHeader& header);
   // Parses and handles for instance RTX and RED headers.
   // This function assumes that it's being called from only one thread.
   void ParseAndHandleEncapsulatingHeader(const uint8_t* packet,

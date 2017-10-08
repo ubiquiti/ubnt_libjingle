@@ -39,7 +39,7 @@ class VideoProcessorIntegrationTestMediaCodec
   }
 };
 
-TEST_F(VideoProcessorIntegrationTestMediaCodec, DISABLED_ForemanCif500kbpsVp8) {
+TEST_F(VideoProcessorIntegrationTestMediaCodec, ForemanCif500kbpsVp8) {
   SetCodecSettings(&config_, kVideoCodecVP8, 1, false, false, false, false,
                    false, 352, 288);
 
@@ -52,12 +52,12 @@ TEST_F(VideoProcessorIntegrationTestMediaCodec, DISABLED_ForemanCif500kbpsVp8) {
   // implementations pass. If this test fails on the bots, disable it and
   // ping brandtr@.
   std::vector<RateControlThresholds> rc_thresholds;
-  AddRateControlThresholds(5, 95, 20, 10, 10, 0, 1, &rc_thresholds);
+  AddRateControlThresholds(20, 95, 22, 11, 10, 0, 1, &rc_thresholds);
 
-  QualityThresholds quality_thresholds(30.0, 15.0, 0.90, 0.40);
+  QualityThresholds quality_thresholds(30.0, 14.0, 0.86, 0.39);
 
   ProcessFramesAndMaybeVerify(rate_profile, &rc_thresholds, &quality_thresholds,
-                              kNoVisualizationParams);
+                              nullptr, kNoVisualizationParams);
 }
 
 TEST_F(VideoProcessorIntegrationTestMediaCodec,
@@ -89,7 +89,7 @@ TEST_F(VideoProcessorIntegrationTestMediaCodec,
   QualityThresholds quality_thresholds(33.0, 30.0, 0.90, 0.85);
 
   ProcessFramesAndMaybeVerify(rate_profile, &rc_thresholds, &quality_thresholds,
-                              kNoVisualizationParams);
+                              nullptr, kNoVisualizationParams);
 }
 
 #endif  // defined(WEBRTC_ANDROID)

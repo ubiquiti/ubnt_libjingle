@@ -11,7 +11,6 @@
 #include "voice_engine/shared_data.h"
 
 #include "modules/audio_processing/include/audio_processing.h"
-#include "system_wrappers/include/trace.h"
 #include "voice_engine/channel.h"
 #include "voice_engine/transmit_mixer.h"
 
@@ -24,14 +23,11 @@ static int32_t _gInstanceCounter = 0;
 SharedData::SharedData()
     : _instanceId(++_gInstanceCounter),
       _channelManager(_gInstanceCounter),
-      _engineStatistics(_gInstanceCounter),
       _audioDevicePtr(NULL),
       _moduleProcessThreadPtr(ProcessThread::Create("VoiceProcessThread")),
       encoder_queue_("AudioEncoderQueue") {
-  Trace::CreateTrace();
-  if (TransmitMixer::Create(_transmitMixerPtr, _gInstanceCounter) == 0) {
-    _transmitMixerPtr->SetEngineInformation(*_moduleProcessThreadPtr,
-                                            _engineStatistics, _channelManager);
+  if (TransmitMixer::Create(_transmitMixerPtr) == 0) {
+    _transmitMixerPtr->SetEngineInformation(&_channelManager);
   }
 }
 
@@ -42,7 +38,6 @@ SharedData::~SharedData()
         _audioDevicePtr->Release();
     }
     _moduleProcessThreadPtr->Stop();
-    Trace::ReturnTrace();
 }
 
 rtc::TaskQueue* SharedData::encoder_queue() {
@@ -83,20 +78,6 @@ int SharedData::NumOfPlayingChannels() {
   }
 
   return playout_channels;
-}
-
-void SharedData::SetLastError(int32_t error) const {
-  _engineStatistics.SetLastError(error);
-}
-
-void SharedData::SetLastError(int32_t error,
-                              TraceLevel level) const {
-  _engineStatistics.SetLastError(error, level);
-}
-
-void SharedData::SetLastError(int32_t error, TraceLevel level,
-                              const char* msg) const {
-  _engineStatistics.SetLastError(error, level, msg);
 }
 
 }  // namespace voe

@@ -22,12 +22,8 @@ namespace webrtc {
 class ProcessThread;
 
 class VoEBaseImpl : public VoEBase,
-                    public AudioTransport,
-                    public AudioDeviceObserver {
+                    public AudioTransport {
  public:
-  int RegisterVoiceEngineObserver(VoiceEngineObserver& observer) override;
-  int DeRegisterVoiceEngineObserver() override;
-
   int Init(
       AudioDeviceModule* external_adm,
       AudioProcessing* audio_processing,
@@ -84,10 +80,6 @@ class VoEBaseImpl : public VoEBase,
                                      int64_t* elapsed_time_ms,
                                      int64_t* ntp_time_ms) override;
 
-  // AudioDeviceObserver
-  void OnErrorIsReported(const ErrorCode error) override;
-  void OnWarningIsReported(const WarningCode warning) override;
-
  protected:
   VoEBaseImpl(voe::SharedData* shared);
   ~VoEBaseImpl() override;
@@ -107,8 +99,6 @@ class VoEBaseImpl : public VoEBase,
   // Initialize channel by setting Engine Information then initializing
   // channel.
   int InitializeChannel(voe::ChannelOwner* channel_owner);
-  VoiceEngineObserver* voiceEngineObserverPtr_;
-  rtc::CriticalSection callbackCritSect_;
   rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_;
 
   AudioFrame audioFrame_;

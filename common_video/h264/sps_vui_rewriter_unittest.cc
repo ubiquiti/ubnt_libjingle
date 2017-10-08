@@ -14,9 +14,7 @@
 #include "common_video/h264/sps_vui_rewriter.h"
 #include "rtc_base/bitbuffer.h"
 #include "rtc_base/buffer.h"
-#include "rtc_base/fileutils.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/pathutils.h"
 #include "test/gtest.h"
 
 namespace webrtc {

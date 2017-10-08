@@ -19,7 +19,6 @@
 
 namespace webrtc {
 
-struct CodecInst;
 class RTPPayloadRegistry;
 class VideoCodec;
 
@@ -61,7 +60,13 @@ class RtpReceiver {
 
   // Registers a receive payload in the payload registry and notifies the media
   // receiver strategy.
-  virtual int32_t RegisterReceivePayload(const CodecInst& audio_codec) = 0;
+  virtual int32_t RegisterReceivePayload(
+      int payload_type,
+      const SdpAudioFormat& audio_format) = 0;
+
+  // Deprecated version of the above.
+  int32_t RegisterReceivePayload(const CodecInst& audio_codec);
+
   // Registers a receive payload in the payload registry.
   virtual int32_t RegisterReceivePayload(const VideoCodec& video_codec) = 0;
 
@@ -74,15 +79,23 @@ class RtpReceiver {
   virtual bool IncomingRtpPacket(const RTPHeader& rtp_header,
                                  const uint8_t* payload,
                                  size_t payload_length,
-                                 PayloadUnion payload_specific,
-                                 bool in_order) = 0;
+                                 PayloadUnion payload_specific) = 0;
+  // TODO(nisse): Deprecated version, delete as soon as downstream
+  // applications are updated.
+  bool IncomingRtpPacket(const RTPHeader& rtp_header,
+                         const uint8_t* payload,
+                         size_t payload_length,
+                         PayloadUnion payload_specific,
+                         bool in_order /* Ignored */) {
+    return IncomingRtpPacket(rtp_header, payload, payload_length,
+                             payload_specific);
+  }
 
-  // Gets the last received timestamp. Returns true if a packet has been
-  // received, false otherwise.
-  virtual bool Timestamp(uint32_t* timestamp) const = 0;
-  // Gets the time in milliseconds when the last timestamp was received.
-  // Returns true if a packet has been received, false otherwise.
-  virtual bool LastReceivedTimeMs(int64_t* receive_time_ms) const = 0;
+  // Gets the RTP timestamp and the corresponding monotonic system
+  // time for the most recent in-order packet. Returns true on
+  // success, false if no packet has been received.
+  virtual bool GetLatestTimestamps(uint32_t* timestamp,
+                                   int64_t* receive_time_ms) const = 0;
 
   // Returns the remote SSRC of the currently received RTP stream.
   virtual uint32_t SSRC() const = 0;

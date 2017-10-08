@@ -286,10 +286,10 @@ class RTCStatsCollectorTestHelper : public SetSessionDescriptionObserver {
             network_thread_)),
         session_(channel_manager_.get(), cricket::MediaConfig()),
         pc_() {
+    pc_.set_session_for_testing(&session_);
     // Default return values for mocks.
     EXPECT_CALL(pc_, local_streams()).WillRepeatedly(Return(nullptr));
     EXPECT_CALL(pc_, remote_streams()).WillRepeatedly(Return(nullptr));
-    EXPECT_CALL(pc_, session()).WillRepeatedly(Return(&session_));
     EXPECT_CALL(pc_, GetSenders()).WillRepeatedly(Return(
         std::vector<rtc::scoped_refptr<RtpSenderInterface>>()));
     EXPECT_CALL(pc_, GetReceivers()).WillRepeatedly(Return(
@@ -561,14 +561,11 @@ class FakeRTCStatsCollector : public RTCStatsCollector,
   }
 
  protected:
-  FakeRTCStatsCollector(
-      PeerConnection* pc,
-      int64_t cache_lifetime)
+  FakeRTCStatsCollector(PeerConnection* pc, int64_t cache_lifetime)
       : RTCStatsCollector(pc, cache_lifetime),
-        signaling_thread_(pc->session()->signaling_thread()),
-        worker_thread_(pc->session()->worker_thread()),
-        network_thread_(pc->session()->network_thread()) {
-  }
+        signaling_thread_(pc->signaling_thread()),
+        worker_thread_(pc->worker_thread()),
+        network_thread_(pc->network_thread()) {}
 
   void ProducePartialResultsOnSignalingThread(int64_t timestamp_us) override {
     EXPECT_TRUE(signaling_thread_->IsCurrent());
@@ -1556,6 +1553,7 @@ TEST_F(RTCStatsCollectorTest,
   voice_receiver_info.total_output_duration = 0.25;
   voice_receiver_info.concealed_samples = 123;
   voice_receiver_info.concealment_events = 12;
+  voice_receiver_info.jitter_buffer_delay_seconds = 3456;
 
   test_->CreateMockRtpSendersReceiversAndChannels(
       { std::make_pair(local_audio_track.get(), voice_sender_info_ssrc1),
@@ -1633,6 +1631,7 @@ TEST_F(RTCStatsCollectorTest,
   expected_remote_audio_track.total_samples_duration = 0.25;
   expected_remote_audio_track.concealed_samples = 123;
   expected_remote_audio_track.concealment_events = 12;
+  expected_remote_audio_track.jitter_buffer_delay = 3456;
   ASSERT_TRUE(report->Get(expected_remote_audio_track.id()));
   EXPECT_EQ(expected_remote_audio_track,
             report->Get(expected_remote_audio_track.id())->cast_to<

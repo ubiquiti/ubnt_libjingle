@@ -1018,6 +1018,8 @@ int32_t MediaCodecVideoEncoder::Release() {
   }
   use_surface_ = false;
   ALOGD << "EncoderRelease done.";
+  // It's legal to move the encoder to another queue now.
+  encoder_queue_checker_.Detach();
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
@@ -1475,6 +1477,13 @@ JNI_FUNCTION_DECLARATION(void,
       static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_buffer_u));
   uint8_t* buffer_v =
       static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_buffer_v));
+
+  RTC_DCHECK(buffer_y) << "GetDirectBufferAddress returned null. Ensure that "
+                          "getDataY returns a direct ByteBuffer.";
+  RTC_DCHECK(buffer_u) << "GetDirectBufferAddress returned null. Ensure that "
+                          "getDataU returns a direct ByteBuffer.";
+  RTC_DCHECK(buffer_v) << "GetDirectBufferAddress returned null. Ensure that "
+                          "getDataV returns a direct ByteBuffer.";
 
   reinterpret_cast<MediaCodecVideoEncoder*>(native_encoder)
       ->FillInputBuffer(jni, input_buffer, buffer_y, stride_y, buffer_u,

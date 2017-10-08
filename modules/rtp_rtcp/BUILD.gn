@@ -41,10 +41,12 @@ rtc_source_set("rtp_rtcp_format") {
     "source/rtcp_packet/transport_feedback.h",
     "source/rtcp_packet/voip_metric.h",
     "source/rtp_header_extensions.h",
+    "source/rtp_packet.h",
     "source/rtp_packet_received.h",
     "source/rtp_packet_to_send.h",
   ]
   sources = [
+    "include/rtp_rtcp_defines.cc",
     "source/rtcp_packet.cc",
     "source/rtcp_packet/app.cc",
     "source/rtcp_packet/bye.cc",
@@ -74,7 +76,6 @@ rtc_source_set("rtp_rtcp_format") {
     "source/rtp_header_extension_map.cc",
     "source/rtp_header_extensions.cc",
     "source/rtp_packet.cc",
-    "source/rtp_packet.h",
     "source/rtp_packet_received.cc",
   ]
 
@@ -84,6 +85,7 @@ rtc_source_set("rtp_rtcp_format") {
     "../../api:array_view",
     "../../api:libjingle_peerconnection_api",
     "../../api:optional",
+    "../../api/audio_codecs:audio_codecs_api",
     "../../common_video",
     "../../rtc_base:rtc_base_approved",
     "../../system_wrappers",
@@ -372,12 +374,14 @@ if (rtc_include_tests) {
       "../../api:transport_api",
       "../../call:rtp_receiver",
       "../../common_video:common_video",
+      "../../logging:rtc_event_log_api",
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:system_wrappers",
       "../../test:field_trial",
       "../../test:rtp_test_utils",
       "../../test:test_common",
       "../../test:test_support",
+      "../audio_coding:audio_format_conversion",
       "//testing/gmock",
     ]
 

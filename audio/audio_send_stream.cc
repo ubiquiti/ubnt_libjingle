@@ -106,7 +106,6 @@ AudioSendStream::AudioSendStream(
   channel_proxy_->SetRtcEventLog(event_log_);
   channel_proxy_->SetRtcpRttStats(rtcp_rtt_stats);
   channel_proxy_->SetRTCPStatus(true);
-  transport_->send_side_cc()->RegisterPacketFeedbackObserver(this);
   RtpReceiver* rtpReceiver = nullptr;  // Unused, but required for call.
   channel_proxy_->GetRtpRtcp(&rtp_rtcp_module_, &rtpReceiver);
   RTC_DCHECK(rtp_rtcp_module_);
@@ -114,13 +113,15 @@ AudioSendStream::AudioSendStream(
   ConfigureStream(this, config, true);
 
   pacer_thread_checker_.DetachFromThread();
+  // Signal congestion controller this object is ready for OnPacket* callbacks.
+  transport_->send_side_cc()->RegisterPacketFeedbackObserver(this);
 }
 
 AudioSendStream::~AudioSendStream() {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   LOG(LS_INFO) << "~AudioSendStream: " << config_.ToString();
   transport_->send_side_cc()->DeRegisterPacketFeedbackObserver(this);
-  channel_proxy_->DeRegisterExternalTransport();
+  channel_proxy_->RegisterTransport(nullptr);
   channel_proxy_->ResetSenderCongestionControlObjects();
   channel_proxy_->SetRtcEventLog(nullptr);
   channel_proxy_->SetRtcpRttStats(nullptr);
@@ -164,7 +165,7 @@ void AudioSendStream::ConfigureStream(
   if (first_time ||
       new_config.send_transport != old_config.send_transport) {
     if (old_config.send_transport) {
-      channel_proxy->DeRegisterExternalTransport();
+      channel_proxy->RegisterTransport(nullptr);
     }
     if (new_config.send_transport) {
       stream->timed_send_transport_adapter_.reset(new TimedTransport(
@@ -172,7 +173,7 @@ void AudioSendStream::ConfigureStream(
     } else {
       stream->timed_send_transport_adapter_.reset(nullptr);
     }
-    channel_proxy->RegisterExternalTransport(
+    channel_proxy->RegisterTransport(
         stream->timed_send_transport_adapter_.get());
   }
 

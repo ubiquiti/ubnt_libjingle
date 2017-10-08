@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "modules/rtp_rtcp/include/rtp_cvo.h"
@@ -26,6 +27,7 @@
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/safe_minmax.h"
 #include "rtc_base/timeutils.h"
@@ -237,15 +239,16 @@ int32_t RTPSender::RegisterPayload(
     // Check if it's the same as we already have.
     if (RtpUtility::StringCompare(
             payload->name, payload_name, RTP_PAYLOAD_NAME_SIZE - 1)) {
-      if (audio_configured_ && payload->audio &&
-          payload->typeSpecific.Audio.frequency == frequency &&
-          (payload->typeSpecific.Audio.rate == rate ||
-           payload->typeSpecific.Audio.rate == 0 || rate == 0)) {
-        payload->typeSpecific.Audio.rate = rate;
-        // Ensure that we update the rate if new or old is zero.
-        return 0;
+      if (audio_configured_ && payload->typeSpecific.is_audio()) {
+        auto& p = payload->typeSpecific.audio_payload();
+        if (rtc::SafeEq(p.format.clockrate_hz, frequency) &&
+            (p.rate == rate || p.rate == 0 || rate == 0)) {
+          p.rate = rate;
+          // Ensure that we update the rate if new or old is zero.
+          return 0;
+        }
       }
-      if (!audio_configured_ && !payload->audio) {
+      if (!audio_configured_ && !payload->typeSpecific.is_audio()) {
         return 0;
       }
     }
@@ -356,9 +359,10 @@ int32_t RTPSender::CheckPayloadType(int8_t payload_type,
   SetSendPayloadType(payload_type);
   RtpUtility::Payload* payload = it->second;
   RTC_DCHECK(payload);
-  if (!payload->audio && !audio_configured_) {
-    video_->SetVideoCodecType(payload->typeSpecific.Video.videoCodecType);
-    *video_type = payload->typeSpecific.Video.videoCodecType;
+  if (payload->typeSpecific.is_video() && !audio_configured_) {
+    video_->SetVideoCodecType(
+        payload->typeSpecific.video_payload().videoCodecType);
+    *video_type = payload->typeSpecific.video_payload().videoCodecType;
   }
   return 0;
 }
@@ -642,8 +646,8 @@ bool RTPSender::SendPacketToNetwork(const RtpPacketToSend& packet,
                      ? static_cast<int>(packet.size())
                      : -1;
     if (event_log_ && bytes_sent > 0) {
-      event_log_->LogRtpHeader(kOutgoingPacket, packet.data(), packet.size(),
-                               pacing_info.probe_cluster_id);
+      event_log_->Log(rtc::MakeUnique<RtcEventRtpPacketOutgoing>(
+          packet, pacing_info.probe_cluster_id));
     }
   }
   TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),

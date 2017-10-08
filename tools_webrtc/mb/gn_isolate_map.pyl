@@ -47,7 +47,7 @@
     "label": "//modules/audio_coding:isac_fix_test",
     "type": "console_test_launcher",
     "args": [
-      "32000", "../resources/speech_and_misc_wb.pcm",
+      "32000", "../../resources/speech_and_misc_wb.pcm",
       "isac_speech_and_misc_wb.pcm",
     ]
   },
@@ -60,6 +60,14 @@
     "type": "console_test_launcher",
     "args": [
       "--quick",
+    ],
+  },
+  "low_bandwidth_audio_perf_test": {
+    "label": "//audio:low_bandwidth_audio_test",
+    "type": "script",
+    "script": "//audio/test/low_bandwidth_audio_test.py",
+    "args": [
+      ".", "--remove",
     ],
   },
   "modules_tests": {
@@ -120,6 +128,7 @@
   },
   "webrtc_perf_tests": {
     "label": "//:webrtc_perf_tests",
+    "timeout": 3600,  # 1 hour
     "type": "non_parallel_console_test_launcher",
   },
 }

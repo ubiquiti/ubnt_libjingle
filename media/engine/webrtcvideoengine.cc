@@ -87,22 +87,18 @@ namespace {
 std::vector<VideoCodec> AssignPayloadTypesAndAddAssociatedRtxCodecs(
     const std::vector<VideoCodec>& input_codecs);
 
-// Wraps cricket::WebRtcVideoEncoderFactory* into common EncoderFactoryAdapter
+// Wraps cricket::WebRtcVideoEncoderFactory into common EncoderFactoryAdapter
 // interface.
-// TODO(magjed): Remove once WebRtcVideoEncoderFactory* is deprecated and
+// TODO(magjed): Remove once WebRtcVideoEncoderFactory is deprecated and
 // webrtc:7925 is fixed.
 class CricketEncoderFactoryAdapter : public EncoderFactoryAdapter {
  public:
   explicit CricketEncoderFactoryAdapter(
-      WebRtcVideoEncoderFactory* external_encoder_factory)
+      std::unique_ptr<WebRtcVideoEncoderFactory> external_encoder_factory)
       : internal_encoder_factory_(new InternalEncoderFactory()),
-        external_encoder_factory_(external_encoder_factory) {}
+        external_encoder_factory_(std::move(external_encoder_factory)) {}
 
  private:
-  explicit CricketEncoderFactoryAdapter(
-      const CricketEncoderFactoryAdapter& other)
-      : CricketEncoderFactoryAdapter(other.external_encoder_factory_) {}
-
   AllocatedEncoder CreateVideoEncoder(
       const VideoCodec& codec,
       bool is_conference_mode_screenshare) const override;
@@ -110,27 +106,23 @@ class CricketEncoderFactoryAdapter : public EncoderFactoryAdapter {
   std::vector<VideoCodec> GetSupportedCodecs() const override;
 
   const std::unique_ptr<WebRtcVideoEncoderFactory> internal_encoder_factory_;
-  WebRtcVideoEncoderFactory* const external_encoder_factory_;
+  const std::unique_ptr<WebRtcVideoEncoderFactory> external_encoder_factory_;
 };
 
 class CricketDecoderFactoryAdapter : public DecoderFactoryAdapter {
  public:
   explicit CricketDecoderFactoryAdapter(
-      WebRtcVideoDecoderFactory* external_decoder_factory)
+      std::unique_ptr<WebRtcVideoDecoderFactory> external_decoder_factory)
       : internal_decoder_factory_(new InternalDecoderFactory()),
-        external_decoder_factory_(external_decoder_factory) {}
+        external_decoder_factory_(std::move(external_decoder_factory)) {}
 
  private:
-  explicit CricketDecoderFactoryAdapter(
-      const CricketDecoderFactoryAdapter& other)
-      : CricketDecoderFactoryAdapter(other.external_decoder_factory_) {}
-
   std::unique_ptr<webrtc::VideoDecoder> CreateVideoDecoder(
       const VideoCodec& codec,
       const VideoDecoderParams& decoder_params) const override;
 
   const std::unique_ptr<WebRtcVideoDecoderFactory> internal_decoder_factory_;
-  WebRtcVideoDecoderFactory* const external_decoder_factory_;
+  const std::unique_ptr<WebRtcVideoDecoderFactory> external_decoder_factory_;
 };
 
 // Wraps webrtc::VideoEncoderFactory into common EncoderFactoryAdapter
@@ -161,10 +153,7 @@ class WebRtcEncoderFactoryAdapter : public EncoderFactoryAdapter {
     std::vector<VideoCodec> codecs;
     for (const webrtc::SdpVideoFormat& format :
          encoder_factory_->GetSupportedFormats()) {
-      VideoCodec codec;
-      codec.name = format.name;
-      codec.params = format.parameters;
-      codecs.push_back(codec);
+      codecs.push_back(VideoCodec(format));
     }
     return AssignPayloadTypesAndAddAssociatedRtxCodecs(codecs);
   }
@@ -455,12 +444,12 @@ void DefaultUnsignalledSsrcHandler::SetDefaultSink(
 }
 
 WebRtcVideoEngine::WebRtcVideoEngine(
-    WebRtcVideoEncoderFactory* external_video_encoder_factory,
-    WebRtcVideoDecoderFactory* external_video_decoder_factory)
-    : decoder_factory_(
-          new CricketDecoderFactoryAdapter(external_video_decoder_factory)),
-      encoder_factory_(
-          new CricketEncoderFactoryAdapter(external_video_encoder_factory)) {
+    std::unique_ptr<WebRtcVideoEncoderFactory> external_video_encoder_factory,
+    std::unique_ptr<WebRtcVideoDecoderFactory> external_video_decoder_factory)
+    : decoder_factory_(new CricketDecoderFactoryAdapter(
+          std::move(external_video_decoder_factory))),
+      encoder_factory_(new CricketEncoderFactoryAdapter(
+          std::move(external_video_encoder_factory))) {
   LOG(LS_INFO) << "WebRtcVideoEngine::WebRtcVideoEngine()";
 }
 
@@ -1707,10 +1696,10 @@ CricketEncoderFactoryAdapter::CreateVideoEncoder(
     if (CodecNamesEq(codec.name.c_str(), kVp8CodecName)) {
       // If it's a codec type we can simulcast, create a wrapped encoder.
       external_encoder = std::unique_ptr<webrtc::VideoEncoder>(
-          new webrtc::SimulcastEncoderAdapter(external_encoder_factory_));
+          new webrtc::SimulcastEncoderAdapter(external_encoder_factory_.get()));
     } else {
       external_encoder =
-          CreateScopedVideoEncoder(external_encoder_factory_, codec);
+          CreateScopedVideoEncoder(external_encoder_factory_.get(), codec);
     }
     if (external_encoder) {
       std::unique_ptr<webrtc::VideoEncoder> internal_encoder(
@@ -2207,7 +2196,7 @@ CricketDecoderFactoryAdapter::CreateVideoDecoder(
     const VideoDecoderParams& decoder_params) const {
   if (external_decoder_factory_ != nullptr) {
     std::unique_ptr<webrtc::VideoDecoder> external_decoder =
-        CreateScopedVideoDecoder(external_decoder_factory_, codec,
+        CreateScopedVideoDecoder(external_decoder_factory_.get(), codec,
                                  decoder_params);
     if (external_decoder) {
       webrtc::VideoCodecType type =
@@ -2228,6 +2217,7 @@ CricketDecoderFactoryAdapter::CreateVideoDecoder(
 void WebRtcVideoChannel::WebRtcVideoReceiveStream::ConfigureCodecs(
     const std::vector<VideoCodecSettings>& recv_codecs,
     DecoderMap* old_decoders) {
+  RTC_DCHECK(!recv_codecs.empty());
   *old_decoders = std::move(allocated_decoders_);
   config_.decoders.clear();
   config_.rtp.rtx_associated_payload_types.clear();
@@ -2263,14 +2253,15 @@ void WebRtcVideoChannel::WebRtcVideoReceiveStream::ConfigureCodecs(
     RTC_CHECK(did_insert);
   }
 
-  config_.rtp.ulpfec = recv_codecs.front().ulpfec;
+  const auto& codec = recv_codecs.front();
+  config_.rtp.ulpfec_payload_type = codec.ulpfec.ulpfec_payload_type;
+  config_.rtp.red_payload_type = codec.ulpfec.red_payload_type;
 
-  config_.rtp.nack.rtp_history_ms =
-      HasNack(recv_codecs.begin()->codec) ? kNackHistoryMs : 0;
-  if (config_.rtp.ulpfec.red_rtx_payload_type != -1) {
+  config_.rtp.nack.rtp_history_ms = HasNack(codec.codec) ? kNackHistoryMs : 0;
+  if (codec.ulpfec.red_rtx_payload_type != -1) {
     config_.rtp
-        .rtx_associated_payload_types[config_.rtp.ulpfec.red_rtx_payload_type] =
-        config_.rtp.ulpfec.red_payload_type;
+        .rtx_associated_payload_types[codec.ulpfec.red_rtx_payload_type] =
+        codec.ulpfec.red_payload_type;
   }
 }
 

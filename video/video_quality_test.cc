@@ -21,6 +21,7 @@
 #include "api/optional.h"
 #include "call/call.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "media/engine/webrtcvideoengine.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
@@ -50,7 +51,7 @@
 #include "test/statistics.h"
 #include "test/testsupport/fileutils.h"
 #include "test/testsupport/frame_writer.h"
-#include "test/testsupport/test_output.h"
+#include "test/testsupport/test_artifacts.h"
 #include "test/vcm_capturer.h"
 #include "test/video_renderer.h"
 #include "voice_engine/include/voe_base.h"
@@ -60,7 +61,7 @@
 DEFINE_bool(save_worst_frame,
             false,
             "Enable saving a frame with the lowest PSNR to a jpeg file in the "
-            "test_output_dir");
+            "test_artifacts_dir");
 
 namespace {
 
@@ -840,7 +841,7 @@ class VideoAnalyzer : public PacketReceiver,
     // jpeg is used here.
     if (FLAG_save_worst_frame && worst_frame_) {
       std::string output_dir;
-      test::GetTestOutputDir(&output_dir);
+      test::GetTestArtifactsDir(&output_dir);
       std::string output_path =
           rtc::Pathname(output_dir, test_label_ + ".jpg").pathname();
       LOG(LS_INFO) << "Saving worst frame to " << output_path;
@@ -1406,9 +1407,6 @@ void VideoQualityTest::FillScalabilitySettings(
 
 void VideoQualityTest::SetupVideo(Transport* send_transport,
                                   Transport* recv_transport) {
-  if (params_.logging.logs)
-    trace_to_stderr_.reset(new test::TraceToStderr);
-
   size_t num_video_streams = params_.ss.streams.size();
   size_t num_flexfec_streams = params_.video.flexfec ? 1 : 0;
   CreateSendConfig(num_video_streams, 0, num_flexfec_streams, send_transport);
@@ -1552,26 +1550,20 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
     if (decode_all_receive_streams) {
       for (auto it = video_receive_configs_.begin();
            it != video_receive_configs_.end(); ++it) {
-        it->rtp.ulpfec.red_payload_type =
+        it->rtp.red_payload_type =
             video_send_config_.rtp.ulpfec.red_payload_type;
-        it->rtp.ulpfec.ulpfec_payload_type =
+        it->rtp.ulpfec_payload_type =
             video_send_config_.rtp.ulpfec.ulpfec_payload_type;
-        it->rtp.ulpfec.red_rtx_payload_type =
-            video_send_config_.rtp.ulpfec.red_rtx_payload_type;
         it->rtp.rtx_associated_payload_types[video_send_config_.rtp.ulpfec
                                                  .red_rtx_payload_type] =
             video_send_config_.rtp.ulpfec.red_payload_type;
       }
     } else {
-      video_receive_configs_[params_.ss.selected_stream]
-          .rtp.ulpfec.red_payload_type =
+      video_receive_configs_[params_.ss.selected_stream].rtp.red_payload_type =
           video_send_config_.rtp.ulpfec.red_payload_type;
       video_receive_configs_[params_.ss.selected_stream]
-          .rtp.ulpfec.ulpfec_payload_type =
+          .rtp.ulpfec_payload_type =
           video_send_config_.rtp.ulpfec.ulpfec_payload_type;
-      video_receive_configs_[params_.ss.selected_stream]
-          .rtp.ulpfec.red_rtx_payload_type =
-          video_send_config_.rtp.ulpfec.red_rtx_payload_type;
       video_receive_configs_[params_.ss.selected_stream]
           .rtp.rtx_associated_payload_types[video_send_config_.rtp.ulpfec
                                                 .red_rtx_payload_type] =
@@ -1822,9 +1814,10 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
   }
 
   if (!params.logging.rtc_event_log_name.empty()) {
-    event_log_ = RtcEventLog::Create(clock_);
+    event_log_ = RtcEventLog::Create(clock_, RtcEventLog::EncodingType::Legacy);
     bool event_log_started =
-        event_log_->StartLogging(params.logging.rtc_event_log_name, -1);
+        event_log_->StartLogging(rtc::MakeUnique<RtcEventLogOutputFile>(
+            params.logging.rtc_event_log_name, RtcEventLog::kUnlimitedOutput));
     RTC_DCHECK(event_log_started);
   }
 
@@ -1918,6 +1911,8 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
   analyzer->Wait();
 
+  event_log_->StopLogging();
+
   task_queue_.SendTask([&]() {
     for (std::unique_ptr<test::VideoCapturer>& video_caputurer :
          thumbnail_capturers_)
@@ -1935,7 +1930,6 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     DestroyStreams();
     DestroyThumbnailStreams();
 
-    event_log_->StopLogging();
     if (graph_data_output_file)
       fclose(graph_data_output_file);
 

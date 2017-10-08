@@ -55,6 +55,8 @@ rtc_static_library("rtc_pc_base") {
     "srtpsession.h",
     "srtptransport.cc",
     "srtptransport.h",
+    "transportcontroller.cc",
+    "transportcontroller.h",
     "voicechannel.h",
   ]
 
@@ -137,6 +139,8 @@ rtc_static_library("peerconnection") {
     "rtpsender.h",
     "sctputils.cc",
     "sctputils.h",
+    "sdputils.cc",
+    "sdputils.h",
     "statscollector.cc",
     "statscollector.h",
     "streamcollection.h",
@@ -269,6 +273,7 @@ if (rtc_include_tests) {
       "srtpsession_unittest.cc",
       "srtptestutil.h",
       "srtptransport_unittest.cc",
+      "transportcontroller_unittest.cc",
     ]
 
     include_dirs = [ "//third_party/libsrtp/srtp" ]
@@ -286,6 +291,7 @@ if (rtc_include_tests) {
 
     deps = [
       ":libjingle_peerconnection",
+      ":pc_test_utils",
       ":rtc_pc",
       "../api:array_view",
       "../logging:rtc_event_log_api",
@@ -318,6 +324,7 @@ if (rtc_include_tests) {
       "test/fakedatachannelprovider.h",
       "test/fakeperiodicvideocapturer.h",
       "test/fakertccertificategenerator.h",
+      "test/faketransportcontroller.h",
       "test/fakevideotrackrenderer.h",
       "test/fakevideotracksource.h",
       "test/mock_datachannel.h",
@@ -332,6 +339,7 @@ if (rtc_include_tests) {
 
     deps = [
       ":libjingle_peerconnection",
+      ":rtc_pc_base",
       "..:webrtc_common",
       "../api:libjingle_peerconnection_test_api",
       "../api:rtc_stats_api",
@@ -383,10 +391,13 @@ if (rtc_include_tests) {
       "localaudiosource_unittest.cc",
       "mediaconstraintsinterface_unittest.cc",
       "mediastream_unittest.cc",
+      "peerconnection_crypto_unittest.cc",
       "peerconnection_integrationtest.cc",
       "peerconnectionendtoend_unittest.cc",
       "peerconnectionfactory_unittest.cc",
       "peerconnectioninterface_unittest.cc",
+      "peerconnectionwrapper.cc",
+      "peerconnectionwrapper.h",
       "proxy_unittest.cc",
       "rtcstats_integrationtest.cc",
       "rtcstatscollector_unittest.cc",

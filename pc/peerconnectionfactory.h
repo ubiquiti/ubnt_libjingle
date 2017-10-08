@@ -85,15 +85,6 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
 
   bool StartAecDump(rtc::PlatformFile file, int64_t max_size_bytes) override;
   void StopAecDump() override;
-  // TODO(ivoc) Remove after Chrome is updated.
-  bool StartRtcEventLog(rtc::PlatformFile file) override { return false; }
-  // TODO(ivoc) Remove after Chrome is updated.
-  bool StartRtcEventLog(rtc::PlatformFile file,
-                        int64_t max_size_bytes) override {
-    return false;
-  }
-  // TODO(ivoc) Remove after Chrome is updated.
-  void StopRtcEventLog() override {}
 
   virtual cricket::TransportController* CreateTransportController(
       cricket::PortAllocator* port_allocator,
@@ -109,8 +100,6 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
       rtc::Thread* network_thread,
       rtc::Thread* worker_thread,
       rtc::Thread* signaling_thread,
-      cricket::WebRtcVideoEncoderFactory* video_encoder_factory,
-      cricket::WebRtcVideoDecoderFactory* video_decoder_factory,
       std::unique_ptr<cricket::MediaEngineInterface> media_engine,
       std::unique_ptr<webrtc::CallFactoryInterface> call_factory,
       std::unique_ptr<RtcEventLogFactoryInterface> event_log_factory);
@@ -128,12 +117,6 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   std::unique_ptr<rtc::Thread> owned_worker_thread_;
   Options options_;
   std::unique_ptr<cricket::ChannelManager> channel_manager_;
-  // External Video encoder factory. This can be NULL if the client has not
-  // injected any. In that case, video engine will use the internal SW encoder.
-  std::unique_ptr<cricket::WebRtcVideoEncoderFactory> video_encoder_factory_;
-  // External Video decoder factory. This can be NULL if the client has not
-  // injected any. In that case, video engine will use the internal SW decoder.
-  std::unique_ptr<cricket::WebRtcVideoDecoderFactory> video_decoder_factory_;
   std::unique_ptr<rtc::BasicNetworkManager> default_network_manager_;
   std::unique_ptr<rtc::BasicPacketSocketFactory> default_socket_factory_;
   std::unique_ptr<cricket::MediaEngineInterface> media_engine_;

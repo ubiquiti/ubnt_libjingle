@@ -526,6 +526,7 @@ rtc_static_library("rtc_base_generic") {
     "nethelpers.h",
     "network.cc",
     "network.h",
+    "network_constants.h",
     "networkmonitor.cc",
     "networkmonitor.h",
     "nullsocketserver.cc",
@@ -553,6 +554,7 @@ rtc_static_library("rtc_base_generic") {
     "signalthread.h",
     "sigslot.cc",
     "sigslot.h",
+    "sigslotrepeater.h",
     "socket.h",
     "socketadapters.cc",
     "socketadapters.h",
@@ -1074,9 +1076,6 @@ if (rtc_include_tests) {
         "win32_unittest.cc",
         "win32window_unittest.cc",
       ]
-    }
-    if (is_mac) {
-      sources += [ "macutils_unittest.cc" ]
     }
     if (is_posix) {
       sources += [

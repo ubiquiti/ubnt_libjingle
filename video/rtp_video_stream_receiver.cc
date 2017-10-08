@@ -148,7 +148,7 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
     VideoCodec ulpfec_codec = {};
     ulpfec_codec.codecType = kVideoCodecULPFEC;
     strncpy(ulpfec_codec.plName, "ulpfec", sizeof(ulpfec_codec.plName));
-    ulpfec_codec.plType = config_.rtp.ulpfec.ulpfec_payload_type;
+    ulpfec_codec.plType = config_.rtp.ulpfec_payload_type;
     RTC_CHECK(AddReceiveCodec(ulpfec_codec));
   }
 
@@ -156,7 +156,7 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
     VideoCodec red_codec = {};
     red_codec.codecType = kVideoCodecRED;
     strncpy(red_codec.plName, "red", sizeof(red_codec.plName));
-    red_codec.plType = config_.rtp.ulpfec.red_payload_type;
+    red_codec.plType = config_.rtp.red_payload_type;
     RTC_CHECK(AddReceiveCodec(red_codec));
   }
 
@@ -280,17 +280,14 @@ void RtpVideoStreamReceiver::OnRecoveredPacket(const uint8_t* rtp_packet,
 
   RTPHeader header;
   packet.GetHeader(&header);
-  bool in_order = IsPacketInOrder(header);
-  ReceivePacket(rtp_packet, rtp_packet_length, header, in_order);
+  ReceivePacket(rtp_packet, rtp_packet_length, header);
 }
 
 // TODO(pbos): Remove as soon as audio can handle a changing payload type
 // without this callback.
 int32_t RtpVideoStreamReceiver::OnInitializeDecoder(
-    const int8_t payload_type,
-    const char payload_name[RTP_PAYLOAD_NAME_SIZE],
-    const int frequency,
-    const size_t channels,
+    const int payload_type,
+    const SdpAudioFormat& audio_format,
     const uint32_t rate) {
   RTC_NOTREACHED();
   return 0;
@@ -341,7 +338,7 @@ void RtpVideoStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
     // TODO(nisse): Why isn't this done for recovered packets?
     rtp_payload_registry_.SetIncomingPayloadType(header);
   }
-  ReceivePacket(packet.data(), packet.size(), header, in_order);
+  ReceivePacket(packet.data(), packet.size(), header);
   // Update receive statistics after ReceivePacket.
   // Receive statistics will be reset if the payload type changes (make sure
   // that the first packet is included in the stats).
@@ -362,11 +359,11 @@ int32_t RtpVideoStreamReceiver::RequestKeyFrame() {
 }
 
 bool RtpVideoStreamReceiver::IsUlpfecEnabled() const {
-  return config_.rtp.ulpfec.ulpfec_payload_type != -1;
+  return config_.rtp.ulpfec_payload_type != -1;
 }
 
 bool RtpVideoStreamReceiver::IsRedEnabled() const {
-  return config_.rtp.ulpfec.red_payload_type != -1;
+  return config_.rtp.red_payload_type != -1;
 }
 
 bool RtpVideoStreamReceiver::IsRetransmissionsEnabled() const {
@@ -445,8 +442,7 @@ void RtpVideoStreamReceiver::RemoveSecondarySink(
 
 void RtpVideoStreamReceiver::ReceivePacket(const uint8_t* packet,
                                            size_t packet_length,
-                                           const RTPHeader& header,
-                                           bool in_order) {
+                                           const RTPHeader& header) {
   if (rtp_payload_registry_.IsRed(header)) {
     ParseAndHandleEncapsulatingHeader(packet, packet_length, header);
     return;
@@ -458,7 +454,7 @@ void RtpVideoStreamReceiver::ReceivePacket(const uint8_t* packet,
       rtp_payload_registry_.PayloadTypeToPayload(header.payloadType);
   if (pl) {
     rtp_receiver_->IncomingRtpPacket(header, payload, payload_length,
-                                     pl->typeSpecific, in_order);
+                                     pl->typeSpecific);
   }
 }
 
@@ -500,7 +496,7 @@ void RtpVideoStreamReceiver::NotifyReceiverOfFecPacket(
     LOG(LS_WARNING) << "Failed to get payload specifics.";
     return;
   }
-  rtp_header.type.Video.codec = pl->typeSpecific.Video.videoCodecType;
+  rtp_header.type.Video.codec = pl->typeSpecific.video_payload().videoCodecType;
   rtp_header.type.Video.rotation = kVideoRotation_0;
   if (header.extension.hasVideoRotation) {
     rtp_header.type.Video.rotation = header.extension.videoRotation;

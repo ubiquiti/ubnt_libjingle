@@ -23,6 +23,7 @@
 #include "modules/audio_processing/beamformer/array_util.h"
 #include "modules/audio_processing/include/config.h"
 #include "rtc_base/arraysize.h"
+#include "rtc_base/deprecation.h"
 #include "rtc_base/platform_file.h"
 #include "rtc_base/refcount.h"
 #include "typedefs.h"  // NOLINT(build/include)
@@ -32,6 +33,7 @@ namespace webrtc {
 struct AecCore;
 
 class AecDump;
+class AudioBuffer;
 class AudioFrame;
 
 class NonlinearBeamformer;
@@ -45,6 +47,7 @@ class GainControl;
 class HighPassFilter;
 class LevelEstimator;
 class NoiseSuppression;
+class PostProcessing;
 class VoiceDetection;
 
 // Use to enable the extended filter mode in the AEC, along with robustness
@@ -276,21 +279,21 @@ class AudioProcessing : public rtc::RefCountInterface {
         } erle;
 
         struct EpStrength {
-          float lf = 100.f;
-          float mf = 1000.f;
-          float hf = 5000.f;
+          float lf = 10.f;
+          float mf = 100.f;
+          float hf = 200.f;
           float default_len = 0.f;
         } ep_strength;
 
         struct Mask {
           float m1 = 0.01f;
           float m2 = 0.001f;
-          float m3 = 0.01f;
-          float m4 = 0.1f;
+          float m3 = 0.02f;  // Do not change.
+          float m4 = 0.3f;
         } gain_mask;
 
         struct EchoAudibility {
-          float low_render_limit = 192.f;
+          float low_render_limit = 4 * 64.f;
           float normal_render_limit = 64.f;
           float active_render_limit = 100.f;
         } echo_audibility;
@@ -310,8 +313,8 @@ class AudioProcessing : public rtc::RefCountInterface {
             float min_dec;
           };
 
-          GainChanges low_noise = {8.f, 8.f, 2.f, 2.f, 4.f, 4.f};
-          GainChanges normal = {4.f, 4.f, 2.f, 2.f, 1.2f, 2.f};
+          GainChanges low_noise = {8.f, 10.f, 2.f, 4.f, 4.f, 4.f};
+          GainChanges normal = {4.f, 10.f, 1.5f, 4.f, 2.f, 4.f};
           GainChanges saturation = {1.2f, 1.2f, 1.5f, 1.5f, 1.f, 1.f};
 
           float floor_first_increase = 0.001f;
@@ -359,9 +362,15 @@ class AudioProcessing : public rtc::RefCountInterface {
   static AudioProcessing* Create();
   // Allows passing in an optional configuration at create-time.
   static AudioProcessing* Create(const webrtc::Config& config);
-  // Only for testing.
+  // Deprecated. Use the Create below, with nullptr PostProcessing.
+  RTC_DEPRECATED
   static AudioProcessing* Create(const webrtc::Config& config,
                                  NonlinearBeamformer* beamformer);
+  // Allows passing in optional user-defined processing modules.
+  static AudioProcessing* Create(
+      const webrtc::Config& config,
+      std::unique_ptr<PostProcessing> capture_post_processor,
+      NonlinearBeamformer* beamformer);
   ~AudioProcessing() override {}
 
   // Initializes internal states, while retaining all user settings. This
@@ -930,6 +939,21 @@ class EchoControlMobile {
   virtual ~EchoControlMobile() {}
 };
 
+// Interface for an acoustic echo cancellation (AEC) submodule.
+class EchoControl {
+ public:
+  // Analysis (not changing) of the render signal.
+  virtual void AnalyzeRender(AudioBuffer* render) = 0;
+
+  // Analysis (not changing) of the capture signal.
+  virtual void AnalyzeCapture(AudioBuffer* capture) = 0;
+
+  // Processes the capture signal in order to remove the echo.
+  virtual void ProcessCapture(AudioBuffer* capture, bool echo_path_change) = 0;
+
+  virtual ~EchoControl() {}
+};
+
 // The automatic gain control (AGC) component brings the signal to an
 // appropriate range. This is done by applying a digital gain directly and, in
 // the analog mode, prescribing an analog gain to be applied at the audio HAL.
@@ -1085,6 +1109,19 @@ class NoiseSuppression {
 
  protected:
   virtual ~NoiseSuppression() {}
+};
+
+// Interface for a post processing submodule.
+class PostProcessing {
+ public:
+  // (Re-)Initializes the submodule.
+  virtual void Initialize(int sample_rate_hz, int num_channels) = 0;
+  // Processes the given capture or render signal.
+  virtual void Process(AudioBuffer* audio) = 0;
+  // Returns a string representation of the module state.
+  virtual std::string ToString() const = 0;
+
+  virtual ~PostProcessing() {}
 };
 
 // The voice activity detection (VAD) component analyzes the stream to

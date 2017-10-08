@@ -202,9 +202,9 @@ void RampUpTester::ModifyVideoConfigs(
     recv_config.rtp.nack.rtp_history_ms = send_config->rtp.nack.rtp_history_ms;
 
     if (red_) {
-      recv_config.rtp.ulpfec.red_payload_type =
+      recv_config.rtp.red_payload_type =
           send_config->rtp.ulpfec.red_payload_type;
-      recv_config.rtp.ulpfec.ulpfec_payload_type =
+      recv_config.rtp.ulpfec_payload_type =
           send_config->rtp.ulpfec.ulpfec_payload_type;
       if (rtx_) {
         recv_config.rtp.rtx_associated_payload_types
@@ -584,7 +584,15 @@ TEST_F(RampUpTest, UpDownUpTransportSequenceNumberRtx) {
 
 // TODO(holmer): Tests which don't report perf stats should be moved to a
 // different executable since they per definition are not perf tests.
-TEST_F(RampUpTest, UpDownUpTransportSequenceNumberPacketLoss) {
+// Crashes on Linux only, see webrtc:7919.
+#if defined(WEBRTC_LINUX) || defined(WEBRTC_MAC)
+#define MAYBE_UpDownUpTransportSequenceNumberPacketLoss \
+    DISABLED_UpDownUpTransportSequenceNumberPacketLoss
+#else
+#define MAYBE_UpDownUpTransportSequenceNumberPacketLoss \
+    UpDownUpTransportSequenceNumberPacketLoss
+#endif
+TEST_F(RampUpTest, MAYBE_UpDownUpTransportSequenceNumberPacketLoss) {
   std::vector<int> loss_rates = {20, 0, 0, 0};
   RampUpDownUpTester test(1, 0, 1, kStartBitrateBps,
                           RtpExtension::kTransportSequenceNumberUri, true,

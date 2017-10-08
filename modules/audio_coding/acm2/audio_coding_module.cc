@@ -149,13 +149,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
                      const size_t payload_length,
                      const WebRtcRTPHeader& rtp_info) override;
 
-  // Incoming payloads, without rtp-info, the rtp-info will be created in ACM.
-  // One usage for this API is when pre-encoded files are pushed in ACM.
-  int IncomingPayload(const uint8_t* incoming_payload,
-                      const size_t payload_length,
-                      uint8_t payload_type,
-                      uint32_t timestamp) override;
-
   // Minimum playout delay.
   int SetMinimumPlayoutDelay(int time_ms) override;
 
@@ -269,7 +262,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   rtc::CriticalSection acm_crit_sect_;
   rtc::Buffer encode_buffer_ RTC_GUARDED_BY(acm_crit_sect_);
-  int id_;  // TODO(henrik.lundin) Make const.
   uint32_t expected_codec_ts_ RTC_GUARDED_BY(acm_crit_sect_);
   uint32_t expected_in_ts_ RTC_GUARDED_BY(acm_crit_sect_);
   acm2::ACMResampler resampler_ RTC_GUARDED_BY(acm_crit_sect_);
@@ -291,14 +283,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   // This is to keep track of CN instances where we can send DTMFs.
   uint8_t previous_pltype_ RTC_GUARDED_BY(acm_crit_sect_);
-
-  // Used when payloads are pushed into ACM without any RTP info
-  // One example is when pre-encoded bit-stream is pushed from
-  // a file.
-  // IMPORTANT: this variable is only used in IncomingPayload(), therefore,
-  // no lock acquired when interacting with this variable. If it is going to
-  // be used in other methods, locks need to be taken.
-  std::unique_ptr<WebRtcRTPHeader> aux_rtp_header_;
 
   bool receiver_initialized_ RTC_GUARDED_BY(acm_crit_sect_);
 
@@ -456,8 +440,7 @@ void AudioCodingModuleImpl::ChangeLogger::MaybeLog(int value) {
 
 AudioCodingModuleImpl::AudioCodingModuleImpl(
     const AudioCodingModule::Config& config)
-    : id_(config.id),
-      expected_codec_ts_(0xD87F3F9F),
+    : expected_codec_ts_(0xD87F3F9F),
       expected_in_ts_(0xD87F3F9F),
       receiver_(config),
       bitrate_logger_("WebRTC.Audio.TargetBitrateInKbps"),
@@ -1120,7 +1103,6 @@ int AudioCodingModuleImpl::PlayoutData10Ms(int desired_freq_hz,
     LOG(LS_ERROR) << "PlayoutData failed, RecOut Failed";
     return -1;
   }
-  audio_frame->id_ = id_;
   return 0;
 }
 
@@ -1147,35 +1129,6 @@ int AudioCodingModuleImpl::RegisterVADCallback(ACMVADCallback* vad_callback) {
   LOG(LS_VERBOSE) << "RegisterVADCallback()";
   rtc::CritScope lock(&callback_crit_sect_);
   vad_callback_ = vad_callback;
-  return 0;
-}
-
-// TODO(kwiberg): Remove this method, and have callers call IncomingPacket
-// instead. The translation logic and state belong with them, not with
-// AudioCodingModuleImpl.
-int AudioCodingModuleImpl::IncomingPayload(const uint8_t* incoming_payload,
-                                           size_t payload_length,
-                                           uint8_t payload_type,
-                                           uint32_t timestamp) {
-  // We are not acquiring any lock when interacting with |aux_rtp_header_| no
-  // other method uses this member variable.
-  if (!aux_rtp_header_) {
-    // This is the first time that we are using |dummy_rtp_header_|
-    // so we have to create it.
-    aux_rtp_header_.reset(new WebRtcRTPHeader);
-    aux_rtp_header_->header.payloadType = payload_type;
-    // Don't matter in this case.
-    aux_rtp_header_->header.ssrc = 0;
-    aux_rtp_header_->header.markerBit = false;
-    // Start with random numbers.
-    aux_rtp_header_->header.sequenceNumber = 0x1234;  // Arbitrary.
-    aux_rtp_header_->type.Audio.channel = 1;
-  }
-
-  aux_rtp_header_->header.timestamp = timestamp;
-  IncomingPacket(incoming_payload, payload_length, *aux_rtp_header_);
-  // Get ready for the next payload.
-  aux_rtp_header_->header.sequenceNumber++;
   return 0;
 }
 
@@ -1286,7 +1239,7 @@ ANAStats AudioCodingModuleImpl::GetANAStats() const {
 }  // namespace
 
 AudioCodingModule::Config::Config()
-    : id(0), neteq_config(), clock(Clock::GetRealTimeClock()) {
+    : neteq_config(), clock(Clock::GetRealTimeClock()) {
   // Post-decode VAD is disabled by default in NetEq, however, Audio
   // Conference Mixer relies on VAD decisions and fails without them.
   neteq_config.enable_post_decode_vad = true;
@@ -1295,18 +1248,21 @@ AudioCodingModule::Config::Config()
 AudioCodingModule::Config::Config(const Config&) = default;
 AudioCodingModule::Config::~Config() = default;
 
-// Create module
 AudioCodingModule* AudioCodingModule::Create(int id) {
+  RTC_UNUSED(id);
+  return Create();
+}
+
+// Create module
+AudioCodingModule* AudioCodingModule::Create() {
   Config config;
-  config.id = id;
   config.clock = Clock::GetRealTimeClock();
   config.decoder_factory = CreateBuiltinAudioDecoderFactory();
   return Create(config);
 }
 
-AudioCodingModule* AudioCodingModule::Create(int id, Clock* clock) {
+AudioCodingModule* AudioCodingModule::Create(Clock* clock) {
   Config config;
-  config.id = id;
   config.clock = clock;
   config.decoder_factory = CreateBuiltinAudioDecoderFactory();
   return Create(config);

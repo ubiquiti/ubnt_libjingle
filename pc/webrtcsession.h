@@ -16,14 +16,14 @@
 #include <string>
 #include <vector>
 
+#include "api/candidate.h"
 #include "api/optional.h"
 #include "api/peerconnectioninterface.h"
 #include "api/statstypes.h"
 #include "call/call.h"
-#include "p2p/base/candidate.h"
-#include "p2p/base/transportcontroller.h"
 #include "pc/datachannel.h"
 #include "pc/mediasession.h"
+#include "pc/transportcontroller.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/sigslot.h"
 #include "rtc_base/sslidentity.h"
@@ -240,8 +240,6 @@ class WebRtcSession :
   }
 
   cricket::BaseChannel* GetChannel(const std::string& content_name);
-
-  cricket::SecurePolicy SdesPolicy() const;
 
   // Get current SSL role used by SCTP's underlying transport.
   bool GetSctpSslRole(rtc::SSLRole* role);

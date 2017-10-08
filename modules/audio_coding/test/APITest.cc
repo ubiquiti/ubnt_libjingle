@@ -25,7 +25,6 @@
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/timeutils.h"
 #include "system_wrappers/include/event_wrapper.h"
-#include "system_wrappers/include/trace.h"
 #include "test/gtest.h"
 #include "test/testsupport/fileutils.h"
 #include "typedefs.h"  // NOLINT(build/include)
@@ -48,8 +47,8 @@ void APITest::Wait(uint32_t waitLengthMs) {
 }
 
 APITest::APITest()
-    : _acmA(AudioCodingModule::Create(1)),
-      _acmB(AudioCodingModule::Create(2)),
+    : _acmA(AudioCodingModule::Create()),
+      _acmB(AudioCodingModule::Create()),
       _channel_A2B(NULL),
       _channel_B2A(NULL),
       _writeToFile(true),
@@ -259,14 +258,7 @@ int16_t APITest::SetUp() {
   // B
   _outFreqHzB = _outFileB.SamplingFrequency();
 
-  //Trace::SetEncryptedTraceFile("ACMAPITestEncrypted.txt");
-
   char print[11];
-
-  // Create a trace file.
-  Trace::CreateTrace();
-  Trace::SetTraceFile(
-      (webrtc::test::OutputPath() + "acm_api_trace.txt").c_str());
 
   printf("\nRandom Test (y/n)?");
   EXPECT_TRUE(fgets(print, 10, stdin) != NULL);

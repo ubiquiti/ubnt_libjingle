@@ -374,9 +374,11 @@ int NetEqImpl::NetworkStatistics(NetEqNetworkStatistics* stats) {
       sync_buffer_->FutureLength();
   assert(delay_manager_.get());
   assert(decision_logic_.get());
+  const int ms_per_packet = rtc::dchecked_cast<int>(
+      decision_logic_->packet_length_samples() / (fs_hz_ / 1000));
+  stats_.PopulateDelayManagerStats(ms_per_packet, *delay_manager_.get(), stats);
   stats_.GetNetworkStatistics(fs_hz_, total_samples_in_buffers,
-                              decoder_frame_length_, *delay_manager_.get(),
-                              *decision_logic_.get(), stats);
+                              decoder_frame_length_, stats);
   return 0;
 }
 
@@ -1948,7 +1950,8 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       assert(false);  // Should always be able to extract a packet here.
       return -1;
     }
-    stats_.StoreWaitingTime(packet->waiting_time->ElapsedMs());
+    const uint64_t waiting_time_ms = packet->waiting_time->ElapsedMs();
+    stats_.StoreWaitingTime(waiting_time_ms);
     RTC_DCHECK(!packet->empty());
 
     if (first_packet) {
@@ -1987,6 +1990,8 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       packet_duration = decoder_frame_length_;
     }
     extracted_samples = packet->timestamp - first_timestamp + packet_duration;
+
+    stats_.JitterBufferDelay(extracted_samples, waiting_time_ms);
 
     packet_list->push_back(std::move(*packet));  // Store packet in list.
     packet = rtc::Optional<Packet>();  // Ensure it's never used after the move.

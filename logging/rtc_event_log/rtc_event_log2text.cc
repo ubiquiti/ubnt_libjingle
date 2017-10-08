@@ -38,6 +38,7 @@
 #include "modules/rtp_rtcp/source/rtp_utility.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/flags.h"
+#include "rtc_base/logging.h"
 
 namespace {
 
@@ -386,6 +387,7 @@ int main(int argc, char* argv[]) {
     RTC_CHECK(ParseSsrc(FLAG_ssrc)) << "Flag verification has failed.";
 
   webrtc::RtpHeaderExtensionMap default_map = GetDefaultHeaderExtensionMap();
+  bool default_map_used = false;
 
   webrtc::ParsedRtcEventLog parsed_stream;
   if (!parsed_stream.ParseFile(input_file)) {
@@ -431,10 +433,14 @@ int main(int argc, char* argv[]) {
           webrtc::PacketDirection direction;
           webrtc::RtpHeaderExtensionMap* extension_map =
               parsed_stream.GetRtpHeader(i, &direction, header, &header_length,
-                                         &total_length);
+                                         &total_length, nullptr);
 
-          if (extension_map == nullptr)
+          if (extension_map == nullptr) {
             extension_map = &default_map;
+            if (!default_map_used)
+              LOG(LS_WARNING) << "Using default header extension map";
+            default_map_used = true;
+          }
 
           // Parse header to get SSRC and RTP time.
           webrtc::RtpUtility::RtpHeaderParser rtp_parser(header, header_length);
@@ -728,7 +734,8 @@ int main(int argc, char* argv[]) {
           if (probe_result.failure_reason) {
             std::cout << parsed_stream.GetTimestamp(i) << "\tPROBE_SUCCESS("
                       << probe_result.id << ")"
-                      << "\tfailure_reason=" << *probe_result.failure_reason
+                      << "\tfailure_reason="
+                      << static_cast<int>(*probe_result.failure_reason)
                       << std::endl;
           } else {
             std::cout << parsed_stream.GetTimestamp(i) << "\tPROBE_SUCCESS("

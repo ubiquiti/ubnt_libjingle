@@ -36,15 +36,13 @@ class RTPReceiverStrategy {
   // Implementations are encouraged to use the provided packet buffer and RTP
   // header as arguments to the callback; implementations are also allowed to
   // make changes in the data as necessary. The specific_payload argument
-  // provides audio or video-specific data. The is_first_packet argument is true
-  // if this packet is either the first packet ever or the first in its frame.
+  // provides audio or video-specific data.
   virtual int32_t ParseRtpPacket(WebRtcRTPHeader* rtp_header,
                                  const PayloadUnion& specific_payload,
                                  bool is_red,
                                  const uint8_t* payload,
                                  size_t payload_length,
-                                 int64_t timestamp_ms,
-                                 bool is_first_packet) = 0;
+                                 int64_t timestamp_ms) = 0;
 
   virtual TelephoneEventHandler* GetTelephoneEventHandler() = 0;
 
@@ -58,7 +56,9 @@ class RTPReceiverStrategy {
 
   // Notifies the strategy that we have created a new non-RED audio payload type
   // in the payload registry.
-  virtual int32_t OnNewPayloadTypeCreated(const CodecInst& audio_codec) = 0;
+  virtual int32_t OnNewPayloadTypeCreated(
+      int payload_type,
+      const SdpAudioFormat& audio_format) = 0;
 
   // Invokes the OnInitializeDecoder callback in a media-specific way.
   virtual int32_t InvokeOnInitializeDecoder(
@@ -91,7 +91,7 @@ class RTPReceiverStrategy {
   explicit RTPReceiverStrategy(RtpData* data_callback);
 
   rtc::CriticalSection crit_sect_;
-  PayloadUnion last_payload_;
+  rtc::Optional<PayloadUnion> last_payload_;
   RtpData* data_callback_;
 };
 }  // namespace webrtc

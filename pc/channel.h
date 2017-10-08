@@ -27,14 +27,13 @@
 #include "media/base/videosourceinterface.h"
 #include "p2p/base/dtlstransportinternal.h"
 #include "p2p/base/packettransportinternal.h"
-#include "p2p/base/transportcontroller.h"
 #include "p2p/client/socketmonitor.h"
 #include "pc/audiomonitor.h"
 #include "pc/mediamonitor.h"
 #include "pc/mediasession.h"
 #include "pc/rtcpmuxfilter.h"
-#include "pc/rtptransportinternal.h"
 #include "pc/srtpfilter.h"
+#include "pc/transportcontroller.h"
 #include "rtc_base/asyncinvoker.h"
 #include "rtc_base/asyncudpsocket.h"
 #include "rtc_base/criticalsection.h"
@@ -44,6 +43,8 @@
 
 namespace webrtc {
 class AudioSinkInterface;
+class RtpTransportInternal;
+class SrtpTransport;
 }  // namespace webrtc
 
 namespace cricket {
@@ -99,12 +100,12 @@ class BaseChannel
   const std::string& transport_name() const { return transport_name_; }
   bool enabled() const { return enabled_; }
 
-  // This function returns true if we are using SRTP.
-  bool secure() const { return srtp_filter_.IsActive(); }
-  // The following function returns true if we are using
-  // DTLS-based keying. If you turned off SRTP later, however
-  // you could have secure() == false and dtls_secure() == true.
-  bool secure_dtls() const { return dtls_keyed_; }
+  // This function returns true if we are using SDES.
+  bool sdes_active() const { return sdes_negotiator_.IsActive(); }
+  // The following function returns true if we are using DTLS-based keying.
+  bool dtls_active() const { return dtls_active_; }
+  // This function returns true if using SRTP (DTLS-based keying or SDES).
+  bool srtp_active() const { return sdes_active() || dtls_active(); }
 
   bool writable() const { return writable_; }
 
@@ -182,12 +183,7 @@ class BaseChannel
       override;
   int SetOption_n(SocketType type, rtc::Socket::Option o, int val);
 
-  SrtpFilter* srtp_filter() { return &srtp_filter_; }
-
   virtual cricket::MediaType media_type() = 0;
-
-  // This function returns true if we require SRTP for call setup.
-  bool srtp_required_for_testing() const { return srtp_required_; }
 
   // Public for testing.
   // TODO(zstein): Remove this once channels register themselves with
@@ -369,6 +365,8 @@ class BaseChannel
   void CacheRtpAbsSendTimeHeaderExtension_n(int rtp_abs_sendtime_extn_id);
   int GetTransportOverheadPerPacket() const;
   void UpdateTransportOverhead();
+  // Wraps the existing RtpTransport in an SrtpTransport.
+  void EnableSrtpTransport_n();
 
   rtc::Thread* const worker_thread_;
   rtc::Thread* const network_thread_;
@@ -389,16 +387,16 @@ class BaseChannel
   DtlsTransportInternal* rtp_dtls_transport_ = nullptr;
   DtlsTransportInternal* rtcp_dtls_transport_ = nullptr;
   std::unique_ptr<webrtc::RtpTransportInternal> rtp_transport_;
+  webrtc::SrtpTransport* srtp_transport_ = nullptr;
   std::vector<std::pair<rtc::Socket::Option, int> > socket_options_;
   std::vector<std::pair<rtc::Socket::Option, int> > rtcp_socket_options_;
-  SrtpFilter srtp_filter_;
+  SrtpFilter sdes_negotiator_;
   RtcpMuxFilter rtcp_mux_filter_;
   bool writable_ = false;
   bool was_ever_writable_ = false;
   bool has_received_packet_ = false;
-  bool dtls_keyed_ = false;
+  bool dtls_active_ = false;
   const bool srtp_required_ = true;
-  int rtp_abs_sendtime_extn_id_ = -1;
 
   // MediaChannel related members that should be accessed from the worker
   // thread.

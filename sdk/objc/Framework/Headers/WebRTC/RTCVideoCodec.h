@@ -69,19 +69,6 @@ RTC_EXPORT
 
 @end
 
-/** Class for H264 specific config. */
-typedef NS_ENUM(NSUInteger, RTCH264PacketizationMode) {
-  RTCH264PacketizationModeNonInterleaved = 0,  // Mode 1 - STAP-A, FU-A is allowed
-  RTCH264PacketizationModeSingleNalUnit        // Mode 0 - only single NALU allowed
-};
-
-RTC_EXPORT
-@interface RTCCodecSpecificInfoH264 : NSObject<RTCCodecSpecificInfo>
-
-@property(nonatomic, assign) RTCH264PacketizationMode packetizationMode;
-
-@end
-
 /** Callback block for encoder. */
 typedef BOOL (^RTCVideoEncoderCallback)(RTCEncodedImage *frame,
                                         id<RTCCodecSpecificInfo> info,
@@ -101,11 +88,14 @@ RTC_EXPORT
 
 - (instancetype)init NS_UNAVAILABLE;
 
+- (instancetype)initWithName:(NSString *)name;
+
 - (instancetype)initWithName:(NSString *)name
                   parameters:(nullable NSDictionary<NSString *, NSString *> *)parameters
     NS_DESIGNATED_INITIALIZER;
 
-@property(nonatomic, readonly) NSInteger payload;
+- (BOOL)isEqualToCodecInfo:(RTCVideoCodecInfo *)info;
+
 @property(nonatomic, readonly) NSString *name;
 @property(nonatomic, readonly) NSDictionary<NSString *, NSString *> *parameters;
 

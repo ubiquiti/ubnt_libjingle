@@ -94,7 +94,7 @@ AudioReceiveStream::AudioReceiveStream(
   RTC_CHECK_EQ(config.decoder_factory,
                channel_proxy_->GetAudioDecoderFactory());
 
-  channel_proxy_->RegisterExternalTransport(config.rtcp_send_transport);
+  channel_proxy_->RegisterTransport(config.rtcp_send_transport);
   channel_proxy_->SetReceiveCodecs(config.decoder_map);
 
   for (const auto& extension : config.rtp.extensions) {
@@ -122,7 +122,7 @@ AudioReceiveStream::~AudioReceiveStream() {
     Stop();
   }
   channel_proxy_->DisassociateSendChannel();
-  channel_proxy_->DeRegisterExternalTransport();
+  channel_proxy_->RegisterTransport(nullptr);
   channel_proxy_->ResetReceiverCongestionControlObjects();
   channel_proxy_->SetRtcEventLog(nullptr);
 }
@@ -197,6 +197,9 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.total_samples_received = ns.totalSamplesReceived;
   stats.concealed_samples = ns.concealedSamples;
   stats.concealment_events = ns.concealmentEvents;
+  stats.jitter_buffer_delay_seconds =
+      static_cast<double>(ns.jitterBufferDelayMs) /
+      static_cast<double>(rtc::kNumMillisecsPerSec);
   stats.expand_rate = Q14ToFloat(ns.currentExpandRate);
   stats.speech_expand_rate = Q14ToFloat(ns.currentSpeechExpandRate);
   stats.secondary_decoded_rate = Q14ToFloat(ns.currentSecondaryDecodedRate);
@@ -265,10 +268,9 @@ rtc::Optional<Syncable::Info> AudioReceiveStream::GetInfo() const {
   RTC_DCHECK(rtp_rtcp);
   RTC_DCHECK(rtp_receiver);
 
-  if (!rtp_receiver->Timestamp(&info.latest_received_capture_timestamp)) {
-    return rtc::Optional<Syncable::Info>();
-  }
-  if (!rtp_receiver->LastReceivedTimeMs(&info.latest_receive_time_ms)) {
+  if (!rtp_receiver->GetLatestTimestamps(
+          &info.latest_received_capture_timestamp,
+          &info.latest_receive_time_ms)) {
     return rtc::Optional<Syncable::Info>();
   }
   if (rtp_rtcp->RemoteNTP(&info.capture_time_ntp_secs,

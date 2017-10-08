@@ -12,12 +12,12 @@
 #define MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_H_
 
 #include "modules/audio_device/include/audio_device_defines.h"
-#include "modules/include/module.h"
 #include "rtc_base/scoped_ref_ptr.h"
+#include "rtc_base/refcount.h"
 
 namespace webrtc {
 
-class AudioDeviceModule : public RefCountedModule {
+class AudioDeviceModule : public rtc::RefCountInterface {
  public:
   enum ErrorCode {
     kAdmErrNone = 0,
@@ -57,7 +57,6 @@ class AudioDeviceModule : public RefCountedModule {
 
   // Error handling
   virtual ErrorCode LastError() const = 0;
-  virtual int32_t RegisterEventObserver(AudioDeviceObserver* eventCallback) = 0;
 
   // Full-duplex transportation of PCM audio
   virtual int32_t RegisterAudioCallback(AudioTransport* audioCallback) = 0;

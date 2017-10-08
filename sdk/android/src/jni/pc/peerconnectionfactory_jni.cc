@@ -30,7 +30,6 @@
 // We don't want to depend on 'system_wrappers:field_trial_default' because
 // clients should be able to provide their own implementation.
 #include "system_wrappers/include/field_trial_default.h"  // nogncheck
-#include "system_wrappers/include/trace.h"
 
 namespace webrtc {
 namespace jni {
@@ -147,7 +146,6 @@ JNI_FUNCTION_DECLARATION(
   // webrtc/rtc_base/ are convoluted, we simply wrap here to avoid having to
   // think about ramifications of auto-wrapping there.
   rtc::ThreadManager::Instance()->WrapCurrentThread();
-  Trace::CreateTrace();
 
   std::unique_ptr<rtc::Thread> network_thread =
       rtc::Thread::CreateWithSocketServer();
@@ -197,8 +195,8 @@ JNI_FUNCTION_DECLARATION(
   rtc::scoped_refptr<PeerConnectionFactoryInterface> factory(
       CreateModularPeerConnectionFactory(
           network_thread.get(), worker_thread.get(), signaling_thread.get(),
-          video_encoder_factory, video_decoder_factory, std::move(media_engine),
-          std::move(call_factory), std::move(rtc_event_log_factory)));
+          std::move(media_engine), std::move(call_factory),
+          std::move(rtc_event_log_factory)));
   RTC_CHECK(factory) << "Failed to create the peer connection factory; "
                      << "WebRTC/libjingle init likely failed on this device";
   // TODO(honghaiz): Maybe put the options as the argument of
@@ -225,7 +223,6 @@ JNI_FUNCTION_DECLARATION(void,
     delete field_trials_init_string;
     field_trials_init_string = NULL;
   }
-  Trace::ReturnTrace();
 }
 
 JNI_FUNCTION_DECLARATION(void,

@@ -364,9 +364,9 @@ rtc::Optional<Syncable::Info> VideoReceiveStream::GetInfo() const {
 
   RtpReceiver* rtp_receiver = rtp_video_stream_receiver_.GetRtpReceiver();
   RTC_DCHECK(rtp_receiver);
-  if (!rtp_receiver->Timestamp(&info.latest_received_capture_timestamp))
-    return rtc::Optional<Syncable::Info>();
-  if (!rtp_receiver->LastReceivedTimeMs(&info.latest_receive_time_ms))
+  if (!rtp_receiver->GetLatestTimestamps(
+          &info.latest_received_capture_timestamp,
+          &info.latest_receive_time_ms))
     return rtc::Optional<Syncable::Info>();
 
   RtpRtcp* rtp_rtcp = rtp_video_stream_receiver_.rtp_rtcp();
@@ -416,16 +416,19 @@ bool VideoReceiveStream::Decode() {
   }
 
   if (frame) {
+    int64_t now_ms = clock_->TimeInMilliseconds();
     RTC_DCHECK_EQ(res, video_coding::FrameBuffer::ReturnReason::kFrameFound);
     if (video_receiver_.Decode(frame.get()) == VCM_OK) {
       keyframe_required_ = false;
       frame_decoded_ = true;
       rtp_video_stream_receiver_.FrameDecoded(frame->picture_id);
-    } else if (!keyframe_required_ || !frame_decoded_) {
+    } else if (!frame_decoded_ || !keyframe_required_ ||
+               (last_keyframe_request_ms_ + kMaxWaitForKeyFrameMs < now_ms)) {
       keyframe_required_ = true;
       // TODO(philipel): Remove this keyframe request when downstream project
       //                 has been fixed.
       RequestKeyFrame();
+      last_keyframe_request_ms_ = now_ms;
     }
   } else {
     RTC_DCHECK_EQ(res, video_coding::FrameBuffer::ReturnReason::kTimeout);

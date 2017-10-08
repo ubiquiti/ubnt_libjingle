@@ -118,6 +118,13 @@ class TemporalLayersFactoryAdapter : public webrtc::TemporalLayersFactory {
     return tl_factory_.Create(adapted_simulcast_id_, temporal_layers,
                               initial_tl0_pic_idx);
   }
+  std::unique_ptr<webrtc::TemporalLayersChecker> CreateChecker(
+      int simulcast_id,
+      int temporal_layers,
+      uint8_t initial_tl0_pic_idx) const override {
+    return tl_factory_.CreateChecker(adapted_simulcast_id_, temporal_layers,
+                                     initial_tl0_pic_idx);
+  }
 
   const int adapted_simulcast_id_;
   const TemporalLayersFactory& tl_factory_;
@@ -151,11 +158,11 @@ int SimulcastEncoderAdapter::Release() {
   while (!streaminfos_.empty()) {
     std::unique_ptr<VideoEncoder> encoder =
         std::move(streaminfos_.back().encoder);
-    encoder->Release();
     // Even though it seems very unlikely, there are no guarantees that the
-    // encoder will not call back after being Release()'d. Therefore, we disable
-    // the callbacks here.
+    // encoder will not call back after being Release()'d. Therefore, we first
+    // disable the callbacks here.
     encoder->RegisterEncodeCompleteCallback(nullptr);
+    encoder->Release();
     streaminfos_.pop_back();  // Deletes callback adapter.
     stored_encoders_.push(std::move(encoder));
   }

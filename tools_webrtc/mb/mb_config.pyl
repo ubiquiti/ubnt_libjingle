@@ -96,6 +96,8 @@
 
       # Linux
       'WebRTC Perf Tests (Linux Trusty swarming)': 'perf_release_bot_x64',
+      'WebRTC Perf Tests (Mac swarming)': 'perf_release_bot_x64',
+      'WebRTC Perf Tests (Win swarming)': 'perf_release_bot_x64',
 
       # Android
       'Android (swarming)': 'android_release_bot_arm',
@@ -259,7 +261,8 @@
       'x64', 'no_rtc_tests'
     ],
     'memcheck_release_bot_x64': [
-      'memcheck', 'gn', 'openh264_release_bot', 'x64', 'use_default_libcxx'
+      'memcheck', 'gn', 'openh264_release_bot', 'x64', 'use_default_libcxx',
+      'no_lld'
     ],
 
     # iOS
@@ -426,6 +429,10 @@
 
     'no_clang': {
       'gn_args': 'is_clang=false',
+    },
+
+    'no_lld': {
+      'gn_args': 'use_lld=false',
     },
 
     'no_rtc_tests': {

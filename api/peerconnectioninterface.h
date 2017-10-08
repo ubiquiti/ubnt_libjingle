@@ -89,7 +89,6 @@
 #include "media/base/mediachannel.h"
 #include "media/base/videocapturer.h"
 #include "p2p/base/portallocator.h"
-#include "rtc_base/fileutils.h"
 #include "rtc_base/network.h"
 #include "rtc_base/rtccertificate.h"
 #include "rtc_base/rtccertificategenerator.h"
@@ -1029,21 +1028,6 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // Stops logging the AEC dump.
   virtual void StopAecDump() = 0;
 
-  // This function is deprecated and will be removed when Chrome is updated to
-  // use the equivalent function on PeerConnectionInterface.
-  // TODO(ivoc) Remove after Chrome is updated.
-  virtual bool StartRtcEventLog(rtc::PlatformFile file,
-                                int64_t max_size_bytes) = 0;
-  // This function is deprecated and will be removed when Chrome is updated to
-  // use the equivalent function on PeerConnectionInterface.
-  // TODO(ivoc) Remove after Chrome is updated.
-  virtual bool StartRtcEventLog(rtc::PlatformFile file) = 0;
-
-  // This function is deprecated and will be removed when Chrome is updated to
-  // use the equivalent function on PeerConnectionInterface.
-  // TODO(ivoc) Remove after Chrome is updated.
-  virtual void StopRtcEventLog() = 0;
-
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via
   // this interface.
@@ -1229,8 +1213,6 @@ CreateModularPeerConnectionFactory(
     rtc::Thread* network_thread,
     rtc::Thread* worker_thread,
     rtc::Thread* signaling_thread,
-    cricket::WebRtcVideoEncoderFactory* video_encoder_factory,
-    cricket::WebRtcVideoDecoderFactory* video_decoder_factory,
     std::unique_ptr<cricket::MediaEngineInterface> media_engine,
     std::unique_ptr<CallFactoryInterface> call_factory,
     std::unique_ptr<RtcEventLogFactoryInterface> event_log_factory);

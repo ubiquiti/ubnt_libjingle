@@ -70,7 +70,6 @@ class AudioCodingModule {
     Config(const Config&);
     ~Config();
 
-    int id;
     NetEq::Config neteq_config;
     Clock* clock;
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory;
@@ -83,8 +82,10 @@ class AudioCodingModule {
   // injected into ACM. ACM will take the ownership of the object clock and
   // delete it when destroyed.
   //
-  static AudioCodingModule* Create(int id);
-  static AudioCodingModule* Create(int id, Clock* clock);
+  // TODO(solenberg): Remove once downstream projects are updated.
+  RTC_DEPRECATED static AudioCodingModule* Create(int id);
+  static AudioCodingModule* Create();
+  static AudioCodingModule* Create(Clock* clock);
   static AudioCodingModule* Create(const Config& config);
   virtual ~AudioCodingModule() = default;
 
@@ -585,35 +586,6 @@ class AudioCodingModule {
   virtual int32_t IncomingPacket(const uint8_t* incoming_payload,
                                  const size_t payload_len_bytes,
                                  const WebRtcRTPHeader& rtp_info) = 0;
-
-  ///////////////////////////////////////////////////////////////////////////
-  // int32_t IncomingPayload()
-  // Call this API to push incoming payloads when there is no rtp-info.
-  // The rtp-info will be created in ACM. One usage for this API is when
-  // pre-encoded files are pushed in ACM
-  //
-  // Inputs:
-  //   -incoming_payload   : received payload.
-  //   -payload_len_byte   : the length, in bytes, of the received payload.
-  //   -payload_type       : the payload-type. This specifies which codec has
-  //                         to be used to decode the payload.
-  //   -timestamp          : send timestamp of the payload. ACM starts with
-  //                         a random value and increment it by the
-  //                         packet-size, which is given when the codec in
-  //                         question is registered by RegisterReceiveCodec().
-  //                         Therefore, it is essential to have the timestamp
-  //                         if the frame-size differ from the registered
-  //                         value or if the incoming payload contains DTX
-  //                         packets.
-  //
-  // Return value:
-  //   -1 if failed to push in the payload
-  //    0 if payload is successfully pushed in.
-  //
-  virtual int32_t IncomingPayload(const uint8_t* incoming_payload,
-                                  const size_t payload_len_byte,
-                                  const uint8_t payload_type,
-                                  const uint32_t timestamp = 0) = 0;
 
   ///////////////////////////////////////////////////////////////////////////
   // int SetMinimumPlayoutDelay()
