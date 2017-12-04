@@ -73,7 +73,7 @@ class TurnServerAllocation : public rtc::MessageHandler,
                        const TurnServerConnection& conn,
                        rtc::AsyncPacketSocket* server_socket,
                        const std::string& key);
-  virtual ~TurnServerAllocation();
+  ~TurnServerAllocation() override;
 
   TurnServerConnection* conn() { return &conn_; }
   const std::string& key() const { return key_; }
@@ -123,7 +123,7 @@ class TurnServerAllocation : public rtc::MessageHandler,
 
   void OnPermissionDestroyed(Permission* perm);
   void OnChannelDestroyed(Channel* channel);
-  virtual void OnMessage(rtc::Message* msg);
+  void OnMessage(rtc::Message* msg) override;
 
   TurnServer* server_;
   rtc::Thread* thread_;
@@ -157,6 +157,13 @@ class TurnRedirectInterface {
   virtual ~TurnRedirectInterface() {}
 };
 
+class StunMessageObserver {
+ public:
+  virtual void ReceivedMessage(const TurnMessage* msg) = 0;
+  virtual void ReceivedChannelData(const char* data, size_t size) = 0;
+  virtual ~StunMessageObserver() {}
+};
+
 // The core TURN server class. Give it a socket to listen on via
 // AddInternalServerSocket, and a factory to create external sockets via
 // SetExternalSocketFactory, and it's ready to go.
@@ -167,7 +174,7 @@ class TurnServer : public sigslot::has_slots<> {
       AllocationMap;
 
   explicit TurnServer(rtc::Thread* thread);
-  ~TurnServer();
+  ~TurnServer() override;
 
   // Gets/sets the realm value to use for the server.
   const std::string& realm() const { return realm_; }
@@ -212,6 +219,11 @@ class TurnServer : public sigslot::has_slots<> {
   std::string SetTimestampForNextNonce(int64_t timestamp) {
     ts_for_next_nonce_ = timestamp;
     return GenerateNonce(timestamp);
+  }
+
+  void SetStunMessageObserver(
+      std::unique_ptr<StunMessageObserver> observer) {
+    stun_message_observer_ = std::move(observer);
   }
 
  private:
@@ -295,6 +307,9 @@ class TurnServer : public sigslot::has_slots<> {
   // For testing only. If this is non-zero, the next NONCE will be generated
   // from this value, and it will be reset to 0 after generating the NONCE.
   int64_t ts_for_next_nonce_ = 0;
+
+  // For testing only. Used to observe STUN messages received.
+  std::unique_ptr<StunMessageObserver> stun_message_observer_;
 
   friend class TurnServerAllocation;
 };

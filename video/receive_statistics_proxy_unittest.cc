@@ -144,9 +144,9 @@ TEST_F(ReceiveStatisticsProxyTest, ReportsMaxInterframeDelay) {
 }
 
 TEST_F(ReceiveStatisticsProxyTest, ReportInterframeDelayInWindow) {
-  const int64_t kInterframeDelayMs1 = 9000;
-  const int64_t kInterframeDelayMs2 = 7500;
-  const int64_t kInterframeDelayMs3 = 7000;
+  const int64_t kInterframeDelayMs1 = 900;
+  const int64_t kInterframeDelayMs2 = 750;
+  const int64_t kInterframeDelayMs3 = 700;
   EXPECT_EQ(-1, statistics_proxy_->GetStats().interframe_delay_max_ms);
   statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(3u),
                                     VideoContentType::UNSPECIFIED);
@@ -999,26 +999,4 @@ TEST_P(ReceiveStatisticsProxyTest, StatsAreSlicedOnSimulcastAndExperiment) {
                   "WebRTC.Video.InterframeDelayInMs.ExperimentGroup0"));
   }
 }
-
-TEST_F(ReceiveStatisticsProxyTest, PercentileCounterReturnsCorrectPercentiles) {
-  ReceiveStatisticsProxy::HistogramPercentileCounter counter(10);
-  const std::vector<int> kTestValues = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10,
-                                        11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
-
-  EXPECT_FALSE(counter.GetPercentile(0.5f));
-  // Pairs of {fraction, percentile value} computed by hand
-  // for |kTestValues|.
-  const std::vector<std::pair<float, uint32_t>> kTestPercentiles = {
-      {0.0f, 1},   {0.01f, 1},  {0.5f, 10}, {0.9f, 18},
-      {0.95f, 19}, {0.99f, 20}, {1.0f, 20}};
-  size_t i;
-  for (i = 0; i < kTestValues.size(); ++i) {
-    counter.Add(kTestValues[i]);
-  }
-  for (i = 0; i < kTestPercentiles.size(); ++i) {
-    EXPECT_EQ(kTestPercentiles[i].second,
-              counter.GetPercentile(kTestPercentiles[i].first).value_or(0));
-  }
-}
-
 }  // namespace webrtc

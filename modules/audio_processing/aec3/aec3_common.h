@@ -29,7 +29,7 @@ enum class Aec3Optimization { kNone, kSse2, kNeon };
 constexpr int kNumBlocksPerSecond = 250;
 
 constexpr int kMetricsReportingIntervalBlocks = 10 * kNumBlocksPerSecond;
-constexpr int kMetricsComputationBlocks = 9;
+constexpr int kMetricsComputationBlocks = 11;
 constexpr int kMetricsCollectionBlocks =
     kMetricsReportingIntervalBlocks - kMetricsComputationBlocks;
 
@@ -39,35 +39,22 @@ constexpr size_t kFftLengthBy2Minus1 = kFftLengthBy2 - 1;
 constexpr size_t kFftLength = 2 * kFftLengthBy2;
 
 constexpr int kAdaptiveFilterLength = 12;
-constexpr int kResidualEchoPowerRenderWindowSize = 30;
+constexpr int kUnknownDelayRenderWindowSize = 30;
 constexpr int kAdaptiveFilterTimeDomainLength =
     kAdaptiveFilterLength * kFftLengthBy2;
+constexpr int kRenderTransferQueueSizeFrames = 100;
 
 constexpr size_t kMaxNumBands = 3;
 constexpr size_t kSubFrameLength = 80;
 
 constexpr size_t kBlockSize = kFftLengthBy2;
 constexpr size_t kExtendedBlockSize = 2 * kFftLengthBy2;
-constexpr size_t kSubBlockSize = 16;
-
-constexpr size_t kNumMatchedFilters = 4;
 constexpr size_t kMatchedFilterWindowSizeSubBlocks = 32;
 constexpr size_t kMatchedFilterAlignmentShiftSizeSubBlocks =
     kMatchedFilterWindowSizeSubBlocks * 3 / 4;
-constexpr size_t kDownsampledRenderBufferSize =
-    kSubBlockSize *
-    (kMatchedFilterAlignmentShiftSizeSubBlocks * kNumMatchedFilters +
-     kMatchedFilterWindowSizeSubBlocks +
-     1);
 
-constexpr size_t kRenderDelayBufferSize =
-    (3 * kDownsampledRenderBufferSize) / (4 * kSubBlockSize);
 
-constexpr size_t kMinEchoPathDelayBlocks = 5;
-constexpr size_t kMaxApiCallsJitterBlocks = 26;
-constexpr size_t kRenderTransferQueueSize = kMaxApiCallsJitterBlocks / 2;
-static_assert(2 * kRenderTransferQueueSize >= kMaxApiCallsJitterBlocks,
-              "Requirement to ensure buffer overflow detection");
+constexpr size_t kEchoPathChangeConvergenceBlocks = 2 * kNumBlocksPerSecond;
 
 // TODO(peah): Integrate this with how it is done inside audio_processing_impl.
 constexpr size_t NumBandsForRate(int sample_rate_hz) {
@@ -81,6 +68,19 @@ constexpr int LowestBandRate(int sample_rate_hz) {
 constexpr bool ValidFullBandRate(int sample_rate_hz) {
   return sample_rate_hz == 8000 || sample_rate_hz == 16000 ||
          sample_rate_hz == 32000 || sample_rate_hz == 48000;
+}
+
+constexpr size_t GetDownSampledBufferSize(size_t down_sampling_factor,
+                                          size_t num_matched_filters) {
+  return kBlockSize / down_sampling_factor *
+         (kMatchedFilterAlignmentShiftSizeSubBlocks * num_matched_filters +
+          kMatchedFilterWindowSizeSubBlocks + 1);
+}
+
+constexpr size_t GetRenderDelayBufferSize(size_t down_sampling_factor,
+                                          size_t num_matched_filters) {
+  return GetDownSampledBufferSize(down_sampling_factor, num_matched_filters) /
+         (kBlockSize / down_sampling_factor);
 }
 
 // Detects what kind of optimizations to use for the code.

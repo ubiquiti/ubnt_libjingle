@@ -16,15 +16,29 @@
 
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "api/datachannelinterface.h"
+#include "api/jsepicecandidate.h"
 #include "pc/streamcollection.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
 class MockPeerConnectionObserver : public PeerConnectionObserver {
  public:
+  struct AddTrackEvent {
+    explicit AddTrackEvent(
+        rtc::scoped_refptr<RtpReceiverInterface> receiver,
+        std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams)
+        : receiver(std::move(receiver)), streams(std::move(streams)) {}
+
+    rtc::scoped_refptr<RtpReceiverInterface> receiver;
+    std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams;
+  };
+
   MockPeerConnectionObserver() : remote_streams_(StreamCollection::Create()) {}
   virtual ~MockPeerConnectionObserver() {}
   void SetPeerConnectionInterface(PeerConnectionInterface* pc) {
@@ -61,30 +75,29 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
   void OnIceConnectionChange(
       PeerConnectionInterface::IceConnectionState new_state) override {
     RTC_DCHECK(pc_->ice_connection_state() == new_state);
+    ice_connected_ =
+        (new_state == PeerConnectionInterface::kIceConnectionConnected);
     callback_triggered_ = true;
   }
   void OnIceGatheringChange(
       PeerConnectionInterface::IceGatheringState new_state) override {
     RTC_DCHECK(pc_->ice_gathering_state() == new_state);
-    ice_complete_ = new_state == PeerConnectionInterface::kIceGatheringComplete;
+    ice_gathering_complete_ =
+        new_state == PeerConnectionInterface::kIceGatheringComplete;
     callback_triggered_ = true;
   }
-  void OnIceCandidate(const webrtc::IceCandidateInterface* candidate) override {
+  void OnIceCandidate(const IceCandidateInterface* candidate) override {
     RTC_DCHECK(PeerConnectionInterface::kIceGatheringNew !=
                pc_->ice_gathering_state());
-
-    std::string sdp;
-    bool success = candidate->ToString(&sdp);
-    RTC_DCHECK(success);
-    RTC_DCHECK(!sdp.empty());
-    last_candidate_.reset(webrtc::CreateIceCandidate(
-        candidate->sdp_mid(), candidate->sdp_mline_index(), sdp, NULL));
-    RTC_DCHECK(last_candidate_);
+    candidates_.push_back(rtc::MakeUnique<JsepIceCandidate>(
+        candidate->sdp_mid(), candidate->sdp_mline_index(),
+        candidate->candidate()));
     callback_triggered_ = true;
   }
 
   void OnIceCandidatesRemoved(
       const std::vector<cricket::Candidate>& candidates) override {
+    num_candidates_removed_++;
     callback_triggered_ = true;
   }
 
@@ -92,13 +105,26 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
     callback_triggered_ = true;
   }
 
-  void OnAddTrack(
-      rtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver,
-      const std::vector<rtc::scoped_refptr<webrtc::MediaStreamInterface>>&
-          streams) override {
+  void OnAddTrack(rtc::scoped_refptr<RtpReceiverInterface> receiver,
+                  const std::vector<rtc::scoped_refptr<MediaStreamInterface>>&
+                      streams) override {
     RTC_DCHECK(receiver);
     num_added_tracks_++;
     last_added_track_label_ = receiver->id();
+    add_track_events_.push_back(AddTrackEvent(receiver, streams));
+  }
+
+  void OnRemoveTrack(
+      rtc::scoped_refptr<RtpReceiverInterface> receiver) override {
+    remove_track_events_.push_back(receiver);
+  }
+
+  std::vector<rtc::scoped_refptr<RtpReceiverInterface>> GetAddTrackReceivers() {
+    std::vector<rtc::scoped_refptr<RtpReceiverInterface>> receivers;
+    for (const AddTrackEvent& event : add_track_events_) {
+      receivers.push_back(event.receiver);
+    }
+    return receivers;
   }
 
   // Returns the label of the last added stream.
@@ -114,16 +140,38 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
     return "";
   }
 
+  IceCandidateInterface* last_candidate() {
+    if (candidates_.empty()) {
+      return nullptr;
+    } else {
+      return candidates_.back().get();
+    }
+  }
+
+  std::vector<IceCandidateInterface*> GetCandidatesByMline(int mline_index) {
+    std::vector<IceCandidateInterface*> candidates;
+    for (const auto& candidate : candidates_) {
+      if (candidate->sdp_mline_index() == mline_index) {
+        candidates.push_back(candidate.get());
+      }
+    }
+    return candidates;
+  }
+
   rtc::scoped_refptr<PeerConnectionInterface> pc_;
   PeerConnectionInterface::SignalingState state_;
-  std::unique_ptr<IceCandidateInterface> last_candidate_;
+  std::vector<std::unique_ptr<IceCandidateInterface>> candidates_;
   rtc::scoped_refptr<DataChannelInterface> last_datachannel_;
   rtc::scoped_refptr<StreamCollection> remote_streams_;
   bool renegotiation_needed_ = false;
-  bool ice_complete_ = false;
+  bool ice_gathering_complete_ = false;
+  bool ice_connected_ = false;
   bool callback_triggered_ = false;
   int num_added_tracks_ = 0;
   std::string last_added_track_label_;
+  std::vector<AddTrackEvent> add_track_events_;
+  std::vector<rtc::scoped_refptr<RtpReceiverInterface>> remove_track_events_;
+  int num_candidates_removed_ = 0;
 
  private:
   rtc::scoped_refptr<MediaStreamInterface> last_added_stream_;
@@ -135,26 +183,27 @@ class MockCreateSessionDescriptionObserver
  public:
   MockCreateSessionDescriptionObserver()
       : called_(false),
-        result_(false) {}
+        error_("MockCreateSessionDescriptionObserver not called") {}
   virtual ~MockCreateSessionDescriptionObserver() {}
   virtual void OnSuccess(SessionDescriptionInterface* desc) {
     called_ = true;
-    result_ = true;
+    error_ = "";
     desc_.reset(desc);
   }
   virtual void OnFailure(const std::string& error) {
     called_ = true;
-    result_ = false;
+    error_ = error;
   }
   bool called() const { return called_; }
-  bool result() const { return result_; }
+  bool result() const { return error_.empty(); }
+  const std::string& error() const { return error_; }
   std::unique_ptr<SessionDescriptionInterface> MoveDescription() {
     return std::move(desc_);
   }
 
  private:
   bool called_;
-  bool result_;
+  std::string error_;
   std::unique_ptr<SessionDescriptionInterface> desc_;
 };
 
@@ -163,22 +212,42 @@ class MockSetSessionDescriptionObserver
  public:
   MockSetSessionDescriptionObserver()
       : called_(false),
-        result_(false) {}
-  virtual ~MockSetSessionDescriptionObserver() {}
-  virtual void OnSuccess() {
+        error_("MockSetSessionDescriptionObserver not called") {}
+  ~MockSetSessionDescriptionObserver() override {}
+  void OnSuccess() override {
     called_ = true;
-    result_ = true;
+    error_ = "";
   }
-  virtual void OnFailure(const std::string& error) {
+  void OnFailure(const std::string& error) override {
     called_ = true;
-    result_ = false;
+    error_ = error;
   }
   bool called() const { return called_; }
-  bool result() const { return result_; }
+  bool result() const { return error_.empty(); }
+  const std::string& error() const { return error_; }
 
  private:
   bool called_;
-  bool result_;
+  std::string error_;
+};
+
+class MockSetRemoteDescriptionObserver
+    : public rtc::RefCountedObject<SetRemoteDescriptionObserverInterface> {
+ public:
+  bool called() const { return error_.has_value(); }
+  RTCError& error() {
+    RTC_DCHECK(error_.has_value());
+    return *error_;
+  }
+
+  // SetRemoteDescriptionObserverInterface implementation.
+  void OnSetRemoteDescriptionComplete(RTCError error) override {
+    error_ = std::move(error);
+  }
+
+ private:
+  // Set on complete, on success this is set to an RTCError::OK() error.
+  rtc::Optional<RTCError> error_;
 };
 
 class MockDataChannelObserver : public webrtc::DataChannelObserver {

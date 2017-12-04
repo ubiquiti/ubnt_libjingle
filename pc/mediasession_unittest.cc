@@ -18,6 +18,7 @@
 #include "p2p/base/transportdescription.h"
 #include "p2p/base/transportinfo.h"
 #include "pc/mediasession.h"
+#include "pc/rtpmediautils.h"
 #include "pc/srtpfilter.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/fakesslidentity.h"
@@ -33,7 +34,6 @@ typedef std::vector<cricket::Candidate> Candidates;
 
 using cricket::MediaContentDescription;
 using cricket::MediaSessionDescriptionFactory;
-using cricket::MediaContentDirection;
 using cricket::MediaDescriptionOptions;
 using cricket::MediaSessionOptions;
 using cricket::MediaType;
@@ -66,12 +66,12 @@ using cricket::MEDIA_TYPE_DATA;
 using cricket::SEC_DISABLED;
 using cricket::SEC_ENABLED;
 using cricket::SEC_REQUIRED;
-using cricket::RtpTransceiverDirection;
 using rtc::CS_AES_CM_128_HMAC_SHA1_32;
 using rtc::CS_AES_CM_128_HMAC_SHA1_80;
 using rtc::CS_AEAD_AES_128_GCM;
 using rtc::CS_AEAD_AES_256_GCM;
 using webrtc::RtpExtension;
+using webrtc::RtpTransceiverDirection;
 
 static const AudioCodec kAudioCodecs1[] = {
     AudioCodec(103, "ISAC", 16000, -1, 1),
@@ -225,8 +225,7 @@ static bool IsMediaContentOfType(const ContentInfo* content,
   return mdesc && mdesc->type() == media_type;
 }
 
-static cricket::MediaContentDirection
-GetMediaDirection(const ContentInfo* content) {
+static RtpTransceiverDirection GetMediaDirection(const ContentInfo* content) {
   cricket::MediaContentDescription* desc =
       reinterpret_cast<cricket::MediaContentDescription*>(content->description);
   return desc->direction();
@@ -256,29 +255,36 @@ std::vector<MediaDescriptionOptions>::iterator FindFirstMediaDescriptionByMid(
   return std::find_if(
       opts->media_description_options.begin(),
       opts->media_description_options.end(),
-      [mid](const MediaDescriptionOptions& t) { return t.mid == mid; });
+      [&mid](const MediaDescriptionOptions& t) { return t.mid == mid; });
+}
+
+std::vector<MediaDescriptionOptions>::const_iterator
+FindFirstMediaDescriptionByMid(const std::string& mid,
+                               const MediaSessionOptions& opts) {
+  return std::find_if(
+      opts.media_description_options.begin(),
+      opts.media_description_options.end(),
+      [&mid](const MediaDescriptionOptions& t) { return t.mid == mid; });
 }
 
 // Add a media section to the |session_options|.
 static void AddMediaSection(MediaType type,
                             const std::string& mid,
-                            MediaContentDirection direction,
+                            RtpTransceiverDirection direction,
                             bool stopped,
                             MediaSessionOptions* opts) {
-  opts->media_description_options.push_back(MediaDescriptionOptions(
-      type, mid,
-      cricket::RtpTransceiverDirection::FromMediaContentDirection(direction),
-      stopped));
+  opts->media_description_options.push_back(
+      MediaDescriptionOptions(type, mid, direction, stopped));
 }
 
-static void AddAudioVideoSections(MediaContentDirection direction,
+static void AddAudioVideoSections(RtpTransceiverDirection direction,
                                   MediaSessionOptions* opts) {
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", direction, kActive, opts);
   AddMediaSection(MEDIA_TYPE_VIDEO, "video", direction, kActive, opts);
 }
 
 static void AddDataSection(cricket::DataChannelType dct,
-                           MediaContentDirection direction,
+                           RtpTransceiverDirection direction,
                            MediaSessionOptions* opts) {
   opts->data_channel_type = dct;
   AddMediaSection(MEDIA_TYPE_DATA, "data", direction, kActive, opts);
@@ -326,8 +332,8 @@ static void DetachSenderFromMediaSection(const std::string& mid,
 // (https://tools.ietf.org/html/draft-uberti-rtcweb-plan-00).
 static MediaSessionOptions CreatePlanBMediaSessionOptions() {
   MediaSessionOptions session_options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &session_options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &session_options);
   return session_options;
 }
 
@@ -402,7 +408,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
   }
 
   void TestTransportInfo(bool offer,
-                         MediaSessionOptions& options,
+                         const MediaSessionOptions& options,
                          bool has_current_desc) {
     const std::string current_audio_ufrag = "current_audio_ufrag";
     const std::string current_audio_pwd = "current_audio_pwd";
@@ -448,7 +454,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
                   ti_audio->description.ice_pwd.size());
       }
       auto media_desc_options_it =
-          FindFirstMediaDescriptionByMid("audio", &options);
+          FindFirstMediaDescriptionByMid("audio", options);
       EXPECT_EQ(
           media_desc_options_it->transport_options.enable_ice_renomination,
           GetIceRenomination(ti_audio));
@@ -476,7 +482,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
         }
       }
       auto media_desc_options_it =
-          FindFirstMediaDescriptionByMid("video", &options);
+          FindFirstMediaDescriptionByMid("video", options);
       EXPECT_EQ(
           media_desc_options_it->transport_options.enable_ice_renomination,
           GetIceRenomination(ti_video));
@@ -503,7 +509,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
         }
       }
       auto media_desc_options_it =
-          FindFirstMediaDescriptionByMid("data", &options);
+          FindFirstMediaDescriptionByMid("data", options);
       EXPECT_EQ(
           media_desc_options_it->transport_options.enable_ice_renomination,
           GetIceRenomination(ti_data));
@@ -516,8 +522,9 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
   void TestCryptoWithBundle(bool offer) {
     f1_.set_secure(SEC_ENABLED);
     MediaSessionOptions options;
-    AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-    AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+    AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+    AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                   &options);
     std::unique_ptr<SessionDescription> ref_desc;
     std::unique_ptr<SessionDescription> desc;
     if (offer) {
@@ -565,8 +572,8 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
   // |expected_direction_in_answer| in an answer if the offer direction is set
   // to |direction_in_offer| and the answer is willing to both send and receive.
   void TestMediaDirectionInAnswer(
-      cricket::MediaContentDirection direction_in_offer,
-      cricket::MediaContentDirection expected_direction_in_answer) {
+      RtpTransceiverDirection direction_in_offer,
+      RtpTransceiverDirection expected_direction_in_answer) {
     MediaSessionOptions offer_opts;
     AddAudioVideoSections(direction_in_offer, &offer_opts);
 
@@ -579,7 +586,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
     ASSERT_TRUE(vc_offer != NULL);
 
     MediaSessionOptions answer_opts;
-    AddAudioVideoSections(cricket::MD_SENDRECV, &answer_opts);
+    AddAudioVideoSections(RtpTransceiverDirection::kSendRecv, &answer_opts);
     std::unique_ptr<SessionDescription> answer(
         f2_.CreateAnswer(offer.get(), answer_opts, NULL));
     const AudioContentDescription* acd_answer =
@@ -605,11 +612,11 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
 
   void TestVideoGcmCipher(bool gcm_offer, bool gcm_answer) {
     MediaSessionOptions offer_opts;
-    AddAudioVideoSections(cricket::MD_RECVONLY, &offer_opts);
+    AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &offer_opts);
     offer_opts.crypto_options.enable_gcm_crypto_suites = gcm_offer;
 
     MediaSessionOptions answer_opts;
-    AddAudioVideoSections(cricket::MD_RECVONLY, &answer_opts);
+    AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &answer_opts);
     answer_opts.crypto_options.enable_gcm_crypto_suites = gcm_answer;
 
     f1_.set_secure(SEC_ENABLED);
@@ -683,7 +690,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAudioOffer) {
 // Create a typical video offer, and ensure it matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoOffer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
@@ -724,8 +731,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestBundleOfferWithSameCodecPlType) {
   ASSERT_EQ(offered_video_codec.id, offered_data_codec.id);
 
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   opts.bundle_enabled = true;
   std::unique_ptr<SessionDescription> offer(f2_.CreateOffer(opts, NULL));
   const VideoContentDescription* vcd =
@@ -752,10 +759,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_INACTIVE, kStopped,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kInactive,
+                  kStopped, &opts);
   opts.data_channel_type = cricket::DCT_NONE;
   opts.bundle_enabled = true;
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
@@ -763,8 +770,9 @@ TEST_F(MediaSessionDescriptionFactoryTest,
       f2_.CreateAnswer(offer.get(), opts, NULL));
 
   MediaSessionOptions updated_opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &updated_opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &updated_opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &updated_opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &updated_opts);
   updated_opts.bundle_enabled = true;
   std::unique_ptr<SessionDescription> updated_offer(
       f1_.CreateOffer(updated_opts, answer.get()));
@@ -790,8 +798,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 // Create a RTP data offer, and ensure it matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateRtpDataOffer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
@@ -826,7 +834,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateRtpDataOffer) {
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSctpDataOffer) {
   MediaSessionOptions opts;
   opts.bundle_enabled = true;
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
   f1_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   EXPECT_TRUE(offer.get() != NULL);
@@ -837,7 +845,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSctpDataOffer) {
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateImplicitSctpDataOffer) {
   MediaSessionOptions opts;
   opts.bundle_enabled = true;
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
   f1_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer1(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer1.get() != NULL);
@@ -863,7 +871,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateImplicitSctpDataOffer) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        TestCreateOfferWithoutLegacyStreams) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
   const ContentInfo* ac = offer->GetContentByName("audio");
@@ -882,7 +890,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 // Creates an audio+video sendonly offer.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSendOnlyOffer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_SENDONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kSendOnly, &opts);
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, kVideoTrack1,
                              {kMediaStream1}, 1, &opts);
   AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
@@ -894,23 +902,25 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSendOnlyOffer) {
   EXPECT_TRUE(IsMediaContentOfType(&offer->contents()[0], MEDIA_TYPE_AUDIO));
   EXPECT_TRUE(IsMediaContentOfType(&offer->contents()[1], MEDIA_TYPE_VIDEO));
 
-  EXPECT_EQ(cricket::MD_SENDONLY, GetMediaDirection(&offer->contents()[0]));
-  EXPECT_EQ(cricket::MD_SENDONLY, GetMediaDirection(&offer->contents()[1]));
+  EXPECT_EQ(RtpTransceiverDirection::kSendOnly,
+            GetMediaDirection(&offer->contents()[0]));
+  EXPECT_EQ(RtpTransceiverDirection::kSendOnly,
+            GetMediaDirection(&offer->contents()[1]));
 }
 
 // Verifies that the order of the media contents in the current
 // SessionDescription is preserved in the new SessionDescription.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateOfferContentOrder) {
   MediaSessionOptions opts;
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
 
   std::unique_ptr<SessionDescription> offer1(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer1.get() != NULL);
   EXPECT_EQ(1u, offer1->contents().size());
   EXPECT_TRUE(IsMediaContentOfType(&offer1->contents()[0], MEDIA_TYPE_DATA));
 
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer2(
       f1_.CreateOffer(opts, offer1.get()));
   ASSERT_TRUE(offer2.get() != NULL);
@@ -918,8 +928,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateOfferContentOrder) {
   EXPECT_TRUE(IsMediaContentOfType(&offer2->contents()[0], MEDIA_TYPE_DATA));
   EXPECT_TRUE(IsMediaContentOfType(&offer2->contents()[1], MEDIA_TYPE_VIDEO));
 
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer3(
       f1_.CreateOffer(opts, offer2.get()));
   ASSERT_TRUE(offer3.get() != NULL);
@@ -984,7 +994,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAudioAnswerGcm) {
 // Create a typical video answer, and ensure it matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
@@ -1035,7 +1045,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerGcmAnswer) {
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswer) {
   MediaSessionOptions opts = CreatePlanBMediaSessionOptions();
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
@@ -1068,7 +1078,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswer) {
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswerGcm) {
   MediaSessionOptions opts = CreatePlanBMediaSessionOptions();
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   opts.crypto_options.enable_gcm_crypto_suites = true;
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
@@ -1104,7 +1114,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswerGcm) {
 // The answer's use_sctpmap flag should match the offer's.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswerUsesSctpmap) {
   MediaSessionOptions opts;
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
   ContentInfo* dc_offer = offer->GetContentByName("data");
@@ -1125,7 +1135,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswerUsesSctpmap) {
 // The answer's use_sctpmap flag should match the offer's.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateDataAnswerWithoutSctpmap) {
   MediaSessionOptions opts;
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
   ContentInfo* dc_offer = offer->GetContentByName("data");
@@ -1155,7 +1165,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   tdf2_.set_secure(SEC_ENABLED);
 
   MediaSessionOptions opts;
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
   ASSERT_TRUE(offer.get() != nullptr);
   ContentInfo* dc_offer = offer->GetContentByName("data");
@@ -1184,20 +1194,20 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAnswerContentOrder) {
   MediaSessionOptions opts;
 
   // Creates a data only offer.
-  AddDataSection(cricket::DCT_SCTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_SCTP, RtpTransceiverDirection::kSendRecv, &opts);
   std::unique_ptr<SessionDescription> offer1(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer1.get() != NULL);
 
   // Appends audio to the offer.
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer2(
       f1_.CreateOffer(opts, offer1.get()));
   ASSERT_TRUE(offer2.get() != NULL);
 
   // Appends video to the offer.
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer3(
       f1_.CreateOffer(opts, offer2.get()));
   ASSERT_TRUE(offer3.get() != NULL);
@@ -1217,32 +1227,36 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAnswerContentOrder) {
 // This test that the media direction is set to send/receive in an answer if
 // the offer is send receive.
 TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerToSendReceiveOffer) {
-  TestMediaDirectionInAnswer(cricket::MD_SENDRECV, cricket::MD_SENDRECV);
+  TestMediaDirectionInAnswer(RtpTransceiverDirection::kSendRecv,
+                             RtpTransceiverDirection::kSendRecv);
 }
 
 // This test that the media direction is set to receive only in an answer if
 // the offer is send only.
 TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerToSendOnlyOffer) {
-  TestMediaDirectionInAnswer(cricket::MD_SENDONLY, cricket::MD_RECVONLY);
+  TestMediaDirectionInAnswer(RtpTransceiverDirection::kSendOnly,
+                             RtpTransceiverDirection::kRecvOnly);
 }
 
 // This test that the media direction is set to send only in an answer if
 // the offer is recv only.
 TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerToRecvOnlyOffer) {
-  TestMediaDirectionInAnswer(cricket::MD_RECVONLY, cricket::MD_SENDONLY);
+  TestMediaDirectionInAnswer(RtpTransceiverDirection::kRecvOnly,
+                             RtpTransceiverDirection::kSendOnly);
 }
 
 // This test that the media direction is set to inactive in an answer if
 // the offer is inactive.
 TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerToInactiveOffer) {
-  TestMediaDirectionInAnswer(cricket::MD_INACTIVE, cricket::MD_INACTIVE);
+  TestMediaDirectionInAnswer(RtpTransceiverDirection::kInactive,
+                             RtpTransceiverDirection::kInactive);
 }
 
 // Test that a data content with an unknown protocol is rejected in an answer.
 TEST_F(MediaSessionDescriptionFactoryTest,
        CreateDataAnswerToOfferWithUnknownProtocol) {
   MediaSessionOptions opts;
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
@@ -1297,7 +1311,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, AudioOfferAnswerWithCryptoDisabled) {
 // matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestOfferAnswerWithRtpExtensions) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_audio_rtp_header_extensions(MAKE_VECTOR(kAudioRtpExtension1));
   f1_.set_video_rtp_header_extensions(MAKE_VECTOR(kVideoRtpExtension1));
   f2_.set_audio_rtp_header_extensions(MAKE_VECTOR(kAudioRtpExtension2));
@@ -1325,7 +1339,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestOfferAnswerWithRtpExtensions) {
 TEST_F(MediaSessionDescriptionFactoryTest,
     TestOfferAnswerWithEncryptedRtpExtensionsBoth) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   f1_.set_enable_encrypted_rtp_header_extensions(true);
   f2_.set_enable_encrypted_rtp_header_extensions(true);
@@ -1361,7 +1375,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
     TestOfferAnswerWithEncryptedRtpExtensionsOffer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   f1_.set_enable_encrypted_rtp_header_extensions(true);
 
@@ -1396,7 +1410,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
     TestOfferAnswerWithEncryptedRtpExtensionsAnswer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   f2_.set_enable_encrypted_rtp_header_extensions(true);
 
@@ -1432,8 +1446,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        TestCreateAnswerWithoutLegacyStreams) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
   std::unique_ptr<SessionDescription> answer(
@@ -1457,8 +1471,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestPartial) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   f1_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
@@ -1494,12 +1508,14 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestPartial) {
 // Create a typical video answer, and ensure it matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerRtcpMux) {
   MediaSessionOptions offer_opts;
-  AddAudioVideoSections(cricket::MD_SENDRECV, &offer_opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_SENDRECV, &offer_opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kSendRecv, &offer_opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kSendRecv,
+                 &offer_opts);
 
   MediaSessionOptions answer_opts;
-  AddAudioVideoSections(cricket::MD_SENDRECV, &answer_opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_SENDRECV, &answer_opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kSendRecv, &answer_opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kSendRecv,
+                 &answer_opts);
 
   std::unique_ptr<SessionDescription> offer;
   std::unique_ptr<SessionDescription> answer;
@@ -1576,10 +1592,10 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateVideoAnswerRtcpMux) {
 // Create an audio-only answer to a video offer.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAudioAnswerToVideo) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
 
@@ -1598,8 +1614,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateAudioAnswerToVideo) {
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateNoDataAnswerToDataOffer) {
   MediaSessionOptions opts = CreatePlanBMediaSessionOptions();
   opts.data_channel_type = cricket::DCT_RTP;
-  AddMediaSection(MEDIA_TYPE_DATA, "data", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_DATA, "data", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
 
@@ -1618,8 +1634,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateNoDataAnswerToDataOffer) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        CreateAnswerToOfferWithRejectedMedia) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   ASSERT_TRUE(offer.get() != NULL);
   ContentInfo* ac = offer->GetContentByName("audio");
@@ -1652,7 +1668,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 // adding a new video track and replaces one of the audio tracks.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoOffer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_SENDRECV, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kSendRecv, &opts);
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, kVideoTrack1,
                              {kMediaStream1}, 1, &opts);
   AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
@@ -1660,7 +1676,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoOffer) {
   AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack2,
                              {kMediaStream1}, 1, &opts);
 
-  AddDataSection(cricket::DCT_RTP, cricket::MD_SENDRECV, &opts);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kSendRecv, &opts);
   AttachSenderToMediaSection("data", MEDIA_TYPE_DATA, kDataTrack1,
                              {kMediaStream1}, 1, &opts);
   AttachSenderToMediaSection("data", MEDIA_TYPE_DATA, kDataTrack2,
@@ -1800,10 +1816,10 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoOffer) {
 // Create an offer with simulcast video stream.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSimulcastVideoOffer) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
   const int num_sim_layers = 3;
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, kVideoTrack1,
                              {kMediaStream1}, num_sim_layers, &opts);
@@ -1832,22 +1848,22 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateSimulcastVideoOffer) {
 // adding a new video track and removes one of the audio tracks.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoAnswer) {
   MediaSessionOptions offer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &offer_opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &offer_opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &offer_opts);
   offer_opts.data_channel_type = cricket::DCT_RTP;
-  AddMediaSection(MEDIA_TYPE_DATA, "data", cricket::MD_RECVONLY, kActive,
-                  &offer_opts);
+  AddMediaSection(MEDIA_TYPE_DATA, "data", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &offer_opts);
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(offer_opts, NULL));
 
   MediaSessionOptions answer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_SENDRECV, kActive,
-                  &answer_opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
-                  &answer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kSendRecv,
+                  kActive, &answer_opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &answer_opts);
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, kVideoTrack1,
                              {kMediaStream1}, 1, &answer_opts);
   AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
@@ -1855,8 +1871,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoAnswer) {
   AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack2,
                              {kMediaStream1}, 1, &answer_opts);
 
-  AddMediaSection(MEDIA_TYPE_DATA, "data", cricket::MD_SENDRECV, kActive,
-                  &answer_opts);
+  AddMediaSection(MEDIA_TYPE_DATA, "data", RtpTransceiverDirection::kSendRecv,
+                  kActive, &answer_opts);
   AttachSenderToMediaSection("data", MEDIA_TYPE_DATA, kDataTrack1,
                              {kMediaStream1}, 1, &answer_opts);
   AttachSenderToMediaSection("data", MEDIA_TYPE_DATA, kDataTrack2,
@@ -1985,7 +2001,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoAnswer) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        RespondentCreatesOfferAfterCreatingAnswer) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   std::unique_ptr<SessionDescription> answer(
@@ -2036,8 +2052,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        RespondentCreatesOfferAfterCreatingAnswerWithRtx) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::vector<VideoCodec> f1_codecs = MAKE_VECTOR(kVideoCodecs1);
   // This creates rtx for H264 with the payload type |f1_| uses.
   AddRtxCodec(VideoCodec::CreateRtxCodec(126, kVideoCodecs1[1].id), &f1_codecs);
@@ -2085,8 +2101,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        RespondentCreatesOfferAfterCreatingAnswerWithRemappedRtxPayloadType) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   // We specifically choose different preferred payload types for VP8 to
   // trigger the issue.
   cricket::VideoCodec vp8_offerer(100, "VP8");
@@ -2143,8 +2159,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   f1_.set_video_codecs(f1_codecs);
 
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
 
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
   std::unique_ptr<SessionDescription> answer(
@@ -2158,7 +2174,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   // reference  be the same as an audio codec that was negotiated in the
   // first offer/answer exchange.
   opts.media_description_options.clear();
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   std::vector<VideoCodec> f2_codecs = MAKE_VECTOR(kVideoCodecs2);
   int used_pl_type = acd->codecs()[0].id;
@@ -2195,7 +2211,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        RespondentCreatesOfferWithRtxAfterCreatingAnswerWithoutRtx) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   std::vector<VideoCodec> f2_codecs = MAKE_VECTOR(kVideoCodecs2);
   // This creates rtx for H264 with the payload type |f2_| uses.
@@ -2233,8 +2249,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 // Test that RTX is ignored when there is no associated payload type parameter.
 TEST_F(MediaSessionDescriptionFactoryTest, RtxWithoutApt) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::vector<VideoCodec> f1_codecs = MAKE_VECTOR(kVideoCodecs1);
   // This creates RTX without associated payload type parameter.
   AddRtxCodec(VideoCodec(126, cricket::kRtxCodecName), &f1_codecs);
@@ -2277,8 +2293,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, RtxWithoutApt) {
 // type doesn't match the local value.
 TEST_F(MediaSessionDescriptionFactoryTest, FilterOutRtxIfAptDoesntMatch) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::vector<VideoCodec> f1_codecs = MAKE_VECTOR(kVideoCodecs1);
   // This creates RTX for H264 in sender.
   AddRtxCodec(VideoCodec::CreateRtxCodec(126, kVideoCodecs1[1].id), &f1_codecs);
@@ -2307,8 +2323,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, FilterOutRtxIfAptDoesntMatch) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        FilterOutUnsupportedRtxWhenCreatingAnswer) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::vector<VideoCodec> f1_codecs = MAKE_VECTOR(kVideoCodecs1);
   // This creates RTX for H264-SVC in sender.
   AddRtxCodec(VideoCodec::CreateRtxCodec(125, kVideoCodecs1[0].id), &f1_codecs);
@@ -2342,8 +2358,8 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 // to add another.
 TEST_F(MediaSessionDescriptionFactoryTest, AddSecondRtxInNewOffer) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_RECVONLY, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &opts);
   std::vector<VideoCodec> f1_codecs = MAKE_VECTOR(kVideoCodecs1);
   // This creates RTX for H264 for the offerer.
   AddRtxCodec(VideoCodec::CreateRtxCodec(126, kVideoCodecs1[1].id), &f1_codecs);
@@ -2377,8 +2393,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, AddSecondRtxInNewOffer) {
 // generated for each simulcast ssrc and correctly grouped.
 TEST_F(MediaSessionDescriptionFactoryTest, SimSsrcsGenerateMultipleRtxSsrcs) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
   // Add simulcast streams.
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, "stream1",
                              {"stream1label"}, 3, &opts);
@@ -2418,8 +2434,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, SimSsrcsGenerateMultipleRtxSsrcs) {
 // together with a FEC-FR grouping.
 TEST_F(MediaSessionDescriptionFactoryTest, GenerateFlexfecSsrc) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
   // Add single stream.
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, "stream1",
                              {"stream1label"}, 1, &opts);
@@ -2458,8 +2474,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, GenerateFlexfecSsrc) {
 // multiple FlexfecSenders, or through multistream protection.
 TEST_F(MediaSessionDescriptionFactoryTest, SimSsrcsGenerateNoFlexfecSsrcs) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
   // Add simulcast streams.
   AttachSenderToMediaSection("video", MEDIA_TYPE_VIDEO, "stream1",
                              {"stream1label"}, 3, &opts);
@@ -2502,7 +2518,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, SimSsrcsGenerateNoFlexfecSsrcs) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        RespondentCreatesOfferAfterCreatingAnswerWithRtpExtensions) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   f1_.set_audio_rtp_header_extensions(MAKE_VECTOR(kAudioRtpExtension1));
   f1_.set_video_rtp_header_extensions(MAKE_VECTOR(kVideoRtpExtension1));
@@ -2556,7 +2572,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 // updated offer (this was previously a bug).
 TEST_F(MediaSessionDescriptionFactoryTest, RtpExtensionIdReused) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   f1_.set_audio_rtp_header_extensions(MAKE_VECTOR(kAudioRtpExtension3));
   f1_.set_video_rtp_header_extensions(MAKE_VECTOR(kVideoRtpExtension3));
@@ -2591,7 +2607,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, RtpExtensionIdReused) {
 // Same as "RtpExtensionIdReused" above for encrypted RTP extensions.
 TEST_F(MediaSessionDescriptionFactoryTest, RtpExtensionIdReusedEncrypted) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
 
   f1_.set_enable_encrypted_rtp_header_extensions(true);
   f2_.set_enable_encrypted_rtp_header_extensions(true);
@@ -2667,16 +2683,16 @@ TEST(MediaSessionDescription, CopySessionDescription) {
 // ensure the TransportInfo in the SessionDescription matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferAudio) {
   MediaSessionOptions options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &options);
   TestTransportInfo(true, options, false);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest,
        TestTransportInfoOfferIceRenomination) {
   MediaSessionOptions options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &options);
   options.media_description_options[0]
       .transport_options.enable_ice_renomination = true;
   TestTransportInfo(true, options, false);
@@ -2684,30 +2700,33 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferAudioCurrent) {
   MediaSessionOptions options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &options);
   TestTransportInfo(true, options, true);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferMultimedia) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   TestTransportInfo(true, options, false);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest,
     TestTransportInfoOfferMultimediaCurrent) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   TestTransportInfo(true, options, true);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferBundle) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   options.bundle_enabled = true;
   TestTransportInfo(true, options, false);
 }
@@ -2715,24 +2734,25 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoOfferBundle) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        TestTransportInfoOfferBundleCurrent) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   options.bundle_enabled = true;
   TestTransportInfo(true, options, true);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoAnswerAudio) {
   MediaSessionOptions options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &options);
   TestTransportInfo(false, options, false);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest,
        TestTransportInfoAnswerIceRenomination) {
   MediaSessionOptions options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &options);
   options.media_description_options[0]
       .transport_options.enable_ice_renomination = true;
   TestTransportInfo(false, options, false);
@@ -2741,30 +2761,33 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        TestTransportInfoAnswerAudioCurrent) {
   MediaSessionOptions options;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_RECVONLY, kActive,
-                  &options);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kRecvOnly,
+                  kActive, &options);
   TestTransportInfo(false, options, true);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoAnswerMultimedia) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   TestTransportInfo(false, options, false);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest,
     TestTransportInfoAnswerMultimediaCurrent) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   TestTransportInfo(false, options, true);
 }
 
 TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoAnswerBundle) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   options.bundle_enabled = true;
   TestTransportInfo(false, options, false);
 }
@@ -2772,8 +2795,9 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestTransportInfoAnswerBundle) {
 TEST_F(MediaSessionDescriptionFactoryTest,
     TestTransportInfoAnswerBundleCurrent) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
   options.bundle_enabled = true;
   TestTransportInfo(false, options, true);
 }
@@ -2856,7 +2880,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCryptoDtls) {
   tdf1_.set_secure(SEC_ENABLED);
   tdf2_.set_secure(SEC_DISABLED);
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
   std::unique_ptr<SessionDescription> offer, answer;
   const cricket::MediaContentDescription* audio_media_desc;
   const cricket::MediaContentDescription* video_media_desc;
@@ -2973,8 +2997,9 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCryptoOfferDtlsButNotSdes) {
   tdf1_.set_secure(SEC_ENABLED);
   tdf2_.set_secure(SEC_ENABLED);
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
-  AddDataSection(cricket::DCT_RTP, cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
+  AddDataSection(cricket::DCT_RTP, RtpTransceiverDirection::kRecvOnly,
+                 &options);
 
   std::unique_ptr<SessionDescription> offer, answer;
 
@@ -3021,7 +3046,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCryptoOfferDtlsButNotSdes) {
 // offer or answer.
 TEST_F(MediaSessionDescriptionFactoryTest, TestVADEnableOption) {
   MediaSessionOptions options;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &options);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &options);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(options, NULL));
   ASSERT_TRUE(offer.get() != NULL);
   const ContentInfo* audio_content = offer->GetContentByName("audio");
@@ -3042,13 +3067,13 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestVADEnableOption) {
 // Test that the generated MIDs match the existing offer.
 TEST_F(MediaSessionDescriptionFactoryTest, TestMIDsMatchesExistingOffer) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_modified", cricket::MD_RECVONLY,
-                  kActive, &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video_modified", cricket::MD_RECVONLY,
-                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_modified",
+                  RtpTransceiverDirection::kRecvOnly, kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video_modified",
+                  RtpTransceiverDirection::kRecvOnly, kActive, &opts);
   opts.data_channel_type = cricket::DCT_SCTP;
-  AddMediaSection(MEDIA_TYPE_DATA, "data_modified", cricket::MD_SENDRECV,
-                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_DATA, "data_modified",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   // Create offer.
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
   std::unique_ptr<SessionDescription> updated_offer(
@@ -3071,23 +3096,23 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestMIDsMatchesExistingOffer) {
 TEST_F(MediaSessionDescriptionFactoryTest,
        CreateOfferWithMultipleAVMediaSections) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_1", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("audio_1", MEDIA_TYPE_AUDIO, kAudioTrack1,
                              {kMediaStream1}, 1, &opts);
 
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video_1", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video_1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("video_1", MEDIA_TYPE_VIDEO, kVideoTrack1,
                              {kMediaStream1}, 1, &opts);
 
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("audio_2", MEDIA_TYPE_AUDIO, kAudioTrack2,
                              {kMediaStream2}, 1, &opts);
 
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video_2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video_2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("video_2", MEDIA_TYPE_VIDEO, kVideoTrack2,
                              {kMediaStream2}, 1, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
@@ -3100,7 +3125,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
           offer->contents()[0].description);
   ASSERT_EQ(1u, acd->streams().size());
   EXPECT_EQ(kAudioTrack1, acd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, acd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, acd->direction());
 
   EXPECT_FALSE(offer->contents()[1].rejected);
   const VideoContentDescription* vcd =
@@ -3108,21 +3133,21 @@ TEST_F(MediaSessionDescriptionFactoryTest,
           offer->contents()[1].description);
   ASSERT_EQ(1u, vcd->streams().size());
   EXPECT_EQ(kVideoTrack1, vcd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, vcd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, vcd->direction());
 
   EXPECT_FALSE(offer->contents()[2].rejected);
   acd = static_cast<const AudioContentDescription*>(
       offer->contents()[2].description);
   ASSERT_EQ(1u, acd->streams().size());
   EXPECT_EQ(kAudioTrack2, acd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, acd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, acd->direction());
 
   EXPECT_FALSE(offer->contents()[3].rejected);
   vcd = static_cast<const VideoContentDescription*>(
       offer->contents()[3].description);
   ASSERT_EQ(1u, vcd->streams().size());
   EXPECT_EQ(kVideoTrack2, vcd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, vcd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, vcd->direction());
 }
 
 // Test that we can create an answer with multiple media sections of same media
@@ -3130,23 +3155,23 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        CreateAnswerWithMultipleAVMediaSections) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_1", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("audio_1", MEDIA_TYPE_AUDIO, kAudioTrack1,
                              {kMediaStream1}, 1, &opts);
 
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video_1", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video_1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("video_1", MEDIA_TYPE_VIDEO, kVideoTrack1,
                              {kMediaStream1}, 1, &opts);
 
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio_2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("audio_2", MEDIA_TYPE_AUDIO, kAudioTrack2,
                              {kMediaStream2}, 1, &opts);
 
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video_2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video_2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   AttachSenderToMediaSection("video_2", MEDIA_TYPE_VIDEO, kVideoTrack2,
                              {kMediaStream2}, 1, &opts);
 
@@ -3162,7 +3187,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
           answer->contents()[0].description);
   ASSERT_EQ(1u, acd->streams().size());
   EXPECT_EQ(kAudioTrack1, acd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, acd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, acd->direction());
 
   EXPECT_FALSE(answer->contents()[1].rejected);
   const VideoContentDescription* vcd =
@@ -3170,21 +3195,21 @@ TEST_F(MediaSessionDescriptionFactoryTest,
           answer->contents()[1].description);
   ASSERT_EQ(1u, vcd->streams().size());
   EXPECT_EQ(kVideoTrack1, vcd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, vcd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, vcd->direction());
 
   EXPECT_FALSE(answer->contents()[2].rejected);
   acd = static_cast<const AudioContentDescription*>(
       answer->contents()[2].description);
   ASSERT_EQ(1u, acd->streams().size());
   EXPECT_EQ(kAudioTrack2, acd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, acd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, acd->direction());
 
   EXPECT_FALSE(answer->contents()[3].rejected);
   vcd = static_cast<const VideoContentDescription*>(
       answer->contents()[3].description);
   ASSERT_EQ(1u, vcd->streams().size());
   EXPECT_EQ(kVideoTrack2, vcd->streams()[0].id);
-  EXPECT_EQ(cricket::MD_SENDRECV, vcd->direction());
+  EXPECT_EQ(RtpTransceiverDirection::kSendRecv, vcd->direction());
 }
 
 // Test that the media section will be rejected in offer if the corresponding
@@ -3193,10 +3218,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
        CreateOfferWithMediaSectionStoppedByOfferer) {
   // Create an offer with two audio sections and one of them is stopped.
   MediaSessionOptions offer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1", cricket::MD_SENDRECV, kActive,
-                  &offer_opts);
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2", cricket::MD_INACTIVE, kStopped,
-                  &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2",
+                  RtpTransceiverDirection::kInactive, kStopped, &offer_opts);
   std::unique_ptr<SessionDescription> offer(
       f1_.CreateOffer(offer_opts, nullptr));
   ASSERT_TRUE(offer);
@@ -3211,10 +3236,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
        CreateAnswerWithMediaSectionStoppedByOfferer) {
   // Create an offer with two audio sections and one of them is stopped.
   MediaSessionOptions offer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1", cricket::MD_SENDRECV, kActive,
-                  &offer_opts);
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2", cricket::MD_INACTIVE, kStopped,
-                  &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2",
+                  RtpTransceiverDirection::kInactive, kStopped, &offer_opts);
   std::unique_ptr<SessionDescription> offer(
       f1_.CreateOffer(offer_opts, nullptr));
   ASSERT_TRUE(offer);
@@ -3224,10 +3249,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 
   // Create an answer based on the offer.
   MediaSessionOptions answer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1", cricket::MD_SENDRECV, kActive,
-                  &answer_opts);
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2", cricket::MD_SENDRECV, kActive,
-                  &answer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &answer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &answer_opts);
   std::unique_ptr<SessionDescription> answer(
       f2_.CreateAnswer(offer.get(), answer_opts, nullptr));
   ASSERT_EQ(2u, answer->contents().size());
@@ -3241,10 +3266,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
        CreateAnswerWithMediaSectionRejectedByAnswerer) {
   // Create an offer with two audio sections.
   MediaSessionOptions offer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1", cricket::MD_SENDRECV, kActive,
-                  &offer_opts);
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2", cricket::MD_SENDRECV, kActive,
-                  &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &offer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &offer_opts);
   std::unique_ptr<SessionDescription> offer(
       f1_.CreateOffer(offer_opts, nullptr));
   ASSERT_TRUE(offer);
@@ -3254,10 +3279,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 
   // The answerer rejects one of the audio sections.
   MediaSessionOptions answer_opts;
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1", cricket::MD_SENDRECV, kActive,
-                  &answer_opts);
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2", cricket::MD_INACTIVE, kStopped,
-                  &answer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &answer_opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio2",
+                  RtpTransceiverDirection::kInactive, kStopped, &answer_opts);
   std::unique_ptr<SessionDescription> answer(
       f2_.CreateAnswer(offer.get(), answer_opts, nullptr));
   ASSERT_EQ(2u, answer->contents().size());
@@ -3272,10 +3297,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   MediaSessionOptions opts;
   // This tests put video section first because normally audio comes first by
   // default.
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
 
   ASSERT_TRUE(offer);
@@ -3289,10 +3314,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        PayloadTypesSharedByMediaSectionsOfSameType) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video1", cricket::MD_SENDRECV, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   // Create an offer with two video sections using same codecs.
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
   ASSERT_TRUE(offer);
@@ -3330,10 +3355,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        CreateOfferRespectsCodecPreferenceOrder) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video1", cricket::MD_SENDRECV, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   // Create an offer with two video sections using same codecs.
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
   ASSERT_TRUE(offer);
@@ -3367,10 +3392,10 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 TEST_F(MediaSessionDescriptionFactoryTest,
        CreateAnswerRespectsCodecPreferenceOrder) {
   MediaSessionOptions opts;
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video1", cricket::MD_SENDRECV, kActive,
-                  &opts);
-  AddMediaSection(MEDIA_TYPE_VIDEO, "video2", cricket::MD_SENDRECV, kActive,
-                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video1",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video2",
+                  RtpTransceiverDirection::kSendRecv, kActive, &opts);
   // Create an offer with two video sections using same codecs.
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
   ASSERT_TRUE(offer);
@@ -3397,6 +3422,64 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   // The video codec preference order should be respected.
   EXPECT_EQ(video_codecs_reverse, vcd1->codecs());
   EXPECT_EQ(video_codecs, vcd2->codecs());
+}
+
+// Test that when creating an answer, the codecs use local parameters instead of
+// the remote ones.
+TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerWithLocalCodecParams) {
+  const std::string audio_param_name = "audio_param";
+  const std::string audio_value1 = "audio_v1";
+  const std::string audio_value2 = "audio_v2";
+  const std::string video_param_name = "video_param";
+  const std::string video_value1 = "video_v1";
+  const std::string video_value2 = "video_v2";
+
+  auto audio_codecs1 = MAKE_VECTOR(kAudioCodecs1);
+  auto audio_codecs2 = MAKE_VECTOR(kAudioCodecs1);
+  auto video_codecs1 = MAKE_VECTOR(kVideoCodecs1);
+  auto video_codecs2 = MAKE_VECTOR(kVideoCodecs1);
+
+  // Set the parameters for codecs.
+  audio_codecs1[0].SetParam(audio_param_name, audio_value1);
+  video_codecs1[0].SetParam(video_param_name, video_value1);
+  audio_codecs2[0].SetParam(audio_param_name, audio_value2);
+  video_codecs2[0].SetParam(video_param_name, video_value2);
+
+  f1_.set_audio_codecs(audio_codecs1, audio_codecs1);
+  f1_.set_video_codecs(video_codecs1);
+  f2_.set_audio_codecs(audio_codecs2, audio_codecs2);
+  f2_.set_video_codecs(video_codecs2);
+
+  MediaSessionOptions opts;
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", RtpTransceiverDirection::kSendRecv,
+                  kActive, &opts);
+
+  std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
+  ASSERT_TRUE(offer);
+  auto offer_acd =
+      static_cast<AudioContentDescription*>(offer->contents()[0].description);
+  auto offer_vcd =
+      static_cast<VideoContentDescription*>(offer->contents()[1].description);
+  std::string value;
+  EXPECT_TRUE(offer_acd->codecs()[0].GetParam(audio_param_name, &value));
+  EXPECT_EQ(audio_value1, value);
+  EXPECT_TRUE(offer_vcd->codecs()[0].GetParam(video_param_name, &value));
+  EXPECT_EQ(video_value1, value);
+
+  std::unique_ptr<SessionDescription> answer(
+      f2_.CreateAnswer(offer.get(), opts, nullptr));
+  ASSERT_TRUE(answer);
+  auto answer_acd =
+      static_cast<AudioContentDescription*>(answer->contents()[0].description);
+  auto answer_vcd =
+      static_cast<VideoContentDescription*>(answer->contents()[1].description);
+  // Use the parameters from the local codecs.
+  EXPECT_TRUE(answer_acd->codecs()[0].GetParam(audio_param_name, &value));
+  EXPECT_EQ(audio_value2, value);
+  EXPECT_TRUE(answer_vcd->codecs()[0].GetParam(video_param_name, &value));
+  EXPECT_EQ(video_value2, value);
 }
 
 class MediaProtocolTest : public ::testing::TestWithParam<const char*> {
@@ -3429,7 +3512,7 @@ class MediaProtocolTest : public ::testing::TestWithParam<const char*> {
 
 TEST_P(MediaProtocolTest, TestAudioVideoAcceptance) {
   MediaSessionOptions opts;
-  AddAudioVideoSections(cricket::MD_RECVONLY, &opts);
+  AddAudioVideoSections(RtpTransceiverDirection::kRecvOnly, &opts);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
   ASSERT_TRUE(offer.get() != nullptr);
   // Set the protocol for all the contents.
@@ -3529,7 +3612,7 @@ bool CodecsMatch(const std::vector<Codec>& codecs1,
   return true;
 }
 
-void TestAudioCodecsOffer(MediaContentDirection direction) {
+void TestAudioCodecsOffer(RtpTransceiverDirection direction) {
   TransportDescriptionFactory tdf;
   MediaSessionDescriptionFactory sf(&tdf);
   const std::vector<AudioCodec> send_codecs = MAKE_VECTOR(kAudioCodecs1);
@@ -3541,7 +3624,8 @@ void TestAudioCodecsOffer(MediaContentDirection direction) {
   MediaSessionOptions opts;
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", direction, kActive, &opts);
 
-  if (RtpTransceiverDirection::FromMediaContentDirection(direction).send) {
+  if (direction == RtpTransceiverDirection::kSendRecv ||
+      direction == RtpTransceiverDirection::kSendOnly) {
     AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
                                {kMediaStream1}, 1, &opts);
   }
@@ -3561,9 +3645,9 @@ void TestAudioCodecsOffer(MediaContentDirection direction) {
     // to be used for sending and receiving. Inactive essentially means it
     // might eventually be used anything, but we don't know more at this
     // moment.
-    if (acd->direction() == cricket::MD_SENDONLY) {
+    if (acd->direction() == RtpTransceiverDirection::kSendOnly) {
       EXPECT_TRUE(CodecsMatch<AudioCodec>(send_codecs, acd->codecs()));
-    } else if (acd->direction() == cricket::MD_RECVONLY) {
+    } else if (acd->direction() == RtpTransceiverDirection::kRecvOnly) {
       EXPECT_TRUE(CodecsMatch<AudioCodec>(recv_codecs, acd->codecs()));
     } else {
       EXPECT_TRUE(CodecsMatch<AudioCodec>(sendrecv_codecs, acd->codecs()));
@@ -3622,8 +3706,8 @@ std::vector<T> VectorFromIndices(const T* array, const int (&indices)[IDXS]) {
   return out;
 }
 
-void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
-                           MediaContentDirection answer_direction,
+void TestAudioCodecsAnswer(RtpTransceiverDirection offer_direction,
+                           RtpTransceiverDirection answer_direction,
                            bool add_legacy_stream) {
   TransportDescriptionFactory offer_tdf;
   TransportDescriptionFactory answer_tdf;
@@ -3640,8 +3724,7 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", offer_direction, kActive,
                   &offer_opts);
 
-  if (RtpTransceiverDirection::FromMediaContentDirection(offer_direction)
-          .send) {
+  if (webrtc::RtpTransceiverDirectionHasSend(offer_direction)) {
     AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
                                {kMediaStream1}, 1, &offer_opts);
   }
@@ -3654,8 +3737,7 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", answer_direction, kActive,
                   &answer_opts);
 
-  if (RtpTransceiverDirection::FromMediaContentDirection(answer_direction)
-          .send) {
+  if (webrtc::RtpTransceiverDirectionHasSend(answer_direction)) {
     AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
                                {kMediaStream1}, 1, &answer_opts);
   }
@@ -3676,23 +3758,23 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
     // For offers with sendrecv or inactive, we should never reply with more
     // codecs than offered, with these codec sets.
     switch (offer_direction) {
-      case cricket::MD_INACTIVE:
+      case RtpTransceiverDirection::kInactive:
         target_codecs = VectorFromIndices(kOfferAnswerCodecs,
                                           kResultSendrecv_SendrecvCodecs);
         break;
-      case cricket::MD_SENDONLY:
+      case RtpTransceiverDirection::kSendOnly:
         target_codecs =
             VectorFromIndices(kOfferAnswerCodecs, kResultSend_RecvCodecs);
         break;
-      case cricket::MD_RECVONLY:
+      case RtpTransceiverDirection::kRecvOnly:
         target_codecs =
             VectorFromIndices(kOfferAnswerCodecs, kResultRecv_SendCodecs);
         break;
-      case cricket::MD_SENDRECV:
-        if (acd->direction() == cricket::MD_SENDONLY) {
+      case RtpTransceiverDirection::kSendRecv:
+        if (acd->direction() == RtpTransceiverDirection::kSendOnly) {
           target_codecs =
               VectorFromIndices(kOfferAnswerCodecs, kResultSendrecv_SendCodecs);
-        } else if (acd->direction() == cricket::MD_RECVONLY) {
+        } else if (acd->direction() == RtpTransceiverDirection::kRecvOnly) {
           target_codecs =
               VectorFromIndices(kOfferAnswerCodecs, kResultSendrecv_RecvCodecs);
         } else {
@@ -3716,13 +3798,14 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
 
     EXPECT_TRUE(acd->codecs() == target_codecs)
         << "Expected: " << format_codecs(target_codecs)
-        << ", got: " << format_codecs(acd->codecs())
-        << "; Offered: " << MediaContentDirectionToString(offer_direction)
+        << ", got: " << format_codecs(acd->codecs()) << "; Offered: "
+        << webrtc::RtpTransceiverDirectionToString(offer_direction)
         << ", answerer wants: "
-        << MediaContentDirectionToString(answer_direction)
-        << "; got: " << MediaContentDirectionToString(acd->direction());
+        << webrtc::RtpTransceiverDirectionToString(answer_direction)
+        << "; got: "
+        << webrtc::RtpTransceiverDirectionToString(acd->direction());
   } else {
-    EXPECT_EQ(offer_direction, cricket::MD_INACTIVE)
+    EXPECT_EQ(offer_direction, RtpTransceiverDirection::kInactive)
         << "Only inactive offers are allowed to not generate any audio "
            "content";
   }
@@ -3731,7 +3814,7 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
 }  // namespace
 
 class AudioCodecsOfferTest
-    : public ::testing::TestWithParam<MediaContentDirection> {};
+    : public ::testing::TestWithParam<RtpTransceiverDirection> {};
 
 TEST_P(AudioCodecsOfferTest, TestCodecsInOffer) {
   TestAudioCodecsOffer(GetParam());
@@ -3739,14 +3822,14 @@ TEST_P(AudioCodecsOfferTest, TestCodecsInOffer) {
 
 INSTANTIATE_TEST_CASE_P(MediaSessionDescriptionFactoryTest,
                         AudioCodecsOfferTest,
-                        ::testing::Values(cricket::MD_SENDONLY,
-                                          cricket::MD_RECVONLY,
-                                          cricket::MD_SENDRECV,
-                                          cricket::MD_INACTIVE));
+                        ::testing::Values(RtpTransceiverDirection::kSendOnly,
+                                          RtpTransceiverDirection::kRecvOnly,
+                                          RtpTransceiverDirection::kSendRecv,
+                                          RtpTransceiverDirection::kInactive));
 
 class AudioCodecsAnswerTest
-    : public ::testing::TestWithParam<::testing::tuple<MediaContentDirection,
-                                                       MediaContentDirection,
+    : public ::testing::TestWithParam<::testing::tuple<RtpTransceiverDirection,
+                                                       RtpTransceiverDirection,
                                                        bool>> {};
 
 TEST_P(AudioCodecsAnswerTest, TestCodecsInAnswer) {
@@ -3758,12 +3841,12 @@ TEST_P(AudioCodecsAnswerTest, TestCodecsInAnswer) {
 INSTANTIATE_TEST_CASE_P(
     MediaSessionDescriptionFactoryTest,
     AudioCodecsAnswerTest,
-    ::testing::Combine(::testing::Values(cricket::MD_SENDONLY,
-                                         cricket::MD_RECVONLY,
-                                         cricket::MD_SENDRECV,
-                                         cricket::MD_INACTIVE),
-                       ::testing::Values(cricket::MD_SENDONLY,
-                                         cricket::MD_RECVONLY,
-                                         cricket::MD_SENDRECV,
-                                         cricket::MD_INACTIVE),
+    ::testing::Combine(::testing::Values(RtpTransceiverDirection::kSendOnly,
+                                         RtpTransceiverDirection::kRecvOnly,
+                                         RtpTransceiverDirection::kSendRecv,
+                                         RtpTransceiverDirection::kInactive),
+                       ::testing::Values(RtpTransceiverDirection::kSendOnly,
+                                         RtpTransceiverDirection::kRecvOnly,
+                                         RtpTransceiverDirection::kSendRecv,
+                                         RtpTransceiverDirection::kInactive),
                        ::testing::Bool()));

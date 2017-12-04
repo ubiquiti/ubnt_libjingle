@@ -26,6 +26,10 @@ class AsyncResolver;
 class SignalThread;
 }
 
+namespace webrtc {
+class TurnCustomizer;
+}
+
 namespace cricket {
 
 extern const char TURN_PORT_TYPE[];
@@ -52,9 +56,11 @@ class TurnPort : public Port {
                           const ProtocolAddress& server_address,
                           const RelayCredentials& credentials,
                           int server_priority,
-                          const std::string& origin) {
+                          const std::string& origin,
+                          webrtc::TurnCustomizer* customizer) {
     return new TurnPort(thread, factory, network, socket, username, password,
-                        server_address, credentials, server_priority, origin);
+                        server_address, credentials, server_priority, origin,
+                        customizer);
   }
 
   // Create a TURN port that will use a new socket, bound to |network| and
@@ -71,13 +77,15 @@ class TurnPort : public Port {
                           int server_priority,
                           const std::string& origin,
                           const std::vector<std::string>& tls_alpn_protocols,
-                          const std::vector<std::string>& tls_elliptic_curves) {
+                          const std::vector<std::string>& tls_elliptic_curves,
+                          webrtc::TurnCustomizer* customizer) {
     return new TurnPort(thread, factory, network, min_port, max_port, username,
                         password, server_address, credentials, server_priority,
-                        origin, tls_alpn_protocols, tls_elliptic_curves);
+                        origin, tls_alpn_protocols, tls_elliptic_curves,
+                        customizer);
   }
 
-  virtual ~TurnPort();
+  ~TurnPort() override;
 
   const ProtocolAddress& server_address() const { return server_address_; }
   // Returns an empty address if the local address has not been assigned.
@@ -89,49 +97,40 @@ class TurnPort : public Port {
   }
   const RelayCredentials& credentials() const { return credentials_; }
 
-  virtual ProtocolType GetProtocol() const { return server_address_.proto; }
+  ProtocolType GetProtocol() const override;
 
-  virtual TlsCertPolicy GetTlsCertPolicy() const { return tls_cert_policy_; }
+  virtual TlsCertPolicy GetTlsCertPolicy() const;
+  virtual void SetTlsCertPolicy(TlsCertPolicy tls_cert_policy);
 
-  virtual void SetTlsCertPolicy(TlsCertPolicy tls_cert_policy) {
-    tls_cert_policy_ = tls_cert_policy;
-  }
+  virtual std::vector<std::string> GetTlsAlpnProtocols() const;
+  virtual std::vector<std::string> GetTlsEllipticCurves() const;
 
-  virtual std::vector<std::string> GetTlsAlpnProtocols() const {
-    return tls_alpn_protocols_;
-  }
+  void PrepareAddress() override;
+  Connection* CreateConnection(const Candidate& c,
+                               PortInterface::CandidateOrigin origin) override;
+  int SendTo(const void* data,
+             size_t size,
+             const rtc::SocketAddress& addr,
+             const rtc::PacketOptions& options,
+             bool payload) override;
+  int SetOption(rtc::Socket::Option opt, int value) override;
+  int GetOption(rtc::Socket::Option opt, int* value) override;
+  int GetError() override;
 
-  virtual std::vector<std::string> GetTlsEllipticCurves() const {
-    return tls_elliptic_curves_;
-  }
-
-  virtual void PrepareAddress();
-  virtual Connection* CreateConnection(
-      const Candidate& c, PortInterface::CandidateOrigin origin);
-  virtual int SendTo(const void* data, size_t size,
-                     const rtc::SocketAddress& addr,
-                     const rtc::PacketOptions& options,
-                     bool payload);
-  virtual int SetOption(rtc::Socket::Option opt, int value);
-  virtual int GetOption(rtc::Socket::Option opt, int* value);
-  virtual int GetError();
-
-  virtual bool HandleIncomingPacket(rtc::AsyncPacketSocket* socket,
-                                    const char* data, size_t size,
-                                    const rtc::SocketAddress& remote_addr,
-                                    const rtc::PacketTime& packet_time);
+  bool HandleIncomingPacket(rtc::AsyncPacketSocket* socket,
+                            const char* data,
+                            size_t size,
+                            const rtc::SocketAddress& remote_addr,
+                            const rtc::PacketTime& packet_time) override;
   virtual void OnReadPacket(rtc::AsyncPacketSocket* socket,
                             const char* data, size_t size,
                             const rtc::SocketAddress& remote_addr,
                             const rtc::PacketTime& packet_time);
 
-  virtual void OnSentPacket(rtc::AsyncPacketSocket* socket,
-                            const rtc::SentPacket& sent_packet);
+  void OnSentPacket(rtc::AsyncPacketSocket* socket,
+                    const rtc::SentPacket& sent_packet) override;
   virtual void OnReadyToSend(rtc::AsyncPacketSocket* socket);
-  virtual bool SupportsProtocol(const std::string& protocol) const {
-    // Turn port only connects to UDP candidates.
-    return protocol == UDP_PROTOCOL_NAME;
-  }
+  bool SupportsProtocol(const std::string& protocol) const override;
 
   void OnSocketConnect(rtc::AsyncPacketSocket* socket);
   void OnSocketClose(rtc::AsyncPacketSocket* socket, int error);
@@ -184,7 +183,8 @@ class TurnPort : public Port {
            const ProtocolAddress& server_address,
            const RelayCredentials& credentials,
            int server_priority,
-           const std::string& origin);
+           const std::string& origin,
+           webrtc::TurnCustomizer* customizer);
 
   TurnPort(rtc::Thread* thread,
            rtc::PacketSocketFactory* factory,
@@ -198,7 +198,8 @@ class TurnPort : public Port {
            int server_priority,
            const std::string& origin,
            const std::vector<std::string>& tls_alpn_protocols,
-           const std::vector<std::string>& tls_elliptic_curves);
+           const std::vector<std::string>& tls_elliptic_curves,
+           webrtc::TurnCustomizer* customizer);
 
  private:
   enum {
@@ -212,8 +213,8 @@ class TurnPort : public Port {
   typedef std::map<rtc::Socket::Option, int> SocketOptionsMap;
   typedef std::set<rtc::SocketAddress> AttemptedServerSet;
 
-  virtual void OnMessage(rtc::Message* pmsg);
-  virtual void HandleConnectionDestroyed(Connection* conn);
+  void OnMessage(rtc::Message* pmsg) override;
+  void HandleConnectionDestroyed(Connection* conn) override;
 
   bool CreateTurnClientSocket();
 
@@ -267,7 +268,6 @@ class TurnPort : public Port {
   // in |entry|.
   void DestroyEntryIfNotCancelled(TurnEntry* entry, int64_t timestamp);
   void ScheduleEntryDestruction(TurnEntry* entry);
-  void CancelEntryDestruction(TurnEntry* entry);
 
   // Marks the connection with remote address |address| failed and
   // pruned (a.k.a. write-timed-out). Returns true if a connection is found.
@@ -275,6 +275,10 @@ class TurnPort : public Port {
 
   // Reconstruct the URL of the server which the candidate is gathered from.
   std::string ReconstructedServerUrl();
+
+  void TurnCustomizerMaybeModifyOutgoingStunMessage(StunMessage* message);
+  bool TurnCustomizerAllowChannelData(const void* data,
+                                      size_t size, bool payload);
 
   ProtocolAddress server_address_;
   TlsCertPolicy tls_cert_policy_ = TlsCertPolicy::TLS_CERT_POLICY_SECURE;
@@ -305,6 +309,9 @@ class TurnPort : public Port {
   size_t allocate_mismatch_retries_;
 
   rtc::AsyncInvoker invoker_;
+
+  // Optional TurnCustomizer that can modify outgoing messages.
+  webrtc::TurnCustomizer *turn_customizer_ = nullptr;
 
   friend class TurnEntry;
   friend class TurnAllocateRequest;

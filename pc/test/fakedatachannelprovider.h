@@ -11,6 +11,8 @@
 #ifndef PC_TEST_FAKEDATACHANNELPROVIDER_H_
 #define PC_TEST_FAKEDATACHANNELPROVIDER_H_
 
+#include <set>
+
 #include "pc/datachannel.h"
 #include "rtc_base/checks.h"
 
@@ -22,6 +24,10 @@ class FakeDataChannelProvider : public webrtc::DataChannelProviderInterface {
         ready_to_send_(false),
         transport_error_(false) {}
   virtual ~FakeDataChannelProvider() {}
+
+  bool IsSidAvailable(int sid) const override {
+    return true;
+  }
 
   bool SendData(const cricket::SendDataParams& params,
                 const rtc::CopyOnWriteBuffer& payload,
@@ -48,7 +54,7 @@ class FakeDataChannelProvider : public webrtc::DataChannelProviderInterface {
     if (!transport_available_) {
       return false;
     }
-    LOG(LS_INFO) << "DataChannel connected " << data_channel;
+    RTC_LOG(LS_INFO) << "DataChannel connected " << data_channel;
     connected_channels_.insert(data_channel);
     return true;
   }
@@ -56,7 +62,7 @@ class FakeDataChannelProvider : public webrtc::DataChannelProviderInterface {
   void DisconnectDataChannel(webrtc::DataChannel* data_channel) override {
     RTC_CHECK(connected_channels_.find(data_channel) !=
               connected_channels_.end());
-    LOG(LS_INFO) << "DataChannel disconnected " << data_channel;
+    RTC_LOG(LS_INFO) << "DataChannel disconnected " << data_channel;
     connected_channels_.erase(data_channel);
   }
 

@@ -200,15 +200,16 @@ void EchoCanceller3::RenderWriter::Insert(AudioBuffer* input) {
 
 int EchoCanceller3::instance_count_ = 0;
 
-EchoCanceller3::EchoCanceller3(
-    const AudioProcessing::Config::EchoCanceller3& config,
-    int sample_rate_hz,
-    bool use_highpass_filter)
-    : EchoCanceller3(sample_rate_hz,
+EchoCanceller3::EchoCanceller3(const EchoCanceller3Config& config,
+                               int sample_rate_hz,
+                               bool use_highpass_filter)
+    : EchoCanceller3(config,
+                     sample_rate_hz,
                      use_highpass_filter,
                      std::unique_ptr<BlockProcessor>(
                          BlockProcessor::Create(config, sample_rate_hz))) {}
-EchoCanceller3::EchoCanceller3(int sample_rate_hz,
+EchoCanceller3::EchoCanceller3(const EchoCanceller3Config& config,
+                               int sample_rate_hz,
                                bool use_highpass_filter,
                                std::unique_ptr<BlockProcessor> block_processor)
     : data_dumper_(
@@ -220,7 +221,7 @@ EchoCanceller3::EchoCanceller3(int sample_rate_hz,
       capture_blocker_(num_bands_),
       render_blocker_(num_bands_),
       render_transfer_queue_(
-          kRenderTransferQueueSize,
+          kRenderTransferQueueSizeFrames,
           std::vector<std::vector<float>>(
               num_bands_,
               std::vector<float>(frame_length_, 0.f)),
@@ -324,16 +325,14 @@ void EchoCanceller3::ProcessCapture(AudioBuffer* capture, bool level_change) {
                         LowestBandRate(sample_rate_hz_), 1);
 }
 
-std::string EchoCanceller3::ToString(
-    const AudioProcessing::Config::EchoCanceller3& config) {
-  std::stringstream ss;
-  ss << "{"
-     << "enabled: " << (config.enabled ? "true" : "false") << "}";
-  return ss.str();
+EchoControl::Metrics EchoCanceller3::GetMetrics() const {
+  RTC_DCHECK_RUNS_SERIALIZED(&capture_race_checker_);
+  Metrics metrics;
+  block_processor_->GetMetrics(&metrics);
+  return metrics;
 }
 
-bool EchoCanceller3::Validate(
-    const AudioProcessing::Config::EchoCanceller3& config) {
+bool EchoCanceller3::Validate(const EchoCanceller3Config& config) {
   return true;
 }
 
@@ -357,6 +356,21 @@ void EchoCanceller3::EmptyRenderQueue() {
     frame_to_buffer =
         render_transfer_queue_.Remove(&render_queue_output_frame_);
   }
+}
+
+EchoCanceller3Factory::EchoCanceller3Factory() {}
+
+EchoCanceller3Factory::EchoCanceller3Factory(const EchoCanceller3Config& config)
+    : config_(config) {
+  // Revert to default configuration if needed.
+  if (!EchoCanceller3::Validate(config_)) {
+    config_ = EchoCanceller3Config();
+  }
+}
+
+std::unique_ptr<EchoControl> EchoCanceller3Factory::Create(int sample_rate_hz) {
+  return std::unique_ptr<EchoControl>(
+      new EchoCanceller3(config_, sample_rate_hz, true));
 }
 
 }  // namespace webrtc

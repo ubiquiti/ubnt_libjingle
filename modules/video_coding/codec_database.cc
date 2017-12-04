@@ -45,7 +45,7 @@ static std::unique_ptr<VCMGenericDecoder> CreateDecoder(VideoCodecType type) {
     default:
       break;
   }
-  LOG(LS_WARNING) << "No internal decoder of this type exists.";
+  RTC_LOG(LS_WARNING) << "No internal decoder of this type exists.";
   return std::unique_ptr<VCMGenericDecoder>();
 }
 
@@ -149,7 +149,7 @@ bool VCMCodecDataBase::SetSendCodec(const VideoCodec* send_codec,
   encoded_frame_callback_->SetInternalSource(internal_source_);
   if (ptr_encoder_->InitEncode(&send_codec_, number_of_cores_,
                                max_payload_size_) < 0) {
-    LOG(LS_ERROR) << "Failed to initialize video encoder.";
+    RTC_LOG(LS_ERROR) << "Failed to initialize video encoder.";
     DeleteEncoder();
     return false;
   }
@@ -254,6 +254,7 @@ bool VCMCodecDataBase::RequiresEncoderReset(const VideoCodec& new_send_codec) {
     case kVideoCodecRED:
     case kVideoCodecULPFEC:
     case kVideoCodecFlexfec:
+    case kVideoCodecStereo:
       break;
     // Unknown codec type, reset just to be sure.
     case kVideoCodecUnknown:
@@ -395,13 +396,13 @@ std::unique_ptr<VCMGenericDecoder> VCMCodecDataBase::CreateAndInitDecoder(
     const VCMEncodedFrame& frame,
     VideoCodec* new_codec) const {
   uint8_t payload_type = frame.PayloadType();
-  LOG(LS_INFO) << "Initializing decoder with payload type '"
-               << static_cast<int>(payload_type) << "'.";
+  RTC_LOG(LS_INFO) << "Initializing decoder with payload type '"
+                   << static_cast<int>(payload_type) << "'.";
   RTC_DCHECK(new_codec);
   const VCMDecoderMapItem* decoder_item = FindDecoderItem(payload_type);
   if (!decoder_item) {
-    LOG(LS_ERROR) << "Can't find a decoder associated with payload type: "
-                  << static_cast<int>(payload_type);
+    RTC_LOG(LS_ERROR) << "Can't find a decoder associated with payload type: "
+                      << static_cast<int>(payload_type);
     return nullptr;
   }
   std::unique_ptr<VCMGenericDecoder> ptr_decoder;

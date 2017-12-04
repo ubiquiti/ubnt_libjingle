@@ -22,6 +22,7 @@
 #include "ortc/ortcrtpsenderadapter.h"
 #include "ortc/rtpparametersconversion.h"
 #include "ortc/rtptransportadapter.h"
+#include "pc/rtpmediautils.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -107,7 +108,7 @@ RtpTransportControllerAdapter::CreateProxied(
 RtpTransportControllerAdapter::~RtpTransportControllerAdapter() {
   RTC_DCHECK_RUN_ON(signaling_thread_);
   if (!transport_proxies_.empty()) {
-    LOG(LS_ERROR)
+    RTC_LOG(LS_ERROR)
         << "Destroying RtpTransportControllerAdapter while RtpTransports "
            "are still using it; this is unsafe.";
   }
@@ -314,18 +315,18 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyAudioSenderParameters(
     }
   }
 
-  cricket::RtpTransceiverDirection local_direction =
-      cricket::RtpTransceiverDirection::FromMediaContentDirection(
-          local_audio_description_.direction());
+  bool local_send = false;
   int bandwidth = cricket::kAutoBandwidth;
   if (parameters.encodings.size() == 1u) {
     if (parameters.encodings[0].max_bitrate_bps) {
       bandwidth = *parameters.encodings[0].max_bitrate_bps;
     }
-    local_direction.send = parameters.encodings[0].active;
-  } else {
-    local_direction.send = false;
+    local_send = parameters.encodings[0].active;
   }
+  const bool local_recv =
+      RtpTransceiverDirectionHasRecv(local_audio_description_.direction());
+  const auto local_direction =
+      RtpTransceiverDirectionFromSendRecv(local_send, local_recv);
   if (primary_ssrc && !stream_params_result.value().empty()) {
     *primary_ssrc = stream_params_result.value()[0].first_ssrc();
   }
@@ -346,10 +347,9 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyAudioSenderParameters(
   remote_audio_description_.set_bandwidth(bandwidth);
   local_audio_description_.mutable_streams() = stream_params_result.MoveValue();
   // Direction set based on encoding "active" flag.
-  local_audio_description_.set_direction(
-      local_direction.ToMediaContentDirection());
+  local_audio_description_.set_direction(local_direction);
   remote_audio_description_.set_direction(
-      local_direction.Reversed().ToMediaContentDirection());
+      RtpTransceiverDirectionReversed(local_direction));
 
   // Set remote content first, to ensure the stream is created with the correct
   // codec.
@@ -403,18 +403,18 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyVideoSenderParameters(
     }
   }
 
-  cricket::RtpTransceiverDirection local_direction =
-      cricket::RtpTransceiverDirection::FromMediaContentDirection(
-          local_video_description_.direction());
+  bool local_send = false;
   int bandwidth = cricket::kAutoBandwidth;
   if (parameters.encodings.size() == 1u) {
     if (parameters.encodings[0].max_bitrate_bps) {
       bandwidth = *parameters.encodings[0].max_bitrate_bps;
     }
-    local_direction.send = parameters.encodings[0].active;
-  } else {
-    local_direction.send = false;
+    local_send = parameters.encodings[0].active;
   }
+  const bool local_recv =
+      RtpTransceiverDirectionHasRecv(local_audio_description_.direction());
+  const auto local_direction =
+      RtpTransceiverDirectionFromSendRecv(local_send, local_recv);
   if (primary_ssrc && !stream_params_result.value().empty()) {
     *primary_ssrc = stream_params_result.value()[0].first_ssrc();
   }
@@ -435,10 +435,9 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyVideoSenderParameters(
   remote_video_description_.set_bandwidth(bandwidth);
   local_video_description_.mutable_streams() = stream_params_result.MoveValue();
   // Direction set based on encoding "active" flag.
-  local_video_description_.set_direction(
-      local_direction.ToMediaContentDirection());
+  local_video_description_.set_direction(local_direction);
   remote_video_description_.set_direction(
-      local_direction.Reversed().ToMediaContentDirection());
+      RtpTransceiverDirectionReversed(local_direction));
 
   // Set remote content first, to ensure the stream is created with the correct
   // codec.
@@ -471,9 +470,6 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyAudioReceiverParameters(
     return extensions_result.MoveError();
   }
 
-  cricket::RtpTransceiverDirection local_direction =
-      cricket::RtpTransceiverDirection::FromMediaContentDirection(
-          local_audio_description_.direction());
   auto stream_params_result = ToCricketStreamParamsVec(parameters.encodings);
   if (!stream_params_result.ok()) {
     return stream_params_result.MoveError();
@@ -492,8 +488,12 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyAudioReceiverParameters(
     }
   }
 
-  local_direction.recv =
+  const bool local_send =
+      RtpTransceiverDirectionHasSend(local_audio_description_.direction());
+  const bool local_recv =
       !parameters.encodings.empty() && parameters.encodings[0].active;
+  const auto local_direction =
+      RtpTransceiverDirectionFromSendRecv(local_send, local_recv);
 
   // Validation is done, so we can attempt applying the descriptions. Received
   // codecs and header extensions go in local description, streams go in
@@ -511,10 +511,9 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyAudioReceiverParameters(
   remote_audio_description_.mutable_streams() =
       stream_params_result.MoveValue();
   // Direction set based on encoding "active" flag.
-  local_audio_description_.set_direction(
-      local_direction.ToMediaContentDirection());
+  local_audio_description_.set_direction(local_direction);
   remote_audio_description_.set_direction(
-      local_direction.Reversed().ToMediaContentDirection());
+      RtpTransceiverDirectionReversed(local_direction));
 
   if (!voice_channel_->SetLocalContent(&local_audio_description_,
                                        cricket::CA_OFFER, nullptr)) {
@@ -545,9 +544,6 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyVideoReceiverParameters(
     return extensions_result.MoveError();
   }
 
-  cricket::RtpTransceiverDirection local_direction =
-      cricket::RtpTransceiverDirection::FromMediaContentDirection(
-          local_video_description_.direction());
   int bandwidth = cricket::kAutoBandwidth;
   auto stream_params_result = ToCricketStreamParamsVec(parameters.encodings);
   if (!stream_params_result.ok()) {
@@ -567,8 +563,12 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyVideoReceiverParameters(
     }
   }
 
-  local_direction.recv =
+  const bool local_send =
+      RtpTransceiverDirectionHasSend(local_video_description_.direction());
+  const bool local_recv =
       !parameters.encodings.empty() && parameters.encodings[0].active;
+  const auto local_direction =
+      RtpTransceiverDirectionFromSendRecv(local_send, local_recv);
 
   // Validation is done, so we can attempt applying the descriptions. Received
   // codecs and header extensions go in local description, streams go in
@@ -587,10 +587,9 @@ RTCError RtpTransportControllerAdapter::ValidateAndApplyVideoReceiverParameters(
   remote_video_description_.mutable_streams() =
       stream_params_result.MoveValue();
   // Direction set based on encoding "active" flag.
-  local_video_description_.set_direction(
-      local_direction.ToMediaContentDirection());
+  local_video_description_.set_direction(local_direction);
   remote_video_description_.set_direction(
-      local_direction.Reversed().ToMediaContentDirection());
+      RtpTransceiverDirectionReversed(local_direction));
 
   if (!video_channel_->SetLocalContent(&local_video_description_,
                                        cricket::CA_OFFER, nullptr)) {

@@ -194,35 +194,14 @@ struct RTCPReportBlock {
         delay_since_last_sender_report(delay_since_last_sender_report) {}
 
   // Fields as described by RFC 3550 6.4.2.
-  union {
-    uint32_t sender_ssrc;  // SSRC of sender of this report.
-    RTC_DEPRECATED uint32_t remoteSSRC;
-  };
-  union {
-    uint32_t source_ssrc;  // SSRC of the RTP packet sender.
-    RTC_DEPRECATED uint32_t sourceSSRC;
-  };
-  union {
-    RTC_DEPRECATED uint8_t fractionLost;
-    uint8_t fraction_lost;
-  };
-  union {
-    uint32_t packets_lost;  // 24 bits valid.
-    RTC_DEPRECATED uint32_t cumulativeLost;
-  };
-  union {
-    uint32_t extended_highest_sequence_number;
-    RTC_DEPRECATED uint32_t extendedHighSeqNum;
-  };
+  uint32_t sender_ssrc;  // SSRC of sender of this report.
+  uint32_t source_ssrc;  // SSRC of the RTP packet sender.
+  uint8_t fraction_lost;
+  uint32_t packets_lost;  // 24 bits valid.
+  uint32_t extended_highest_sequence_number;
   uint32_t jitter;
-  union {
-    uint32_t last_sender_report_timestamp;
-    RTC_DEPRECATED uint32_t lastSR;
-  };
-  union {
-    uint32_t delay_since_last_sender_report;
-    RTC_DEPRECATED uint32_t delaySinceLastSR;
-  };
+  uint32_t last_sender_report_timestamp;
+  uint32_t delay_since_last_sender_report;
 };
 
 typedef std::list<RTCPReportBlock> ReportBlockList;
@@ -310,7 +289,7 @@ struct PacketFeedback {
   PacketFeedback(int64_t arrival_time_ms, uint16_t sequence_number)
       : PacketFeedback(-1,
                        arrival_time_ms,
-                       -1,
+                       kNoSendTime,
                        sequence_number,
                        0,
                        0,
@@ -338,8 +317,8 @@ struct PacketFeedback {
                  uint16_t remote_net_id,
                  const PacedPacketInfo& pacing_info)
       : PacketFeedback(creation_time_ms,
-                       -1,
-                       -1,
+                       kNotReceived,
+                       kNoSendTime,
                        sequence_number,
                        payload_size,
                        local_net_id,
@@ -365,6 +344,7 @@ struct PacketFeedback {
 
   static constexpr int kNotAProbe = -1;
   static constexpr int64_t kNotReceived = -1;
+  static constexpr int64_t kNoSendTime = -1;
 
   // NOTE! The variable |creation_time_ms| is not used when testing equality.
   //       This is due to |creation_time_ms| only being used by SendTimeHistory
@@ -498,6 +478,14 @@ class RtpPacketSender {
                             int64_t capture_time_ms,
                             size_t bytes,
                             bool retransmission) = 0;
+
+  // Currently audio traffic is not accounted by pacer and passed through.
+  // With the introduction of audio BWE audio traffic will be accounted for
+  // the pacer budget calculation. The audio traffic still will be injected
+  // at high priority.
+  // TODO(alexnarest): Make it pure virtual after rtp_sender_unittest will be
+  // updated to support it
+  virtual void SetAccountForAudioPackets(bool account_for_audio) {}
 };
 
 class TransportSequenceNumberAllocator {

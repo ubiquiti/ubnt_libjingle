@@ -26,12 +26,10 @@ namespace webrtc {
 
 class ResidualEchoEstimator {
  public:
-  explicit ResidualEchoEstimator(
-      const AudioProcessing::Config::EchoCanceller3& config);
+  explicit ResidualEchoEstimator(const EchoCanceller3Config& config);
   ~ResidualEchoEstimator();
 
-  void Estimate(bool using_subtractor_output,
-                const AecState& aec_state,
+  void Estimate(const AecState& aec_state,
                 const RenderBuffer& render_buffer,
                 const std::array<float, kFftLengthBy2Plus1>& S2_linear,
                 const std::array<float, kFftLengthBy2Plus1>& Y2,
@@ -50,7 +48,11 @@ class ResidualEchoEstimator {
 
   // Estimates the residual echo power based on the estimate of the echo path
   // gain.
-  void NonLinearEstimate(bool headset_detected,
+  void NonLinearEstimate(bool sufficient_filter_updates,
+                         bool saturated_echo,
+                         bool bounded_erl,
+                         bool transparent_mode,
+                         bool initial_state,
                          const std::array<float, kFftLengthBy2Plus1>& X2,
                          const std::array<float, kFftLengthBy2Plus1>& Y2,
                          std::array<float, kFftLengthBy2Plus1>* R2);
@@ -71,7 +73,7 @@ class ResidualEchoEstimator {
       S2_old_;
   std::array<float, kFftLengthBy2Plus1> X2_noise_floor_;
   std::array<int, kFftLengthBy2Plus1> X2_noise_floor_counter_;
-  const AudioProcessing::Config::EchoCanceller3 config_;
+  const EchoCanceller3Config config_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(ResidualEchoEstimator);
 };
