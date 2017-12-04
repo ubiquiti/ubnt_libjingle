@@ -24,6 +24,7 @@
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "rtc_base/function_view.h"
 #include "rtc_tools/event_log_visualizer/plot_base.h"
+#include "rtc_tools/event_log_visualizer/triage_notifications.h"
 
 namespace webrtc {
 namespace plotting {
@@ -94,6 +95,7 @@ class EventLogAnalyzer {
   void CreateReceiveSideBweSimulationGraph(Plot* plot);
 
   void CreateNetworkDelayFeedbackGraph(Plot* plot);
+  void CreatePacerDelayGraph(Plot* plot);
   void CreateTimestampGraph(Plot* plot);
 
   void CreateAudioEncoderTargetBitrateGraph(Plot* plot);
@@ -109,6 +111,9 @@ class EventLogAnalyzer {
   // Returns a vector of capture and arrival timestamps for the video frames
   // of the stream with the most number of frames.
   std::vector<std::pair<int64_t, int64_t>> GetFrameTimestamps() const;
+
+  void CreateTriageNotifications();
+  void PrintNotifications(FILE* file);
 
  private:
   class StreamId {
@@ -144,7 +149,14 @@ class EventLogAnalyzer {
 
   bool IsAudioSsrc(StreamId stream_id) const;
 
-  std::string GetStreamName(StreamId) const;
+  std::string GetStreamName(StreamId stream_id) const;
+
+  rtc::Optional<uint32_t> EstimateRtpClockFrequency(
+      const std::vector<LoggedRtpPacket>& packets) const;
+
+  float ToCallTime(int64_t timestamp) const;
+
+  void Notification(std::unique_ptr<TriageNotification> notification);
 
   const ParsedRtcEventLog& parsed_log_;
 
@@ -186,6 +198,8 @@ class EventLogAnalyzer {
   std::vector<ParsedRtcEventLog::BweProbeResultEvent> bwe_probe_result_events_;
 
   std::vector<ParsedRtcEventLog::BweDelayBasedUpdate> bwe_delay_updates_;
+
+  std::vector<std::unique_ptr<TriageNotification>> notifications_;
 
   // Window and step size used for calculating moving averages, e.g. bitrate.
   // The generated data points will be |step_| microseconds apart.

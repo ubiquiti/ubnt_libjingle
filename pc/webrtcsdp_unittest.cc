@@ -16,6 +16,7 @@
 #include "api/jsepsessiondescription.h"
 #include "media/base/mediaconstants.h"
 #include "media/engine/webrtcvideoengine.h"
+#include "p2p/base/port.h"
 #include "p2p/base/p2pconstants.h"
 #include "pc/mediasession.h"
 #include "rtc_base/checks.h"
@@ -56,6 +57,7 @@ using webrtc::IceCandidateInterface;
 using webrtc::JsepIceCandidate;
 using webrtc::JsepSessionDescription;
 using webrtc::RtpExtension;
+using webrtc::RtpTransceiverDirection;
 using webrtc::SdpParseError;
 using webrtc::SessionDescriptionInterface;
 
@@ -824,20 +826,20 @@ static void ExpectParseFailureWithNewLines(const std::string& injectpoint,
   ExpectParseFailure(bad_sdp, bad_part);
 }
 
-static void ReplaceDirection(cricket::MediaContentDirection direction,
+static void ReplaceDirection(RtpTransceiverDirection direction,
                              std::string* message) {
   std::string new_direction;
   switch (direction) {
-    case cricket::MD_INACTIVE:
+    case RtpTransceiverDirection::kInactive:
       new_direction = "a=inactive";
       break;
-    case cricket::MD_SENDONLY:
+    case RtpTransceiverDirection::kSendOnly:
       new_direction = "a=sendonly";
       break;
-    case cricket::MD_RECVONLY:
+    case RtpTransceiverDirection::kRecvOnly:
       new_direction = "a=recvonly";
       break;
-    case cricket::MD_SENDRECV:
+    case RtpTransceiverDirection::kSendRecv:
     default:
       new_direction = "a=sendrecv";
       break;
@@ -1456,7 +1458,7 @@ class WebRtcSdpTest : public testing::Test {
     video_desc_->set_cryptos(std::vector<CryptoParams>());
   }
 
-  bool TestSerializeDirection(cricket::MediaContentDirection direction) {
+  bool TestSerializeDirection(RtpTransceiverDirection direction) {
     audio_desc_->set_direction(direction);
     video_desc_->set_direction(direction);
     std::string new_sdp = kSdpFullString;
@@ -1533,7 +1535,7 @@ class WebRtcSdpTest : public testing::Test {
         kDataContentName, TransportDescription(kUfragData, kPwdData))));
   }
 
-  bool TestDeserializeDirection(cricket::MediaContentDirection direction) {
+  bool TestDeserializeDirection(RtpTransceiverDirection direction) {
     std::string new_sdp = kSdpFullString;
     ReplaceDirection(direction, &new_sdp);
     JsepSessionDescription new_jdesc(kDummyString);
@@ -1931,15 +1933,15 @@ TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithIceOptions) {
 }
 
 TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithRecvOnlyContent) {
-  EXPECT_TRUE(TestSerializeDirection(cricket::MD_RECVONLY));
+  EXPECT_TRUE(TestSerializeDirection(RtpTransceiverDirection::kRecvOnly));
 }
 
 TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithSendOnlyContent) {
-  EXPECT_TRUE(TestSerializeDirection(cricket::MD_SENDONLY));
+  EXPECT_TRUE(TestSerializeDirection(RtpTransceiverDirection::kSendOnly));
 }
 
 TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithInactiveContent) {
-  EXPECT_TRUE(TestSerializeDirection(cricket::MD_INACTIVE));
+  EXPECT_TRUE(TestSerializeDirection(RtpTransceiverDirection::kInactive));
 }
 
 TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithAudioRejected) {
@@ -2329,15 +2331,15 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithUfragPwd) {
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithRecvOnlyContent) {
-  EXPECT_TRUE(TestDeserializeDirection(cricket::MD_RECVONLY));
+  EXPECT_TRUE(TestDeserializeDirection(RtpTransceiverDirection::kRecvOnly));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithSendOnlyContent) {
-  EXPECT_TRUE(TestDeserializeDirection(cricket::MD_SENDONLY));
+  EXPECT_TRUE(TestDeserializeDirection(RtpTransceiverDirection::kSendOnly));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithInactiveContent) {
-  EXPECT_TRUE(TestDeserializeDirection(cricket::MD_INACTIVE));
+  EXPECT_TRUE(TestDeserializeDirection(RtpTransceiverDirection::kInactive));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithRejectedAudio) {
@@ -2598,7 +2600,7 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithCorruptedSctpDataChannels) {
   // No crash is a pass.
 }
 
-void MutateJsepSctpPort(JsepSessionDescription& jdesc,
+void MutateJsepSctpPort(JsepSessionDescription* jdesc,
                         const SessionDescription& desc) {
   // take our pre-built session description and change the SCTP port.
   cricket::SessionDescription* mutant = desc.Copy();
@@ -2611,7 +2613,7 @@ void MutateJsepSctpPort(JsepSessionDescription& jdesc,
   dcdesc->set_codecs(codecs);
 
   // note: mutant's owned by jdesc now.
-  ASSERT_TRUE(jdesc.Initialize(mutant, kSessionId, kSessionVersion));
+  ASSERT_TRUE(jdesc->Initialize(mutant, kSessionId, kSessionVersion));
   mutant = NULL;
 }
 
@@ -2621,7 +2623,7 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelAndUnusualPort) {
 
   // First setup the expected JsepSessionDescription.
   JsepSessionDescription jdesc(kDummyString);
-  MutateJsepSctpPort(jdesc, desc_);
+  MutateJsepSctpPort(&jdesc, desc_);
 
   // Then get the deserialized JsepSessionDescription.
   std::string sdp_with_data = kSdpString;
@@ -2641,7 +2643,7 @@ TEST_F(WebRtcSdpTest,
   AddSctpDataChannel(use_sctpmap);
 
   JsepSessionDescription jdesc(kDummyString);
-  MutateJsepSctpPort(jdesc, desc_);
+  MutateJsepSctpPort(&jdesc, desc_);
 
   // We need to test the deserialized JsepSessionDescription from
   // kSdpSctpDataChannelStringWithSctpPort for

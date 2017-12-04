@@ -36,9 +36,13 @@ struct RTCFrameDecodeParams {
   int64_t timestamp;
 };
 
+@interface RTCVideoDecoderH264 ()
+- (void)setError:(OSStatus)error;
+@end
+
 // This is the callback function that VideoToolbox calls when decode is
 // complete.
-void decompressionOutputCallback(void *decoder,
+void decompressionOutputCallback(void *decoderRef,
                                  void *params,
                                  OSStatus status,
                                  VTDecodeInfoFlags infoFlags,
@@ -48,7 +52,9 @@ void decompressionOutputCallback(void *decoder,
   std::unique_ptr<RTCFrameDecodeParams> decodeParams(
       reinterpret_cast<RTCFrameDecodeParams *>(params));
   if (status != noErr) {
-    LOG(LS_ERROR) << "Failed to decode frame. Status: " << status;
+    RTCVideoDecoderH264 *decoder = (__bridge RTCVideoDecoderH264 *)decoderRef;
+    [decoder setError:status];
+    RTC_LOG(LS_ERROR) << "Failed to decode frame. Status: " << status;
     return;
   }
   // TODO(tkchin): Handle CVO properly.
@@ -66,12 +72,14 @@ void decompressionOutputCallback(void *decoder,
   CMVideoFormatDescriptionRef _videoFormat;
   VTDecompressionSessionRef _decompressionSession;
   RTCVideoDecoderCallback _callback;
+  OSStatus _error;
 }
 
 - (instancetype)init {
   if (self = [super init]) {
 #if defined(WEBRTC_IOS)
     [RTCUIApplicationStatusObserver prepareForUse];
+    _error = noErr;
 #endif
   }
 
@@ -94,6 +102,12 @@ void decompressionOutputCallback(void *decoder,
       codecSpecificInfo:(__nullable id<RTCCodecSpecificInfo>)info
            renderTimeMs:(int64_t)renderTimeMs {
   RTC_DCHECK(inputImage.buffer);
+
+  if (_error != noErr) {
+    RTC_LOG(LS_WARNING) << "Last frame decode failed.";
+    _error = noErr;
+    return WEBRTC_VIDEO_CODEC_ERROR;
+  }
 
 #if defined(WEBRTC_IOS)
   if (![[RTCUIApplicationStatusObserver sharedInstance] isApplicationActive]) {
@@ -126,7 +140,7 @@ void decompressionOutputCallback(void *decoder,
     // This can happen after backgrounding. We need to wait for the next
     // sps/pps before we can resume so we request a keyframe by returning an
     // error.
-    LOG(LS_WARNING) << "Missing video format. Frame with sps/pps required.";
+    RTC_LOG(LS_WARNING) << "Missing video format. Frame with sps/pps required.";
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
   CMSampleBufferRef sampleBuffer = nullptr;
@@ -153,7 +167,7 @@ void decompressionOutputCallback(void *decoder,
 #endif
   CFRelease(sampleBuffer);
   if (status != noErr) {
-    LOG(LS_ERROR) << "Failed to decode frame with code: " << status;
+    RTC_LOG(LS_ERROR) << "Failed to decode frame with code: " << status;
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
   return WEBRTC_VIDEO_CODEC_OK;
@@ -161,6 +175,10 @@ void decompressionOutputCallback(void *decoder,
 
 - (void)setCallback:(RTCVideoDecoderCallback)callback {
   _callback = callback;
+}
+
+- (void)setError:(OSStatus)error {
+  _error = error;
 }
 
 - (NSInteger)releaseDecoder {

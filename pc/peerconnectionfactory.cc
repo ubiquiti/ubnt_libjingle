@@ -17,8 +17,11 @@
 #include "api/mediastreamtrackproxy.h"
 #include "api/peerconnectionfactoryproxy.h"
 #include "api/peerconnectionproxy.h"
+#include "api/turncustomizer.h"
 #include "api/videosourceproxy.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
+#include "media/base/rtpdataengine.h"
+#include "media/sctp/sctptransport.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ptr_util.h"
@@ -84,12 +87,14 @@ PeerConnectionFactory::PeerConnectionFactory(
       event_log_factory_(std::move(event_log_factory)) {
   if (!network_thread_) {
     owned_network_thread_ = rtc::Thread::CreateWithSocketServer();
+    owned_network_thread_->SetName("pc_network_thread", nullptr);
     owned_network_thread_->Start();
     network_thread_ = owned_network_thread_.get();
   }
 
   if (!worker_thread_) {
     owned_worker_thread_ = rtc::Thread::Create();
+    owned_worker_thread_->SetName("pc_worker_thread", nullptr);
     owned_worker_thread_->Start();
     worker_thread_ = owned_worker_thread_.get();
   }
@@ -104,7 +109,7 @@ PeerConnectionFactory::PeerConnectionFactory(
     }
   }
 
-  // TODO: Currently there is no way creating an external adm in
+  // TODO(deadbeef): Currently there is no way to create an external adm in
   // libjingle source tree. So we can 't currently assert if this is NULL.
   // RTC_DCHECK(default_adm != NULL);
 }
@@ -137,8 +142,9 @@ bool PeerConnectionFactory::Initialize() {
     return false;
   }
 
-  channel_manager_.reset(new cricket::ChannelManager(
-      std::move(media_engine_), worker_thread_, network_thread_));
+  channel_manager_ = rtc::MakeUnique<cricket::ChannelManager>(
+      std::move(media_engine_), rtc::MakeUnique<cricket::RtpDataEngine>(),
+      worker_thread_, network_thread_);
 
   channel_manager_->SetVideoRtxEnabled(true);
   if (!channel_manager_->Init()) {
@@ -236,7 +242,8 @@ PeerConnectionFactory::CreatePeerConnection(
 
   if (!allocator) {
     allocator.reset(new cricket::BasicPortAllocator(
-        default_network_manager_.get(), default_socket_factory_.get()));
+        default_network_manager_.get(), default_socket_factory_.get(),
+        configuration.turn_customizer));
   }
   network_thread_->Invoke<void>(
       RTC_FROM_HERE, rtc::Bind(&cricket::PortAllocator::SetNetworkIgnoreMask,
@@ -293,6 +300,15 @@ cricket::TransportController* PeerConnectionFactory::CreateTransportController(
   return new cricket::TransportController(
       signaling_thread_, network_thread_, port_allocator,
       redetermine_role_on_ice_restart, options_.crypto_options);
+}
+
+std::unique_ptr<cricket::SctpTransportInternalFactory>
+PeerConnectionFactory::CreateSctpTransportInternalFactory() {
+#ifdef HAVE_SCTP
+  return rtc::MakeUnique<cricket::SctpTransportFactory>(network_thread());
+#else
+  return nullptr;
+#endif
 }
 
 cricket::ChannelManager* PeerConnectionFactory::channel_manager() {

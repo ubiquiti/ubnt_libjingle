@@ -65,7 +65,7 @@ TEST(TransformDbMetricForReporting, DbFsScaling) {
   Aec3Fft fft;
   x.fill(1000.f);
   fft.ZeroPaddedFft(x, &X);
-  X.Spectrum(Aec3Optimization::kNone, &X2);
+  X.Spectrum(Aec3Optimization::kNone, X2);
 
   float offset = -10.f * log10(32768.f * 32768.f);
   EXPECT_NEAR(offset, -90.3f, 0.1f);
@@ -110,6 +110,20 @@ TEST(DbMetric, Update) {
   EXPECT_FLOAT_EQ(kValue, metric.floor_value);
 }
 
+// Verify the Update functionality of DbMetric.
+TEST(DbMetric, UpdateInstant) {
+  EchoRemoverMetrics::DbMetric metric(0.f, 20.f, -20.f);
+  constexpr float kMinValue = -77.f;
+  constexpr float kMaxValue = 33.f;
+  constexpr float kLastValue = (kMinValue + kMaxValue) / 2.0f;
+  for (float value = kMinValue; value <= kMaxValue; value++)
+    metric.UpdateInstant(value);
+  metric.UpdateInstant(kLastValue);
+  EXPECT_FLOAT_EQ(kLastValue, metric.sum_value);
+  EXPECT_FLOAT_EQ(kMaxValue, metric.ceil_value);
+  EXPECT_FLOAT_EQ(kMinValue, metric.floor_value);
+}
+
 // Verify the constructor functionality of DbMetric.
 TEST(DbMetric, Constructor) {
   EchoRemoverMetrics::DbMetric metric;
@@ -126,7 +140,7 @@ TEST(DbMetric, Constructor) {
 // Verify the general functionality of EchoRemoverMetrics.
 TEST(EchoRemoverMetrics, NormalUsage) {
   EchoRemoverMetrics metrics;
-  AecState aec_state(AudioProcessing::Config::EchoCanceller3{});
+  AecState aec_state(EchoCanceller3Config{});
   std::array<float, kFftLengthBy2Plus1> comfort_noise_spectrum;
   std::array<float, kFftLengthBy2Plus1> suppressor_gain;
   comfort_noise_spectrum.fill(10.f);

@@ -214,6 +214,10 @@ class Call : public webrtc::Call,
   void SetBitrateConfigMask(
       const webrtc::Call::Config::BitrateConfigMask& bitrate_config) override;
 
+  void SetBitrateAllocationStrategy(
+      std::unique_ptr<rtc::BitrateAllocationStrategy>
+          bitrate_allocation_strategy) override;
+
   void SignalChannelNetworkState(MediaType media, NetworkState state) override;
 
   void OnTransportOverheadChanged(MediaType media,
@@ -247,11 +251,6 @@ class Call : public webrtc::Call,
   void NotifyBweOfReceivedPacket(const RtpPacketReceived& packet,
                                  MediaType media_type)
       RTC_SHARED_LOCKS_REQUIRED(receive_crit_);
-
-  rtc::Optional<RtpPacketReceived> ParseRtpPacket(
-      const uint8_t* packet,
-      size_t length,
-      const PacketTime* packet_time) const;
 
   void UpdateSendHistograms(int64_t first_sent_packet_ms)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(&bitrate_crit_);
@@ -504,25 +503,6 @@ Call::~Call() {
   UpdateHistograms();
 }
 
-rtc::Optional<RtpPacketReceived> Call::ParseRtpPacket(
-    const uint8_t* packet,
-    size_t length,
-    const PacketTime* packet_time) const {
-  RtpPacketReceived parsed_packet;
-  if (!parsed_packet.Parse(packet, length))
-    return rtc::Optional<RtpPacketReceived>();
-
-  int64_t arrival_time_ms;
-  if (packet_time && packet_time->timestamp != -1) {
-    arrival_time_ms = (packet_time->timestamp + 500) / 1000;
-  } else {
-    arrival_time_ms = clock_->TimeInMilliseconds();
-  }
-  parsed_packet.set_arrival_time_ms(arrival_time_ms);
-
-  return rtc::Optional<RtpPacketReceived>(std::move(parsed_packet));
-}
-
 void Call::UpdateHistograms() {
   RTC_HISTOGRAM_COUNTS_100000(
       "WebRTC.Call.LifetimeInSeconds",
@@ -547,16 +527,16 @@ void Call::UpdateSendHistograms(int64_t first_sent_packet_ms) {
   if (send_bitrate_stats.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Call.EstimatedSendBitrateInKbps",
                                 send_bitrate_stats.average);
-    LOG(LS_INFO) << "WebRTC.Call.EstimatedSendBitrateInKbps, "
-                 << send_bitrate_stats.ToString();
+    RTC_LOG(LS_INFO) << "WebRTC.Call.EstimatedSendBitrateInKbps, "
+                     << send_bitrate_stats.ToString();
   }
   AggregatedStats pacer_bitrate_stats =
       pacer_bitrate_kbps_counter_.ProcessAndGetStats();
   if (pacer_bitrate_stats.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Call.PacerBitrateInKbps",
                                 pacer_bitrate_stats.average);
-    LOG(LS_INFO) << "WebRTC.Call.PacerBitrateInKbps, "
-                 << pacer_bitrate_stats.ToString();
+    RTC_LOG(LS_INFO) << "WebRTC.Call.PacerBitrateInKbps, "
+                     << pacer_bitrate_stats.ToString();
   }
 }
 
@@ -577,32 +557,32 @@ void Call::UpdateReceiveHistograms() {
   if (video_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Call.VideoBitrateReceivedInKbps",
                                 video_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << "WebRTC.Call.VideoBitrateReceivedInBps, "
-                 << video_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << "WebRTC.Call.VideoBitrateReceivedInBps, "
+                     << video_bytes_per_sec.ToStringWithMultiplier(8);
   }
   AggregatedStats audio_bytes_per_sec =
       received_audio_bytes_per_second_counter_.GetStats();
   if (audio_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Call.AudioBitrateReceivedInKbps",
                                 audio_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << "WebRTC.Call.AudioBitrateReceivedInBps, "
-                 << audio_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << "WebRTC.Call.AudioBitrateReceivedInBps, "
+                     << audio_bytes_per_sec.ToStringWithMultiplier(8);
   }
   AggregatedStats rtcp_bytes_per_sec =
       received_rtcp_bytes_per_second_counter_.GetStats();
   if (rtcp_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Call.RtcpBitrateReceivedInBps",
                                 rtcp_bytes_per_sec.average * 8);
-    LOG(LS_INFO) << "WebRTC.Call.RtcpBitrateReceivedInBps, "
-                 << rtcp_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << "WebRTC.Call.RtcpBitrateReceivedInBps, "
+                     << rtcp_bytes_per_sec.ToStringWithMultiplier(8);
   }
   AggregatedStats recv_bytes_per_sec =
       received_bytes_per_second_counter_.GetStats();
   if (recv_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Call.BitrateReceivedInKbps",
                                 recv_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << "WebRTC.Call.BitrateReceivedInBps, "
-                 << recv_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << "WebRTC.Call.BitrateReceivedInBps, "
+                     << recv_bytes_per_sec.ToStringWithMultiplier(8);
   }
 }
 
@@ -932,8 +912,7 @@ Call::Stats Call::GetStats() const {
   Stats stats;
   // Fetch available send/receive bitrates.
   uint32_t send_bandwidth = 0;
-  transport_send_->send_side_cc()->GetBitrateController()->AvailableBandwidth(
-      &send_bandwidth);
+  transport_send_->send_side_cc()->AvailableBandwidth(&send_bandwidth);
   std::vector<unsigned int> ssrcs;
   uint32_t recv_bandwidth = 0;
   receive_side_cc_.GetRemoteBitrateEstimator(false)->LatestEstimate(
@@ -1005,8 +984,8 @@ void Call::UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start) {
   if (updated.min_bitrate_bps == config_.bitrate_config.min_bitrate_bps &&
       updated.max_bitrate_bps == config_.bitrate_config.max_bitrate_bps &&
       !new_start) {
-    LOG(LS_VERBOSE) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
-                    << "nothing to update";
+    RTC_LOG(LS_VERBOSE) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
+                        << "nothing to update";
     return;
   }
 
@@ -1018,10 +997,10 @@ void Call::UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start) {
     updated.start_bitrate_bps = -1;
   }
 
-  LOG(INFO) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
-            << "calling SetBweBitrates with args (" << updated.min_bitrate_bps
-            << ", " << updated.start_bitrate_bps << ", "
-            << updated.max_bitrate_bps << ")";
+  RTC_LOG(INFO) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
+                << "calling SetBweBitrates with args ("
+                << updated.min_bitrate_bps << ", " << updated.start_bitrate_bps
+                << ", " << updated.max_bitrate_bps << ")";
   transport_send_->send_side_cc()->SetBweBitrates(updated.min_bitrate_bps,
                                                   updated.start_bitrate_bps,
                                                   updated.max_bitrate_bps);
@@ -1029,6 +1008,24 @@ void Call::UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start) {
     updated.start_bitrate_bps = config_.bitrate_config.start_bitrate_bps;
   }
   config_.bitrate_config = updated;
+}
+
+void Call::SetBitrateAllocationStrategy(
+    std::unique_ptr<rtc::BitrateAllocationStrategy>
+        bitrate_allocation_strategy) {
+  if (!worker_queue_.IsCurrent()) {
+    rtc::BitrateAllocationStrategy* strategy_raw =
+        bitrate_allocation_strategy.release();
+    auto functor = [this, strategy_raw]() {
+      SetBitrateAllocationStrategy(
+          rtc::WrapUnique<rtc::BitrateAllocationStrategy>(strategy_raw));
+    };
+    worker_queue_.PostTask([functor] { functor(); });
+    return;
+  }
+  RTC_DCHECK_RUN_ON(&worker_queue_);
+  bitrate_allocator_->SetBitrateAllocationStrategy(
+      std::move(bitrate_allocation_strategy));
 }
 
 void Call::SignalChannelNetworkState(MediaType media, NetworkState state) {
@@ -1097,7 +1094,7 @@ void Call::OnNetworkRouteChanged(const std::string& transport_name,
   RTC_DCHECK_CALLED_SEQUENTIALLY(&configuration_sequence_checker_);
   // Check if the network route is connected.
   if (!network_route.connected) {
-    LOG(LS_INFO) << "Transport " << transport_name << " is disconnected";
+    RTC_LOG(LS_INFO) << "Transport " << transport_name << " is disconnected";
     // TODO(honghaiz): Perhaps handle this in SignalChannelNetworkState and
     // consider merging these two methods.
     return;
@@ -1114,14 +1111,14 @@ void Call::OnNetworkRouteChanged(const std::string& transport_name,
   }
   if (kv->second != network_route) {
     kv->second = network_route;
-    LOG(LS_INFO) << "Network route changed on transport " << transport_name
-                 << ": new local network id " << network_route.local_network_id
-                 << " new remote network id " << network_route.remote_network_id
-                 << " Reset bitrates to min: "
-                 << config_.bitrate_config.min_bitrate_bps
-                 << " bps, start: " << config_.bitrate_config.start_bitrate_bps
-                 << " bps,  max: " << config_.bitrate_config.start_bitrate_bps
-                 << " bps.";
+    RTC_LOG(LS_INFO)
+        << "Network route changed on transport " << transport_name
+        << ": new local network id " << network_route.local_network_id
+        << " new remote network id " << network_route.remote_network_id
+        << " Reset bitrates to min: " << config_.bitrate_config.min_bitrate_bps
+        << " bps, start: " << config_.bitrate_config.start_bitrate_bps
+        << " bps,  max: " << config_.bitrate_config.start_bitrate_bps
+        << " bps.";
     RTC_DCHECK_GT(config_.bitrate_config.start_bitrate_bps, 0);
     transport_send_->send_side_cc()->OnNetworkRouteChanged(
         network_route, config_.bitrate_config.start_bitrate_bps,
@@ -1156,8 +1153,8 @@ void Call::UpdateAggregateNetworkState() {
     aggregate_state = kNetworkUp;
   }
 
-  LOG(LS_INFO) << "UpdateAggregateNetworkState: aggregate_state="
-               << (aggregate_state == kNetworkUp ? "up" : "down");
+  RTC_LOG(LS_INFO) << "UpdateAggregateNetworkState: aggregate_state="
+                   << (aggregate_state == kNetworkUp ? "up" : "down");
 
   transport_send_->send_side_cc()->SignalNetworkState(aggregate_state);
 }
@@ -1240,9 +1237,10 @@ void Call::ConfigureSync(const std::string& sync_group) {
     for (AudioReceiveStream* stream : audio_receive_streams_) {
       if (stream->config().sync_group == sync_group) {
         if (sync_audio_stream != nullptr) {
-          LOG(LS_WARNING) << "Attempting to sync more than one audio stream "
-                             "within the same sync group. This is not "
-                             "supported in the current implementation.";
+          RTC_LOG(LS_WARNING)
+              << "Attempting to sync more than one audio stream "
+                 "within the same sync group. This is not "
+                 "supported in the current implementation.";
           break;
         }
         sync_audio_stream = stream;
@@ -1259,9 +1257,10 @@ void Call::ConfigureSync(const std::string& sync_group) {
     if (num_synced_streams > 1) {
       // TODO(pbos): Support synchronizing more than one A/V pair.
       // https://code.google.com/p/webrtc/issues/detail?id=4762
-      LOG(LS_WARNING) << "Attempting to sync more than one audio/video pair "
-                         "within the same sync group. This is not supported in "
-                         "the current implementation.";
+      RTC_LOG(LS_WARNING)
+          << "Attempting to sync more than one audio/video pair "
+             "within the same sync group. This is not supported in "
+             "the current implementation.";
     }
     // Only sync the first A/V pair within this sync group.
     if (num_synced_streams == 1) {
@@ -1329,28 +1328,29 @@ PacketReceiver::DeliveryStatus Call::DeliverRtp(MediaType media_type,
                                                 const PacketTime& packet_time) {
   TRACE_EVENT0("webrtc", "Call::DeliverRtp");
 
-  // TODO(nisse): We should parse the RTP header only here, and pass
-  // on parsed_packet to the receive streams.
-  rtc::Optional<RtpPacketReceived> parsed_packet =
-      ParseRtpPacket(packet, length, &packet_time);
+  RtpPacketReceived parsed_packet;
+  if (!parsed_packet.Parse(packet, length))
+    return DELIVERY_PACKET_ERROR;
+
+  if (packet_time.timestamp != -1) {
+    parsed_packet.set_arrival_time_ms((packet_time.timestamp + 500) / 1000);
+  } else {
+    parsed_packet.set_arrival_time_ms(clock_->TimeInMilliseconds());
+  }
 
   // We might get RTP keep-alive packets in accordance with RFC6263 section 4.6.
   // These are empty (zero length payload) RTP packets with an unsignaled
   // payload type.
-  const bool is_keep_alive_packet =
-      parsed_packet && parsed_packet->payload_size() == 0;
+  const bool is_keep_alive_packet = parsed_packet.payload_size() == 0;
 
   RTC_DCHECK(media_type == MediaType::AUDIO || media_type == MediaType::VIDEO ||
              is_keep_alive_packet);
 
-  if (!parsed_packet)
-    return DELIVERY_PACKET_ERROR;
-
   ReadLockScoped read_lock(*receive_crit_);
-  auto it = receive_rtp_config_.find(parsed_packet->Ssrc());
+  auto it = receive_rtp_config_.find(parsed_packet.Ssrc());
   if (it == receive_rtp_config_.end()) {
-    LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "
-                  << parsed_packet->Ssrc();
+    RTC_LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "
+                      << parsed_packet.Ssrc();
     // Destruction of the receive stream, including deregistering from the
     // RtpDemuxer, is not protected by the |receive_crit_| lock. But
     // deregistering in the |receive_rtp_config_| map is protected by that lock.
@@ -1359,17 +1359,17 @@ PacketReceiver::DeliveryStatus Call::DeliverRtp(MediaType media_type,
     // which is being torned down.
     return DELIVERY_UNKNOWN_SSRC;
   }
-  parsed_packet->IdentifyExtensions(it->second.extensions);
+  parsed_packet.IdentifyExtensions(it->second.extensions);
 
-  NotifyBweOfReceivedPacket(*parsed_packet, media_type);
+  NotifyBweOfReceivedPacket(parsed_packet, media_type);
 
   if (media_type == MediaType::AUDIO) {
-    if (audio_receiver_controller_.OnRtpPacket(*parsed_packet)) {
+    if (audio_receiver_controller_.OnRtpPacket(parsed_packet)) {
       received_bytes_per_second_counter_.Add(static_cast<int>(length));
       received_audio_bytes_per_second_counter_.Add(static_cast<int>(length));
       event_log_->Log(
-          rtc::MakeUnique<RtcEventRtpPacketIncoming>(*parsed_packet));
-      const int64_t arrival_time_ms = parsed_packet->arrival_time_ms();
+          rtc::MakeUnique<RtcEventRtpPacketIncoming>(parsed_packet));
+      const int64_t arrival_time_ms = parsed_packet.arrival_time_ms();
       if (!first_received_rtp_audio_ms_) {
         first_received_rtp_audio_ms_.emplace(arrival_time_ms);
       }
@@ -1377,12 +1377,12 @@ PacketReceiver::DeliveryStatus Call::DeliverRtp(MediaType media_type,
       return DELIVERY_OK;
     }
   } else if (media_type == MediaType::VIDEO) {
-    if (video_receiver_controller_.OnRtpPacket(*parsed_packet)) {
+    if (video_receiver_controller_.OnRtpPacket(parsed_packet)) {
       received_bytes_per_second_counter_.Add(static_cast<int>(length));
       received_video_bytes_per_second_counter_.Add(static_cast<int>(length));
       event_log_->Log(
-          rtc::MakeUnique<RtcEventRtpPacketIncoming>(*parsed_packet));
-      const int64_t arrival_time_ms = parsed_packet->arrival_time_ms();
+          rtc::MakeUnique<RtcEventRtpPacketIncoming>(parsed_packet));
+      const int64_t arrival_time_ms = parsed_packet.arrival_time_ms();
       if (!first_received_rtp_video_ms_) {
         first_received_rtp_video_ms_.emplace(arrival_time_ms);
       }
@@ -1406,18 +1406,17 @@ PacketReceiver::DeliveryStatus Call::DeliverPacket(
 }
 
 void Call::OnRecoveredPacket(const uint8_t* packet, size_t length) {
-  rtc::Optional<RtpPacketReceived> parsed_packet =
-      ParseRtpPacket(packet, length, nullptr);
-  if (!parsed_packet)
+  RtpPacketReceived parsed_packet;
+  if (!parsed_packet.Parse(packet, length))
     return;
 
-  parsed_packet->set_recovered(true);
+  parsed_packet.set_recovered(true);
 
   ReadLockScoped read_lock(*receive_crit_);
-  auto it = receive_rtp_config_.find(parsed_packet->Ssrc());
+  auto it = receive_rtp_config_.find(parsed_packet.Ssrc());
   if (it == receive_rtp_config_.end()) {
-    LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "
-                  << parsed_packet->Ssrc();
+    RTC_LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "
+                      << parsed_packet.Ssrc();
     // Destruction of the receive stream, including deregistering from the
     // RtpDemuxer, is not protected by the |receive_crit_| lock. But
     // deregistering in the |receive_rtp_config_| map is protected by that lock.
@@ -1426,10 +1425,10 @@ void Call::OnRecoveredPacket(const uint8_t* packet, size_t length) {
     // which is being torned down.
     return;
   }
-  parsed_packet->IdentifyExtensions(it->second.extensions);
+  parsed_packet.IdentifyExtensions(it->second.extensions);
 
   // TODO(brandtr): Update here when we support protecting audio packets too.
-  video_receiver_controller_.OnRtpPacket(*parsed_packet);
+  video_receiver_controller_.OnRtpPacket(parsed_packet);
 }
 
 void Call::NotifyBweOfReceivedPacket(const RtpPacketReceived& packet,

@@ -68,7 +68,7 @@ class FrameGeneratorCapturer::InsertFrameTask : public rtc::QueuedTask {
         } else {
           rtc::TaskQueue::Current()->PostDelayedTask(
               std::unique_ptr<rtc::QueuedTask>(this), 0);
-          LOG(LS_ERROR)
+          RTC_LOG(LS_ERROR)
               << "Frame Generator Capturer can't keep up with requested fps";
         }
         // Repost of this instance, make sure it is not deleted.
@@ -91,6 +91,20 @@ FrameGeneratorCapturer* FrameGeneratorCapturer::Create(int width,
                                                        Clock* clock) {
   std::unique_ptr<FrameGeneratorCapturer> capturer(new FrameGeneratorCapturer(
       clock, FrameGenerator::CreateSquareGenerator(width, height), target_fps));
+  if (!capturer->Init())
+    return nullptr;
+
+  return capturer.release();
+}
+
+FrameGeneratorCapturer* FrameGeneratorCapturer::Create(int width,
+                                                       int height,
+                                                       int num_squares,
+                                                       int target_fps,
+                                                       Clock* clock) {
+  std::unique_ptr<FrameGeneratorCapturer> capturer(new FrameGeneratorCapturer(
+      clock, FrameGenerator::CreateSquareGenerator(width, height, num_squares),
+      target_fps));
   if (!capturer->Init())
     return nullptr;
 

@@ -18,15 +18,16 @@
 #include <string>
 #include <vector>
 
+#include "api/cryptoparams.h"
 #include "api/mediatypes.h"
+#include "api/rtptransceiverinterface.h"
 #include "media/base/codec.h"
-#include "media/base/cryptoparams.h"
 #include "media/base/mediachannel.h"
 #include "media/base/mediaconstants.h"
 #include "media/base/mediaengine.h"  // For DataChannelType
 #include "media/base/streamparams.h"
-#include "p2p/base/sessiondescription.h"
 #include "p2p/base/jseptransport.h"
+#include "p2p/base/sessiondescription.h"
 #include "p2p/base/transportdescriptionfactory.h"
 
 namespace cricket {
@@ -37,15 +38,6 @@ typedef std::vector<VideoCodec> VideoCodecs;
 typedef std::vector<DataCodec> DataCodecs;
 typedef std::vector<CryptoParams> CryptoParamsVec;
 typedef std::vector<webrtc::RtpExtension> RtpHeaderExtensions;
-
-enum MediaContentDirection {
-  MD_INACTIVE,
-  MD_SENDONLY,
-  MD_RECVONLY,
-  MD_SENDRECV
-};
-
-std::string MediaContentDirectionToString(MediaContentDirection direction);
 
 enum CryptoType {
   CT_NONE,
@@ -69,38 +61,9 @@ extern const char kMediaProtocolTcpDtlsSctp[];
 
 // Options to control how session descriptions are generated.
 const int kAutoBandwidth = -1;
-const int kBufferedModeDisabled = 0;
 
 // Default RTCP CNAME for unit tests.
 const char kDefaultRtcpCname[] = "DefaultRtcpCname";
-
-struct RtpTransceiverDirection {
-  bool send;
-  bool recv;
-
-  RtpTransceiverDirection(bool send, bool recv) : send(send), recv(recv) {}
-
-  bool operator==(const RtpTransceiverDirection& o) const {
-    return send == o.send && recv == o.recv;
-  }
-
-  bool operator!=(const RtpTransceiverDirection& o) const {
-    return !(*this == o);
-  }
-
-  static RtpTransceiverDirection FromMediaContentDirection(
-      MediaContentDirection md);
-
-  MediaContentDirection ToMediaContentDirection() const;
-
-  RtpTransceiverDirection Reversed() const {
-    return RtpTransceiverDirection(recv, send);
-  }
-};
-
-RtpTransceiverDirection
-NegotiateRtpTransceiverDirection(RtpTransceiverDirection offer,
-                                 RtpTransceiverDirection wants);
 
 // Options for an RtpSender contained with an media description/"m=" section.
 struct SenderOptions {
@@ -115,7 +78,7 @@ struct SenderOptions {
 struct MediaDescriptionOptions {
   MediaDescriptionOptions(MediaType type,
                           const std::string& mid,
-                          RtpTransceiverDirection direction,
+                          webrtc::RtpTransceiverDirection direction,
                           bool stopped)
       : type(type), mid(mid), direction(direction), stopped(stopped) {}
 
@@ -133,7 +96,7 @@ struct MediaDescriptionOptions {
 
   MediaType type;
   std::string mid;
-  RtpTransceiverDirection direction;
+  webrtc::RtpTransceiverDirection direction;
   bool stopped;
   TransportOptions transport_options;
   // Note: There's no equivalent "RtpReceiverOptions" because only send
@@ -185,8 +148,10 @@ class MediaContentDescription : public ContentDescription {
   std::string protocol() const { return protocol_; }
   void set_protocol(const std::string& protocol) { protocol_ = protocol; }
 
-  MediaContentDirection direction() const { return direction_; }
-  void set_direction(MediaContentDirection direction) {
+  webrtc::RtpTransceiverDirection direction() const {
+    return direction_;
+  }
+  void set_direction(webrtc::RtpTransceiverDirection direction) {
     direction_ = direction;
   }
 
@@ -294,11 +259,6 @@ class MediaContentDescription : public ContentDescription {
   void set_partial(bool partial) { partial_ = partial; }
   bool partial() const { return partial_;  }
 
-  void set_buffered_mode_latency(int latency) {
-    buffered_mode_latency_ = latency;
-  }
-  int buffered_mode_latency() const { return buffered_mode_latency_; }
-
   // https://tools.ietf.org/html/rfc4566#section-5.7
   // May be present at the media or session level of SDP. If present at both
   // levels, the media-level attribute overwrites the session-level one.
@@ -322,8 +282,8 @@ class MediaContentDescription : public ContentDescription {
   StreamParamsVec streams_;
   bool conference_mode_ = false;
   bool partial_ = false;
-  int buffered_mode_latency_ = kBufferedModeDisabled;
-  MediaContentDirection direction_ = MD_SENDRECV;
+  webrtc::RtpTransceiverDirection direction_ =
+      webrtc::RtpTransceiverDirection::kSendRecv;
   rtc::SocketAddress connection_address_;
 };
 
@@ -474,10 +434,10 @@ class MediaSessionDescriptionFactory {
 
  private:
   const AudioCodecs& GetAudioCodecsForOffer(
-      const RtpTransceiverDirection& direction) const;
+      const webrtc::RtpTransceiverDirection& direction) const;
   const AudioCodecs& GetAudioCodecsForAnswer(
-      const RtpTransceiverDirection& offer,
-      const RtpTransceiverDirection& answer) const;
+      const webrtc::RtpTransceiverDirection& offer,
+      const webrtc::RtpTransceiverDirection& answer) const;
   void GetCodecsForOffer(const SessionDescription* current_description,
                          AudioCodecs* audio_codecs,
                          VideoCodecs* video_codecs,
@@ -618,10 +578,10 @@ const DataContentDescription* GetFirstDataContentDescription(
     const SessionDescription* sdesc);
 // Non-const versions of the above functions.
 // Useful when modifying an existing description.
-ContentInfo* GetFirstMediaContent(ContentInfos& contents, MediaType media_type);
-ContentInfo* GetFirstAudioContent(ContentInfos& contents);
-ContentInfo* GetFirstVideoContent(ContentInfos& contents);
-ContentInfo* GetFirstDataContent(ContentInfos& contents);
+ContentInfo* GetFirstMediaContent(ContentInfos* contents, MediaType media_type);
+ContentInfo* GetFirstAudioContent(ContentInfos* contents);
+ContentInfo* GetFirstVideoContent(ContentInfos* contents);
+ContentInfo* GetFirstDataContent(ContentInfos* contents);
 ContentInfo* GetFirstAudioContent(SessionDescription* sdesc);
 ContentInfo* GetFirstVideoContent(SessionDescription* sdesc);
 ContentInfo* GetFirstDataContent(SessionDescription* sdesc);

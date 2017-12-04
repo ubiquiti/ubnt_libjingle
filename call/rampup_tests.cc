@@ -418,19 +418,21 @@ RampUpDownUpTester::~RampUpDownUpTester() {}
 
 void RampUpDownUpTester::PollStats() {
   do {
-    if (send_stream_) {
+    int transmit_bitrate_bps = 0;
+    bool suspended = false;
+    if (num_video_streams_ > 0) {
       webrtc::VideoSendStream::Stats stats = send_stream_->GetStats();
-      int transmit_bitrate_bps = 0;
       for (auto it : stats.substreams) {
         transmit_bitrate_bps += it.second.total_bitrate_bps;
       }
-      EvolveTestState(transmit_bitrate_bps, stats.suspended);
-    } else if (num_audio_streams_ > 0 && sender_call_ != nullptr) {
+      suspended = stats.suspended;
+    }
+    if (num_audio_streams_ > 0 && sender_call_ != nullptr) {
       // An audio send stream doesn't have bitrate stats, so the call send BW is
       // currently used instead.
-      int transmit_bitrate_bps = sender_call_->GetStats().send_bandwidth_bps;
-      EvolveTestState(transmit_bitrate_bps, false);
+      transmit_bitrate_bps = sender_call_->GetStats().send_bandwidth_bps;
     }
+    EvolveTestState(transmit_bitrate_bps, suspended);
   } while (!stop_event_.Wait(kPollIntervalMs));
 }
 
@@ -584,15 +586,9 @@ TEST_F(RampUpTest, UpDownUpTransportSequenceNumberRtx) {
 
 // TODO(holmer): Tests which don't report perf stats should be moved to a
 // different executable since they per definition are not perf tests.
-// Crashes on Linux only, see webrtc:7919.
-#if defined(WEBRTC_LINUX) || defined(WEBRTC_MAC)
-#define MAYBE_UpDownUpTransportSequenceNumberPacketLoss \
-    DISABLED_UpDownUpTransportSequenceNumberPacketLoss
-#else
-#define MAYBE_UpDownUpTransportSequenceNumberPacketLoss \
-    UpDownUpTransportSequenceNumberPacketLoss
-#endif
-TEST_F(RampUpTest, MAYBE_UpDownUpTransportSequenceNumberPacketLoss) {
+// This test is disabled because it crashes on Linux, and is flaky on other
+// platforms. See: crbug.com/webrtc/7919
+TEST_F(RampUpTest, DISABLED_UpDownUpTransportSequenceNumberPacketLoss) {
   std::vector<int> loss_rates = {20, 0, 0, 0};
   RampUpDownUpTester test(1, 0, 1, kStartBitrateBps,
                           RtpExtension::kTransportSequenceNumberUri, true,

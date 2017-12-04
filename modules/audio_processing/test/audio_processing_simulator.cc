@@ -55,12 +55,13 @@ void WriteEchoLikelihoodGraphFileHeader(std::ofstream* output_file) {
 
 void WriteEchoLikelihoodGraphFileFooter(std::ofstream* output_file) {
   (*output_file) << "])" << std::endl
-                 << "x = np.arange(len(y))*.01" << std::endl
-                 << "plt.plot(x, y)" << std::endl
-                 << "plt.ylabel('Echo likelihood')" << std::endl
-                 << "plt.xlabel('Time (s)')" << std::endl
-                 << "plt.ylim([0,1])" << std::endl
-                 << "plt.show()" << std::endl;
+                 << "if __name__ == '__main__':" << std::endl
+                 << "  x = np.arange(len(y))*.01" << std::endl
+                 << "  plt.plot(x, y)" << std::endl
+                 << "  plt.ylabel('Echo likelihood')" << std::endl
+                 << "  plt.xlabel('Time (s)')" << std::endl
+                 << "  plt.ylim([0,1])" << std::endl
+                 << "  plt.show()" << std::endl;
 }
 
 }  // namespace
@@ -98,7 +99,7 @@ AudioProcessingSimulator::AudioProcessingSimulator(
   }
 
   if (settings_.simulate_mic_gain)
-    LOG(LS_VERBOSE) << "Simulating analog mic gain";
+    RTC_LOG(LS_VERBOSE) << "Simulating analog mic gain";
 }
 
 AudioProcessingSimulator::~AudioProcessingSimulator() {
@@ -306,6 +307,7 @@ void AudioProcessingSimulator::DestroyAudioProcessor() {
 void AudioProcessingSimulator::CreateAudioProcessor() {
   Config config;
   AudioProcessing::Config apm_config;
+  std::unique_ptr<EchoControlFactory> echo_control_factory;
   if (settings_.use_bf && *settings_.use_bf) {
     config.Set<Beamforming>(new Beamforming(
         true, ParseArrayGeometry(*settings_.microphone_positions),
@@ -318,11 +320,12 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   if (settings_.use_ie) {
     config.Set<Intelligibility>(new Intelligibility(*settings_.use_ie));
   }
-  if (settings_.use_aec3) {
-    apm_config.echo_canceller3.enabled = *settings_.use_aec3;
-  }
   if (settings_.use_agc2) {
     apm_config.gain_controller2.enabled = *settings_.use_agc2;
+    apm_config.gain_controller2.fixed_gain_db = settings_.agc2_fixed_gain_db;
+  }
+  if (settings_.use_aec3 && *settings_.use_aec3) {
+    echo_control_factory.reset(new EchoCanceller3Factory());
   }
   if (settings_.use_lc) {
     apm_config.level_controller.enabled = *settings_.use_lc;
@@ -345,7 +348,8 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
     apm_config.residual_echo_detector.enabled = *settings_.use_ed;
   }
 
-  ap_.reset(AudioProcessing::Create(config));
+  ap_.reset(AudioProcessing::Create(config, nullptr,
+                                    std::move(echo_control_factory), nullptr));
   RTC_CHECK(ap_);
 
   ap_->ApplyConfig(apm_config);

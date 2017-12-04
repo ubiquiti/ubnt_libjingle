@@ -21,6 +21,8 @@ rtc_static_library("pacing") {
     "pacer.h",
     "packet_queue.cc",
     "packet_queue.h",
+    "packet_queue2.cc",
+    "packet_queue2.h",
     "packet_router.cc",
     "packet_router.h",
   ]
@@ -47,12 +49,6 @@ if (rtc_include_tests) {
   rtc_source_set("pacing_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:modules_unittests" ]
-    }
     sources = [
       "alr_detector_unittest.cc",
       "bitrate_prober_unittest.cc",

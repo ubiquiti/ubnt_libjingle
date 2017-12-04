@@ -84,7 +84,7 @@ class StunRequest : public rtc::MessageHandler {
  public:
   StunRequest();
   StunRequest(StunMessage* request);
-  virtual ~StunRequest();
+  ~StunRequest() override;
 
   // Causes our wrapped StunMessage to be Prepared
   void Construct();
@@ -104,6 +104,9 @@ class StunRequest : public rtc::MessageHandler {
 
   // Returns a const pointer to |msg_|.
   const StunMessage* msg() const;
+
+  // Returns a mutable pointer to |msg_|.
+  StunMessage* mutable_msg();
 
   // Time elapsed since last send (in ms)
   int Elapsed() const;
@@ -130,7 +133,7 @@ class StunRequest : public rtc::MessageHandler {
   void set_manager(StunRequestManager* manager);
 
   // Handles messages for sending and timeout.
-  void OnMessage(rtc::Message* pmsg);
+  void OnMessage(rtc::Message* pmsg) override;
 
   StunRequestManager* manager_;
   StunMessage* msg_;

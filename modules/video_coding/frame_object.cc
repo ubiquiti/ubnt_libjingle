@@ -9,6 +9,7 @@
  */
 
 #include "modules/video_coding/frame_object.h"
+
 #include "common_video/h264/h264_common.h"
 #include "modules/video_coding/packet_buffer.h"
 #include "rtc_base/checks.h"
@@ -42,13 +43,19 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   frame_type_ = first_packet->frameType;
   codec_type_ = first_packet->codec;
 
+  // Stereo codec appends CopyCodecSpecific to last packet to avoid copy.
+  VCMPacket* packet_with_codec_specific =
+      codec_type_ == kVideoCodecStereo ? packet_buffer_->GetPacket(last_seq_num)
+                                       : first_packet;
+
   // TODO(philipel): Remove when encoded image is replaced by FrameObject.
   // VCMEncodedFrame members
-  CopyCodecSpecific(&first_packet->video_header);
+  CopyCodecSpecific(&packet_with_codec_specific->video_header);
   _completeFrame = true;
   _payloadType = first_packet->payloadType;
   _timeStamp = first_packet->timestamp;
   ntp_time_ms_ = first_packet->ntp_time_ms_;
+  _frameType = first_packet->frameType;
 
   // Setting frame's playout delays to the same values
   // as of the first packet's.
@@ -67,32 +74,6 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
 
   _buffer = new uint8_t[_size];
   _length = frame_size;
-
-  // For H264 frames we can't determine the frame type by just looking at the
-  // first packet. Instead we consider the frame to be a keyframe if it
-  // contains an IDR NALU.
-  if (codec_type_ == kVideoCodecH264) {
-    _frameType = kVideoFrameDelta;
-    frame_type_ = kVideoFrameDelta;
-    for (uint16_t seq_num = first_seq_num;
-         seq_num != static_cast<uint16_t>(last_seq_num + 1) &&
-         _frameType == kVideoFrameDelta;
-         ++seq_num) {
-      VCMPacket* packet = packet_buffer_->GetPacket(seq_num);
-      RTC_CHECK(packet);
-      const RTPVideoHeaderH264& header = packet->video_header.codecHeader.H264;
-      for (size_t i = 0; i < header.nalus_length; ++i) {
-        if (header.nalus[i].type == H264::NaluType::kIdr) {
-          _frameType = kVideoFrameKey;
-          frame_type_ = kVideoFrameKey;
-          break;
-        }
-      }
-    }
-  } else {
-    _frameType = first_packet->frameType;
-    frame_type_ = first_packet->frameType;
-  }
 
   bool bitstream_copied = GetBitstream(_buffer);
   RTC_DCHECK(bitstream_copied);
@@ -132,10 +113,10 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
         last_packet->video_header.video_timing.pacer_exit_delta_ms;
     timing_.network_timestamp_ms =
         ntp_time_ms_ +
-        last_packet->video_header.video_timing.network_timstamp_delta_ms;
+        last_packet->video_header.video_timing.network_timestamp_delta_ms;
     timing_.network2_timestamp_ms =
         ntp_time_ms_ +
-        last_packet->video_header.video_timing.network2_timstamp_delta_ms;
+        last_packet->video_header.video_timing.network2_timestamp_delta_ms;
 
     timing_.receive_start_ms = first_packet->receive_time_ms;
     timing_.receive_finish_ms = last_packet->receive_time_ms;
@@ -191,8 +172,8 @@ rtc::Optional<RTPVideoTypeHeader> RtpFrameObject::GetCodecHeader() const {
   rtc::CritScope lock(&packet_buffer_->crit_);
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num_);
   if (!packet)
-    return rtc::Optional<RTPVideoTypeHeader>();
-  return rtc::Optional<RTPVideoTypeHeader>(packet->video_header.codecHeader);
+    return rtc::nullopt;
+  return packet->video_header.codecHeader;
 }
 
 }  // namespace video_coding

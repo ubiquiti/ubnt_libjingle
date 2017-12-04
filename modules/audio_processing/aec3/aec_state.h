@@ -32,7 +32,7 @@ class ApmDataDumper;
 // Handles the state and the conditions for the echo removal functionality.
 class AecState {
  public:
-  explicit AecState(const AudioProcessing::Config::EchoCanceller3& config);
+  explicit AecState(const EchoCanceller3Config& config);
   ~AecState();
 
   // Returns whether the linear filter estimate is usable.
@@ -50,10 +50,16 @@ class AecState {
     return erle_estimator_.Erle();
   }
 
+  // Returns the time-domain ERLE.
+  float ErleTimeDomain() const { return erle_estimator_.ErleTimeDomain(); }
+
   // Returns the ERL.
   const std::array<float, kFftLengthBy2Plus1>& Erl() const {
     return erl_estimator_.Erl();
   }
+
+  // Returns the time-domain ERL.
+  float ErlTimeDomain() const { return erl_estimator_.ErlTimeDomain(); }
 
   // Returns the delay estimate based on the linear filter.
   rtc::Optional<size_t> FilterDelay() const { return filter_delay_; }
@@ -67,13 +73,16 @@ class AecState {
   // Returns whether the echo signal is saturated.
   bool SaturatedEcho() const { return echo_saturation_; }
 
+  // Returns whether the echo path can saturate.
+  bool SaturatingEchoPath() const { return saturating_echo_path_; }
+
   // Updates the capture signal saturation.
   void UpdateCaptureSaturation(bool capture_signal_saturation) {
     capture_signal_saturation_ = capture_signal_saturation;
   }
 
-  // Returns whether a probable headset setup has been detected.
-  bool HeadsetDetected() const { return headset_detected_; }
+  // Returns whether the transparent mode is active
+  bool TransparentMode() const { return transparent_mode_; }
 
   // Takes appropriate action at an echo path change.
   void HandleEchoPathChange(const EchoPathVariability& echo_path_variability);
@@ -92,11 +101,22 @@ class AecState {
     echo_audibility_.UpdateWithOutput(e);
   }
 
+  // Returns whether the linear filter should have been able to adapt properly.
+  bool SufficientFilterUpdates() const { return sufficient_filter_updates_; }
+
+  // Returns whether the echo subtractor can be used to determine the residual
+  // echo.
+  bool LinearEchoEstimate() const { return linear_echo_estimate_; }
+
+  // Returns whether the AEC is in an initial state.
+  bool InitialState() const { return initial_state_; }
+
   // Updates the aec state.
   void Update(const std::vector<std::array<float, kFftLengthBy2Plus1>>&
                   adaptive_filter_frequency_response,
               const std::array<float, kAdaptiveFilterTimeDomainLength>&
                   adaptive_filter_impulse_response,
+              bool converged_filter,
               const rtc::Optional<size_t>& external_delay_samples,
               const RenderBuffer& render_buffer,
               const std::array<float, kFftLengthBy2Plus1>& E2_main,
@@ -109,7 +129,8 @@ class AecState {
   class EchoAudibility {
    public:
     void Update(rtc::ArrayView<const float> x,
-                const std::array<float, kBlockSize>& s);
+                const std::array<float, kBlockSize>& s,
+                bool converged_filter);
     void UpdateWithOutput(rtc::ArrayView<const float> e);
     bool InaudibleEcho() const { return inaudible_echo_; }
 
@@ -127,14 +148,16 @@ class AecState {
   std::unique_ptr<ApmDataDumper> data_dumper_;
   ErlEstimator erl_estimator_;
   ErleEstimator erle_estimator_;
-  int echo_path_change_counter_;
+  size_t capture_block_counter_ = 0;
   size_t blocks_with_filter_adaptation_ = 0;
+  size_t blocks_with_strong_render_ = 0;
   bool usable_linear_estimate_ = false;
   bool echo_leakage_detected_ = false;
   bool capture_signal_saturation_ = false;
   bool echo_saturation_ = false;
-  bool headset_detected_ = false;
-  float previous_max_sample_ = 0.f;
+  bool transparent_mode_ = false;
+  std::array<float, kAdaptiveFilterLength> max_render_;
+  size_t max_render_index_ = 0;
   bool force_zero_gain_ = false;
   bool render_received_ = false;
   size_t force_zero_gain_counter_ = 0;
@@ -145,8 +168,13 @@ class AecState {
   float reverb_decay_candidate_ = 0.f;
   float reverb_decay_candidate_residual_ = -1.f;
   EchoAudibility echo_audibility_;
-  const AudioProcessing::Config::EchoCanceller3 config_;
+  const EchoCanceller3Config config_;
   float reverb_decay_;
+  bool saturating_echo_path_ = false;
+  int saturating_echo_path_counter_ = 0;
+  bool initial_state_ = true;
+  bool linear_echo_estimate_ = false;
+  bool sufficient_filter_updates_ = false;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(AecState);
 };

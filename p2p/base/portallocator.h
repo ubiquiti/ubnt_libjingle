@@ -25,6 +25,7 @@
 
 namespace webrtc {
 class MetricsObserverInterface;
+class TurnCustomizer;
 }
 
 namespace cricket {
@@ -147,38 +148,25 @@ struct RelayCredentials {
 typedef std::vector<ProtocolAddress> PortList;
 // TODO(deadbeef): Rename to TurnServerConfig.
 struct RelayServerConfig {
-  RelayServerConfig(RelayType type) : type(type) {}
-
+  RelayServerConfig(RelayType type);
   RelayServerConfig(const rtc::SocketAddress& address,
                     const std::string& username,
                     const std::string& password,
-                    ProtocolType proto)
-      : type(RELAY_TURN), credentials(username, password) {
-    ports.push_back(ProtocolAddress(address, proto));
-  }
-
+                    ProtocolType proto);
   RelayServerConfig(const std::string& address,
                     int port,
                     const std::string& username,
                     const std::string& password,
-                    ProtocolType proto)
-      : RelayServerConfig(rtc::SocketAddress(address, port),
-                          username,
-                          password,
-                          proto) {}
-
+                    ProtocolType proto);
   // Legacy constructor where "secure" and PROTO_TCP implies PROTO_TLS.
   RelayServerConfig(const std::string& address,
                     int port,
                     const std::string& username,
                     const std::string& password,
                     ProtocolType proto,
-                    bool secure)
-      : RelayServerConfig(address,
-                          port,
-                          username,
-                          password,
-                          (proto == PROTO_TCP && secure ? PROTO_TLS : proto)) {}
+                    bool secure);
+  RelayServerConfig(const RelayServerConfig&);
+  ~RelayServerConfig();
 
   bool operator==(const RelayServerConfig& o) const {
     return type == o.type && ports == o.ports && credentials == o.credentials &&
@@ -205,7 +193,7 @@ class PortAllocatorSession : public sigslot::has_slots<> {
                        uint32_t flags);
 
   // Subclasses should clean up any ports created.
-  virtual ~PortAllocatorSession() {}
+  ~PortAllocatorSession() override;
 
   uint32_t flags() const { return flags_; }
   void set_flags(uint32_t flags) { flags_ = flags; }
@@ -241,9 +229,9 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   virtual void ClearGettingPorts() = 0;
   // Whether it is in the state where the existing gathering process is stopped,
   // but new ones may be started (basically after calling ClearGettingPorts).
-  virtual bool IsCleared() const { return false; }
+  virtual bool IsCleared() const;
   // Whether the session has completely stopped.
-  virtual bool IsStopped() const { return false; }
+  virtual bool IsStopped() const;
   // Re-gathers candidates on networks that do not have any connections. More
   // precisely, a network interface may have more than one IP addresses (e.g.,
   // IPv4 and IPv6 addresses). Each address subnet will be used to create a
@@ -282,8 +270,8 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   sigslot::signal2<PortAllocatorSession*, IceRegatheringReason>
       SignalIceRegathering;
 
-  virtual uint32_t generation() { return generation_; }
-  virtual void set_generation(uint32_t generation) { generation_ = generation; }
+  virtual uint32_t generation();
+  virtual void set_generation(uint32_t generation);
   sigslot::signal1<PortAllocatorSession*> SignalDestroyed;
 
  protected:
@@ -332,16 +320,8 @@ class PortAllocatorSession : public sigslot::has_slots<> {
 // passing it into an object that uses it on a different thread.
 class PortAllocator : public sigslot::has_slots<> {
  public:
-  PortAllocator()
-      : flags_(kDefaultPortAllocatorFlags),
-        min_port_(0),
-        max_port_(0),
-        max_ipv6_networks_(kDefaultMaxIPv6Networks),
-        step_delay_(kDefaultStepDelay),
-        allow_tcp_listen_(true),
-        candidate_filter_(CF_ALL) {}
-
-  virtual ~PortAllocator() {}
+  PortAllocator();
+  ~PortAllocator() override;
 
   // This should be called on the PortAllocator's thread before the
   // PortAllocator is used. Subclasses may override this if necessary.
@@ -362,7 +342,8 @@ class PortAllocator : public sigslot::has_slots<> {
   bool SetConfiguration(const ServerAddresses& stun_servers,
                         const std::vector<RelayServerConfig>& turn_servers,
                         int candidate_pool_size,
-                        bool prune_turn_ports);
+                        bool prune_turn_ports,
+                        webrtc::TurnCustomizer* turn_customizer = nullptr);
 
   const ServerAddresses& stun_servers() const { return stun_servers_; }
 
@@ -477,6 +458,10 @@ class PortAllocator : public sigslot::has_slots<> {
     metrics_observer_ = observer;
   }
 
+  webrtc::TurnCustomizer* turn_customizer() {
+    return turn_customizer_;
+  }
+
  protected:
   virtual PortAllocatorSession* CreateSessionInternal(
       const std::string& content_name,
@@ -512,6 +497,11 @@ class PortAllocator : public sigslot::has_slots<> {
   bool prune_turn_ports_ = false;
 
   webrtc::MetricsObserverInterface* metrics_observer_ = nullptr;
+
+  // Customizer for TURN messages.
+  // The instance is owned by application and will be shared among
+  // all TurnPort(s) created.
+  webrtc::TurnCustomizer* turn_customizer_ = nullptr;
 };
 
 }  // namespace cricket

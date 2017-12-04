@@ -11,11 +11,12 @@
 #include "modules/audio_processing/aec3/subtractor.h"
 
 #include <algorithm>
+#include <numeric>
 
 #include "api/array_view.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/safe_minmax.h"
+#include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
 
@@ -58,11 +59,28 @@ Subtractor::~Subtractor() = default;
 
 void Subtractor::HandleEchoPathChange(
     const EchoPathVariability& echo_path_variability) {
-  if (echo_path_variability.delay_change) {
+  const auto full_reset = [&]() {
+    use_shadow_filter_frequency_response_ = false;
     main_filter_.HandleEchoPathChange();
     shadow_filter_.HandleEchoPathChange();
-    G_main_.HandleEchoPathChange();
+    G_main_.HandleEchoPathChange(echo_path_variability);
     G_shadow_.HandleEchoPathChange();
+    converged_filter_ = false;
+    converged_filter_counter_ = 0;
+  };
+
+  // TODO(peah): Add delay-change specific reset behavior.
+  if ((echo_path_variability.delay_change ==
+       EchoPathVariability::DelayAdjustment::kBufferFlush) ||
+      (echo_path_variability.delay_change ==
+       EchoPathVariability::DelayAdjustment::kDelayReset)) {
+    full_reset();
+  } else if (echo_path_variability.delay_change ==
+             EchoPathVariability::DelayAdjustment::kNewDetectedDelay) {
+    full_reset();
+  } else if (echo_path_variability.delay_change ==
+             EchoPathVariability::DelayAdjustment::kBufferReadjustment) {
+    full_reset();
   }
 }
 
@@ -89,9 +107,35 @@ void Subtractor::Process(const RenderBuffer& render_buffer,
   shadow_filter_.Filter(render_buffer, &S);
   PredictionError(fft_, S, y, &e_shadow, &E_shadow, nullptr);
 
+  // Determine which frequency response should be used.
+  const auto sum_of_squares = [](float a, float b) { return a + b * b; };
+  const float e2_main =
+      std::accumulate(e_main.begin(), e_main.end(), 0.f, sum_of_squares);
+  const float e2_shadow =
+      std::accumulate(e_shadow.begin(), e_shadow.end(), 0.f, sum_of_squares);
+  const float y2 = std::accumulate(y.begin(), y.end(), 0.f, sum_of_squares);
+
+  if (e2_main < e2_shadow && e2_main < 0.1 * y2) {
+    use_shadow_filter_frequency_response_ = false;
+  } else if (e2_shadow < e2_main && e2_shadow < 0.01 * y2) {
+    use_shadow_filter_frequency_response_ = true;
+  }
+
+  // Flag whether the filter has at some point converged.
+  // TODO(peah): Consider using a timeout for this.
+  if (!converged_filter_) {
+    if (y2 > kBlockSize * 100.f * 100.f) {
+      if (e2_main < 0.3 * y2) {
+        converged_filter_ = (++converged_filter_counter_) > 10;
+      } else {
+        converged_filter_counter_ = 0;
+      }
+    }
+  }
+
   // Compute spectra for future use.
-  E_main.Spectrum(optimization_, &output->E2_main);
-  E_shadow.Spectrum(optimization_, &output->E2_shadow);
+  E_main.Spectrum(optimization_, output->E2_main);
+  E_shadow.Spectrum(optimization_, output->E2_shadow);
 
   // Update the main filter.
   G_main_.Compute(render_buffer, render_signal_analyzer, *output, main_filter_,

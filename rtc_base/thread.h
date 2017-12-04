@@ -15,6 +15,7 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(WEBRTC_POSIX)
@@ -175,8 +176,9 @@ class RTC_LOCKABLE Thread : public MessageQueue {
   // NOTE: This function can only be called when synchronous calls are allowed.
   // See ScopedDisallowBlockingCalls for details.
   template <class ReturnT, class FunctorT>
-  ReturnT Invoke(const Location& posted_from, const FunctorT& functor) {
-    FunctorMessageHandler<ReturnT, FunctorT> handler(functor);
+  ReturnT Invoke(const Location& posted_from, FunctorT&& functor) {
+    FunctorMessageHandler<ReturnT, FunctorT> handler(
+        std::forward<FunctorT>(functor));
     InvokeInternal(posted_from, &handler);
     return handler.MoveResult();
   }
@@ -199,19 +201,6 @@ class RTC_LOCKABLE Thread : public MessageQueue {
   // obviously exists before we can get to it.
   // You cannot call Start on non-owned threads.
   bool IsOwned();
-
-#if defined(WEBRTC_WIN)
-  HANDLE GetHandle() const {
-    return thread_;
-  }
-  DWORD GetId() const {
-    return thread_id_;
-  }
-#elif defined(WEBRTC_POSIX)
-  pthread_t GetPThread() {
-    return thread_;
-  }
-#endif
 
   // Expose private method running() for tests.
   //
