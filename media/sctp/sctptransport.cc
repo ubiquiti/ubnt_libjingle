@@ -743,6 +743,21 @@ bool SctpTransport::ConfigureSctpSocket() {
     return false;
   }
 
+  //set nice fat snd/recv buffers, not the ridiculous 256KB/128KB
+  int sndRecvBuffSize = 2 * 1024 * 1024;
+  if (usrsctp_setsockopt(sock_, SOL_SOCKET, SO_RCVBUF, &sndRecvBuffSize,
+                         sizeof(sndRecvBuffSize))) {
+    RTC_LOG_ERRNO(LS_ERROR) << debug_name_ << "->ConfigureSctpSocket(): "
+                            << "Failed to set SO_RCVBUF.";
+    return false;
+  }
+  if (usrsctp_setsockopt(sock_, SOL_SOCKET, SO_SNDBUF, &sndRecvBuffSize,
+                         sizeof(sndRecvBuffSize))) {
+    RTC_LOG_ERRNO(LS_ERROR) << debug_name_ << "->ConfigureSctpSocket(): "
+                            << "Failed to set SO_SNDBUF.";
+    return false;
+  }
+
   // This ensures that the usrsctp close call deletes the association. This
   // prevents usrsctp from calling OnSctpOutboundPacket with references to
   // this class as the address.
