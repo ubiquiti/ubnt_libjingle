@@ -3051,12 +3051,12 @@ rtc::scoped_refptr<DataChannel> PeerConnection::InternalCreateDataChannel(
     if (new_config.id < 0) {
       rtc::SSLRole role;
       if ((GetSctpSslRole(&role)) &&
-          !sid_allocator_.AllocateSid(role, &new_config.id)) {
+          !sid_allocator_.AllocateSid(role, &new_config.id, this)) {
         RTC_LOG(LS_ERROR)
             << "No id can be allocated for the SCTP data channel.";
         return nullptr;
       }
-    } else if (!sid_allocator_.ReserveSid(new_config.id)) {
+    } else if (!sid_allocator_.ReserveSid(new_config.id, this)) {
       RTC_LOG(LS_ERROR) << "Failed to create a SCTP data channel "
                         << "because the id is already in use or out of range.";
       return nullptr;
@@ -3096,7 +3096,7 @@ void PeerConnection::AllocateSctpSids(rtc::SSLRole role) {
   for (const auto& channel : sctp_data_channels_) {
     if (channel->id() < 0) {
       int sid;
-      if (!sid_allocator_.AllocateSid(role, &sid)) {
+      if (!sid_allocator_.AllocateSid(role, &sid, this)) {
         RTC_LOG(LS_ERROR) << "Failed to allocate SCTP sid.";
         continue;
       }
@@ -3966,6 +3966,13 @@ void PeerConnection::DisconnectDataChannel(DataChannel* webrtc_data_channel) {
     SignalSctpDataReceived.disconnect(webrtc_data_channel);
     SignalSctpStreamClosedRemotely.disconnect(webrtc_data_channel);
   }
+}
+
+bool PeerConnection::IsSidAvailable(int sid) const {
+  return (sctp_transport_.get()==NULL)
+    ? true
+    : sctp_transport_->IsStreamAvailable(sid)
+    ;
 }
 
 void PeerConnection::AddSctpDataStream(int sid) {

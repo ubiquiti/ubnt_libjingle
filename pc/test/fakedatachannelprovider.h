@@ -25,6 +25,10 @@ class FakeDataChannelProvider : public webrtc::DataChannelProviderInterface {
         transport_error_(false) {}
   virtual ~FakeDataChannelProvider() {}
 
+  bool IsSidAvailable(int sid) const override {
+    return true;
+  }
+
   bool SendData(const cricket::SendDataParams& params,
                 const rtc::CopyOnWriteBuffer& payload,
                 cricket::SendDataResult* result) override {

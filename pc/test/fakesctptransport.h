@@ -39,6 +39,10 @@ class FakeSctpTransport : public cricket::SctpTransportInternal {
   int local_port() const { return *local_port_; }
   int remote_port() const { return *remote_port_; }
 
+  bool IsStreamAvailable(int sid) const override {
+    return true;
+  }
+
  private:
   rtc::Optional<int> local_port_;
   rtc::Optional<int> remote_port_;
