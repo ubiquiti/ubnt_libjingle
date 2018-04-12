@@ -743,6 +743,30 @@ bool SctpTransport::ConfigureSctpSocket() {
     return false;
   }
 
+  //https://tools.ietf.org/html/draft-ietf-tsvwg-sctp-ndata-13#section-4.3
+	//preparation for activating I-DATA
+	uint32_t fragmentInterleave = 2;
+	if (usrsctp_setsockopt(sock_, IPPROTO_SCTP, SCTP_FRAGMENT_INTERLEAVE,
+			&fragmentInterleave, sizeof (fragmentInterleave))) {
+		RTC_LOG_ERRNO(LS_ERROR) << debug_name_ << "->ConfigureSctpSocket(): "
+                            << "Failed to set SCTP_FRAGMENT_INTERLEAVE.";
+		return false;
+	}
+
+	//enable I-DATA
+  struct sctp_assoc_value assocValue;
+	assocValue.assoc_id = SCTP_FUTURE_ASSOC;
+	assocValue.assoc_value = 1;
+#ifndef SCTP_INTERLEAVING_SUPPORTED
+#define SCTP_INTERLEAVING_SUPPORTED 0x00001206
+#endif /* SCTP_INTERLEAVING_SUPPORTED */
+	if (usrsctp_setsockopt(sock_, IPPROTO_SCTP, SCTP_INTERLEAVING_SUPPORTED,
+			&assocValue, sizeof (assocValue))) {
+		RTC_LOG_ERRNO(LS_ERROR) << debug_name_ << "->ConfigureSctpSocket(): "
+                            << "Failed to set SCTP_INTERLEAVING_SUPPORTED.";
+		return false;
+	}
+
   //set nice fat snd/recv buffers, not the ridiculous 256KB/128KB
   int sndRecvBuffSize = 2 * 1024 * 1024;
   if (usrsctp_setsockopt(sock_, SOL_SOCKET, SO_RCVBUF, &sndRecvBuffSize,
