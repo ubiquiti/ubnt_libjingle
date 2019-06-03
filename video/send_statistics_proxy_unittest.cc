@@ -10,13 +10,16 @@
 
 #include "video/send_statistics_proxy.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "absl/algorithm/container.h"
+#include "api/units/timestamp.h"
+#include "rtc_base/fake_clock.h"
 #include "system_wrappers/include/metrics.h"
-#include "system_wrappers/include/metrics_default.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
 
@@ -32,10 +35,10 @@ const int kWidth = 640;
 const int kHeight = 480;
 const int kQpIdx0 = 21;
 const int kQpIdx1 = 39;
+const int kRtpClockRateHz = 90000;
 const CodecSpecificInfo kDefaultCodecInfo = []() {
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
-  codec_info.codecSpecific.VP8.simulcastIdx = 0;
   return codec_info;
 }();
 }  // namespace
@@ -104,8 +107,6 @@ class SendStatisticsProxyTest : public ::testing::Test {
     EXPECT_EQ(one.input_frame_rate, other.input_frame_rate);
     EXPECT_EQ(one.encode_frame_rate, other.encode_frame_rate);
     EXPECT_EQ(one.media_bitrate_bps, other.media_bitrate_bps);
-    EXPECT_EQ(one.preferred_media_bitrate_bps,
-              other.preferred_media_bitrate_bps);
     EXPECT_EQ(one.suspended, other.suspended);
 
     EXPECT_EQ(one.substreams.size(), other.substreams.size());
@@ -291,18 +292,26 @@ TEST_F(SendStatisticsProxyTest, SendSideDelay) {
     // stream.
     int avg_delay_ms = ssrc;
     int max_delay_ms = ssrc + 1;
-    observer->SendSideDelayUpdated(avg_delay_ms, max_delay_ms, ssrc);
+    uint64_t total_packet_send_delay_ms = ssrc + 2;
+    observer->SendSideDelayUpdated(avg_delay_ms, max_delay_ms,
+                                   total_packet_send_delay_ms, ssrc);
     expected_.substreams[ssrc].avg_delay_ms = avg_delay_ms;
     expected_.substreams[ssrc].max_delay_ms = max_delay_ms;
+    expected_.substreams[ssrc].total_packet_send_delay_ms =
+        total_packet_send_delay_ms;
   }
   for (const auto& ssrc : config_.rtp.rtx.ssrcs) {
     // Use ssrc as avg_delay_ms and max_delay_ms to get a unique value for each
     // stream.
     int avg_delay_ms = ssrc;
     int max_delay_ms = ssrc + 1;
-    observer->SendSideDelayUpdated(avg_delay_ms, max_delay_ms, ssrc);
+    uint64_t total_packet_send_delay_ms = ssrc + 2;
+    observer->SendSideDelayUpdated(avg_delay_ms, max_delay_ms,
+                                   total_packet_send_delay_ms, ssrc);
     expected_.substreams[ssrc].avg_delay_ms = avg_delay_ms;
     expected_.substreams[ssrc].max_delay_ms = max_delay_ms;
+    expected_.substreams[ssrc].total_packet_send_delay_ms =
+        total_packet_send_delay_ms;
   }
   VideoSendStream::Stats stats = statistics_proxy_->GetStats();
   ExpectEqual(expected_, stats);
@@ -310,24 +319,22 @@ TEST_F(SendStatisticsProxyTest, SendSideDelay) {
 
 TEST_F(SendStatisticsProxyTest, OnEncodedFrameTimeMeasured) {
   const int kEncodeTimeMs = 11;
-  CpuOveruseMetrics metrics;
-  metrics.encode_usage_percent = 80;
-  statistics_proxy_->OnEncodedFrameTimeMeasured(kEncodeTimeMs, metrics);
+  int encode_usage_percent = 80;
+  statistics_proxy_->OnEncodedFrameTimeMeasured(kEncodeTimeMs,
+                                                encode_usage_percent);
 
   VideoSendStream::Stats stats = statistics_proxy_->GetStats();
   EXPECT_EQ(kEncodeTimeMs, stats.avg_encode_time_ms);
-  EXPECT_EQ(metrics.encode_usage_percent, stats.encode_usage_percent);
+  EXPECT_EQ(encode_usage_percent, stats.encode_usage_percent);
 }
 
-TEST_F(SendStatisticsProxyTest, OnEncoderReconfiguredChangePreferredBitrate) {
-  VideoSendStream::Stats stats = statistics_proxy_->GetStats();
-  EXPECT_EQ(0, stats.preferred_media_bitrate_bps);
-  const int kPreferredMediaBitrateBps = 50;
-
-  VideoEncoderConfig config;
-  statistics_proxy_->OnEncoderReconfigured(config, kPreferredMediaBitrateBps);
-  stats = statistics_proxy_->GetStats();
-  EXPECT_EQ(kPreferredMediaBitrateBps, stats.preferred_media_bitrate_bps);
+TEST_F(SendStatisticsProxyTest, TotalEncodeTimeIncreasesPerFrameMeasured) {
+  const int kEncodeUsagePercent = 0;  // Don't care for this test.
+  EXPECT_EQ(0u, statistics_proxy_->GetStats().total_encode_time_ms);
+  statistics_proxy_->OnEncodedFrameTimeMeasured(10, kEncodeUsagePercent);
+  EXPECT_EQ(10u, statistics_proxy_->GetStats().total_encode_time_ms);
+  statistics_proxy_->OnEncodedFrameTimeMeasured(20, kEncodeUsagePercent);
+  EXPECT_EQ(30u, statistics_proxy_->GetStats().total_encode_time_ms);
 }
 
 TEST_F(SendStatisticsProxyTest, OnSendEncodedImageIncreasesFramesEncoded) {
@@ -343,92 +350,161 @@ TEST_F(SendStatisticsProxyTest, OnSendEncodedImageIncreasesFramesEncoded) {
 TEST_F(SendStatisticsProxyTest, OnSendEncodedImageIncreasesQpSum) {
   EncodedImage encoded_image;
   CodecSpecificInfo codec_info;
-  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+  EXPECT_EQ(absl::nullopt, statistics_proxy_->GetStats().qp_sum);
   encoded_image.qp_ = 3;
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-  EXPECT_EQ(rtc::Optional<uint64_t>(3u), statistics_proxy_->GetStats().qp_sum);
+  EXPECT_EQ(3u, statistics_proxy_->GetStats().qp_sum);
   encoded_image.qp_ = 127;
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-  EXPECT_EQ(rtc::Optional<uint64_t>(130u),
-            statistics_proxy_->GetStats().qp_sum);
+  EXPECT_EQ(130u, statistics_proxy_->GetStats().qp_sum);
 }
 
 TEST_F(SendStatisticsProxyTest, OnSendEncodedImageWithoutQpQpSumWontExist) {
   EncodedImage encoded_image;
   CodecSpecificInfo codec_info;
   encoded_image.qp_ = -1;
-  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+  EXPECT_EQ(absl::nullopt, statistics_proxy_->GetStats().qp_sum);
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-  EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
+  EXPECT_EQ(absl::nullopt, statistics_proxy_->GetStats().qp_sum);
+}
+
+TEST_F(SendStatisticsProxyTest, TotalEncodedBytesTargetFirstFrame) {
+  const uint32_t kTargetBytesPerSecond = 100000;
+  statistics_proxy_->OnSetEncoderTargetRate(kTargetBytesPerSecond * 8);
+  EXPECT_EQ(0u, statistics_proxy_->GetStats().total_encoded_bytes_target);
+
+  EncodedImage encoded_image;
+  statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  // On the first frame we don't know the frame rate yet, calculation yields
+  // zero. Our estimate assumes at least 1 FPS, so we expect the frame size to
+  // increment by a full |kTargetBytesPerSecond|.
+  EXPECT_EQ(kTargetBytesPerSecond,
+            statistics_proxy_->GetStats().total_encoded_bytes_target);
+}
+
+TEST_F(SendStatisticsProxyTest,
+       TotalEncodedBytesTargetIncrementsBasedOnFrameRate) {
+  const uint32_t kTargetBytesPerSecond = 100000;
+  const int kInterframeDelayMs = 100;
+
+  // SendStatisticsProxy uses a RateTracker internally. SendStatisticsProxy uses
+  // |fake_clock_| for testing, but the RateTracker relies on a global clock.
+  // This test relies on rtc::ScopedFakeClock to synchronize these two clocks.
+  // TODO(https://crbug.com/webrtc/10640): When the RateTracker uses a Clock
+  // this test can stop relying on rtc::ScopedFakeClock.
+  rtc::ScopedFakeClock fake_global_clock;
+  fake_global_clock.SetTime(Timestamp::ms(fake_clock_.TimeInMilliseconds()));
+
+  statistics_proxy_->OnSetEncoderTargetRate(kTargetBytesPerSecond * 8);
+  EncodedImage encoded_image;
+
+  // First frame
+  statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  uint64_t first_total_encoded_bytes_target =
+      statistics_proxy_->GetStats().total_encoded_bytes_target;
+  // Second frame
+  fake_clock_.AdvanceTimeMilliseconds(kInterframeDelayMs);
+  fake_global_clock.SetTime(Timestamp::ms(fake_clock_.TimeInMilliseconds()));
+  encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                             90 * kInterframeDelayMs);
+  statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+
+  auto stats = statistics_proxy_->GetStats();
+  // By the time the second frame arrives, one frame has previously arrived
+  // during a |kInterframeDelayMs| interval. The estimated encode frame rate at
+  // the second frame's arrival should be 10 FPS.
+  uint64_t delta_encoded_bytes_target =
+      stats.total_encoded_bytes_target - first_total_encoded_bytes_target;
+  EXPECT_EQ(kTargetBytesPerSecond / 10, delta_encoded_bytes_target);
 }
 
 TEST_F(SendStatisticsProxyTest, GetCpuAdaptationStats) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
-  cpu_counts.fps = 1;
-  cpu_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = 1;
+  cpu_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
-  cpu_counts.fps = 0;
-  cpu_counts.resolution = 1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = 0;
+  cpu_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_resolution);
-  cpu_counts.fps = 1;
-  cpu_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = 1;
+  cpu_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
-  cpu_counts.fps = -1;
-  cpu_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = absl::nullopt;
+  cpu_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_resolution);
 }
 
 TEST_F(SendStatisticsProxyTest, GetQualityAdaptationStats) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
-  quality_counts.fps = 1;
-  quality_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = 1;
+  quality_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
-  quality_counts.fps = 0;
-  quality_counts.resolution = 1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = 0;
+  quality_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
-  quality_counts.fps = 1;
-  quality_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = 1;
+  quality_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
-  quality_counts.fps = -1;
-  quality_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = absl::nullopt;
+  quality_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
 }
 
 TEST_F(SendStatisticsProxyTest, GetStatsReportsCpuAdaptChanges) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
   EXPECT_EQ(0, statistics_proxy_->GetStats().number_of_cpu_adapt_changes);
 
-  cpu_counts.resolution = 1;
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  cpu_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_resolution);
   EXPECT_EQ(1, statistics_proxy_->GetStats().number_of_cpu_adapt_changes);
 
-  cpu_counts.resolution = 2;
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  cpu_counts.num_resolution_reductions = 2;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().cpu_limited_framerate);
   EXPECT_TRUE(statistics_proxy_->GetStats().cpu_limited_resolution);
   EXPECT_EQ(2, statistics_proxy_->GetStats().number_of_cpu_adapt_changes);
@@ -436,18 +512,22 @@ TEST_F(SendStatisticsProxyTest, GetStatsReportsCpuAdaptChanges) {
 }
 
 TEST_F(SendStatisticsProxyTest, GetStatsReportsQualityAdaptChanges) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
   EXPECT_EQ(0, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
 
-  quality_counts.fps = 1;
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
   EXPECT_EQ(1, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
 
-  quality_counts.fps = 0;
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_framerate);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
   EXPECT_EQ(2, statistics_proxy_->GetStats().number_of_quality_adapt_changes);
@@ -469,9 +549,11 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesNotReported_MinRuntimeNotPassed) {
   // First RTP packet sent.
   UpdateDataCounters(kFirstSsrc);
   // Enable adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   // Min runtime has not passed.
   fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000 - 1);
   statistics_proxy_.reset();
@@ -484,9 +566,11 @@ TEST_F(SendStatisticsProxyTest, ZeroAdaptChangesReported) {
   // First RTP packet sent.
   UpdateDataCounters(kFirstSsrc);
   // Enable adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   // Min runtime has passed.
   fake_clock_.AdvanceTimeMilliseconds(metrics::kMinRunTimeInSeconds * 1000);
   statistics_proxy_.reset();
@@ -502,15 +586,149 @@ TEST_F(SendStatisticsProxyTest, CpuAdaptChangesReported) {
   // First RTP packet sent.
   UpdateDataCounters(kFirstSsrc);
   // Enable adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   // Adapt changes: 1, elapsed time: 10 sec => 6 per minute.
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
   statistics_proxy_.reset();
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
   EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, ExcludesInitialQualityAdaptDownChange) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable adaptation.
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
+  // Adapt changes: 1 (1 initial) = 0, elapsed time: 10 sec => 0 per minute.
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 0));
+}
+
+TEST_F(SendStatisticsProxyTest, ExcludesInitialQualityAdaptDownChanges) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable adaptation.
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
+  // Adapt changes: 3 (2 initial) = 1, elapsed time: 10 sec => 6 per minute.
+  quality_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  quality_counts.num_resolution_reductions = 2;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  quality_counts.num_resolution_reductions = 3;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, InitialQualityAdaptChangesNotExcludedOnError) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable adaptation.
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
+  // Adapt changes: 1 (2 initial) = 1, elapsed time: 10 sec => 6 per minute.
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 6));
+}
+
+TEST_F(SendStatisticsProxyTest, ExcludesInitialQualityAdaptDownAndUpChanges) {
+  // First RTP packet sent.
+  UpdateDataCounters(kFirstSsrc);
+  // Enable adaptation.
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
+  // Adapt changes: 8 (4 initial) = 4, elapsed time: 10 sec => 24 per minute.
+  quality_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  quality_counts.num_resolution_reductions = 2;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnInitialQualityResolutionAdaptDown();
+  quality_counts.num_resolution_reductions = 3;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  quality_counts.num_framerate_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  quality_counts.num_framerate_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  quality_counts.num_resolution_reductions = 2;  // Initial resolution up.
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  quality_counts.num_resolution_reductions = 1;  // Initial resolution up.
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  quality_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+
+  fake_clock_.AdvanceTimeMilliseconds(10000);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Quality"));
+  EXPECT_EQ(
+      1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Quality", 24));
 }
 
 TEST_F(SendStatisticsProxyTest, AdaptChangesStatsExcludesDisabledTime) {
@@ -518,41 +736,61 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesStatsExcludesDisabledTime) {
   UpdateDataCounters(kFirstSsrc);
 
   // Disable quality adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  quality_counts.fps = -1;
-  quality_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  quality_counts.num_framerate_reductions = absl::nullopt;
+  quality_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
 
   // Enable quality adaptation.
   // Adapt changes: 2, elapsed time: 20 sec.
-  quality_counts.fps = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(5000);
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(9000);
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(6000);
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
 
   // Disable quality adaptation.
-  quality_counts.fps = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_framerate_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(30000);
 
   // Enable quality adaptation.
   // Adapt changes: 1, elapsed time: 10 sec.
-  quality_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  quality_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
 
   // Disable quality adaptation.
-  quality_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  quality_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(5000);
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(20000);
 
   // Adapt changes: 3, elapsed time: 30 sec => 6 per minute.
@@ -586,13 +824,19 @@ TEST_F(SendStatisticsProxyTest, QualityAdaptChangesStatsExcludesSuspendedTime) {
   UpdateDataCounters(kFirstSsrc);
 
   // Enable adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
   // Adapt changes: 2, elapsed time: 20 sec.
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(20000);
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
 
   // Suspend and resume video.
   statistics_proxy_->OnSuspendChange(true);
@@ -600,7 +844,9 @@ TEST_F(SendStatisticsProxyTest, QualityAdaptChangesStatsExcludesSuspendedTime) {
   statistics_proxy_->OnSuspendChange(false);
 
   // Adapt changes: 1, elapsed time: 10 sec.
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
 
   // Adapt changes: 3, elapsed time: 30 sec => 6 per minute.
@@ -620,21 +866,27 @@ TEST_F(SendStatisticsProxyTest, CpuAdaptChangesStatsExcludesSuspendedTime) {
   fake_clock_.AdvanceTimeMilliseconds(30000);
 
   // Enable adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
   // Adapt changes: 1, elapsed time: 20 sec.
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
 
   // Video not suspended, stats time already started.
   statistics_proxy_->OnSuspendChange(false);
   fake_clock_.AdvanceTimeMilliseconds(10000);
 
   // Disable adaptation.
-  cpu_counts.fps = -1;
-  cpu_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = absl::nullopt;
+  cpu_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(30000);
 
   // Suspend and resume video, stats time not started when scaling not enabled.
@@ -645,11 +897,15 @@ TEST_F(SendStatisticsProxyTest, CpuAdaptChangesStatsExcludesSuspendedTime) {
 
   // Enable adaptation.
   // Adapt changes: 1, elapsed time: 10 sec.
-  cpu_counts.fps = 0;
-  cpu_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = 0;
+  cpu_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
 
   // Adapt changes: 2, elapsed time: 30 sec => 4 per minute.
   statistics_proxy_.reset();
@@ -665,16 +921,20 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesStatsNotStartedIfVideoSuspended) {
   statistics_proxy_->OnSuspendChange(true);
 
   // Enable adaptation, stats time not started when suspended.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
 
   // Resume video, stats time started.
   // Adapt changes: 1, elapsed time: 10 sec.
   statistics_proxy_->OnSuspendChange(false);
   fake_clock_.AdvanceTimeMilliseconds(10000);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
 
   // Adapt changes: 1, elapsed time: 10 sec => 6 per minute.
   statistics_proxy_.reset();
@@ -685,15 +945,19 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesStatsNotStartedIfVideoSuspended) {
 TEST_F(SendStatisticsProxyTest, AdaptChangesStatsRestartsOnFirstSentPacket) {
   // Send first packet, adaptation enabled.
   // Elapsed time before first packet is sent should be excluded.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
   UpdateDataCounters(kFirstSsrc);
 
   // Adapt changes: 1, elapsed time: 10 sec.
   fake_clock_.AdvanceTimeMilliseconds(10000);
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   UpdateDataCounters(kFirstSsrc);
 
   // Adapt changes: 1, elapsed time: 10 sec => 6 per minute.
@@ -706,13 +970,17 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesStatsRestartsOnFirstSentPacket) {
 
 TEST_F(SendStatisticsProxyTest, AdaptChangesStatsStartedAfterFirstSentPacket) {
   // Enable and disable adaptation.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(60000);
-  cpu_counts.fps = -1;
-  cpu_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_framerate_reductions = absl::nullopt;
+  cpu_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
 
   // Send first packet, scaling disabled.
   // Elapsed time before first packet is sent should be excluded.
@@ -720,14 +988,18 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesStatsStartedAfterFirstSentPacket) {
   fake_clock_.AdvanceTimeMilliseconds(60000);
 
   // Enable adaptation.
-  cpu_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  cpu_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(10000);
   UpdateDataCounters(kFirstSsrc);
 
   // Adapt changes: 1, elapsed time: 20 sec.
   fake_clock_.AdvanceTimeMilliseconds(10000);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
 
   // Adapt changes: 1, elapsed time: 20 sec => 3 per minute.
   statistics_proxy_.reset();
@@ -738,22 +1010,28 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesStatsStartedAfterFirstSentPacket) {
 TEST_F(SendStatisticsProxyTest, AdaptChangesReportedAfterContentSwitch) {
   // First RTP packet sent, cpu adaptation enabled.
   UpdateDataCounters(kFirstSsrc);
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  quality_counts.fps = -1;
-  quality_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  quality_counts.num_framerate_reductions = absl::nullopt;
+  quality_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
 
   // Adapt changes: 2, elapsed time: 15 sec => 8 per minute.
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(6000);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(9000);
 
   // Switch content type, real-time stats should be updated.
   VideoEncoderConfig config;
   config.content_type = VideoEncoderConfig::ContentType::kScreen;
-  statistics_proxy_->OnEncoderReconfigured(config, 50);
+  statistics_proxy_->OnEncoderReconfigured(config, {});
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.AdaptChangesPerMinute.Cpu"));
   EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.AdaptChangesPerMinute.Cpu", 8));
   EXPECT_EQ(0,
@@ -761,13 +1039,23 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesReportedAfterContentSwitch) {
 
   // First RTP packet sent, scaling enabled.
   UpdateDataCounters(kFirstSsrc);
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
 
   // Adapt changes: 4, elapsed time: 120 sec => 2 per minute.
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
   fake_clock_.AdvanceTimeMilliseconds(120000);
 
   statistics_proxy_.reset();
@@ -779,6 +1067,145 @@ TEST_F(SendStatisticsProxyTest, AdaptChangesReportedAfterContentSwitch) {
                    "WebRTC.Video.Screenshare.AdaptChangesPerMinute.Quality"));
 }
 
+TEST_F(SendStatisticsProxyTest,
+       QualityLimitationReasonIsCpuWhenCpuIsResolutionLimited) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  cpu_counts.num_resolution_reductions = 1;
+
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+
+  EXPECT_EQ(QualityLimitationReason::kCpu,
+            statistics_proxy_->GetStats().quality_limitation_reason);
+}
+
+TEST_F(SendStatisticsProxyTest,
+       QualityLimitationReasonIsCpuWhenCpuIsFramerateLimited) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  cpu_counts.num_framerate_reductions = 1;
+
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+
+  EXPECT_EQ(QualityLimitationReason::kCpu,
+            statistics_proxy_->GetStats().quality_limitation_reason);
+}
+
+TEST_F(SendStatisticsProxyTest,
+       QualityLimitationReasonIsBandwidthWhenQualityIsResolutionLimited) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  quality_counts.num_resolution_reductions = 1;
+
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+
+  EXPECT_EQ(QualityLimitationReason::kBandwidth,
+            statistics_proxy_->GetStats().quality_limitation_reason);
+}
+
+TEST_F(SendStatisticsProxyTest,
+       QualityLimitationReasonIsBandwidthWhenQualityIsFramerateLimited) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  quality_counts.num_framerate_reductions = 1;
+
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+
+  EXPECT_EQ(QualityLimitationReason::kBandwidth,
+            statistics_proxy_->GetStats().quality_limitation_reason);
+}
+
+TEST_F(SendStatisticsProxyTest,
+       QualityLimitationReasonIsBandwidthWhenBothCpuAndQualityIsLimited) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  cpu_counts.num_resolution_reductions = 1;
+  quality_counts.num_resolution_reductions = 1;
+
+  // Even if the last adaptation reason is kCpu, if the counters indicate being
+  // both CPU and quality (=bandwidth) limited, kBandwidth takes precedence.
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+
+  EXPECT_EQ(QualityLimitationReason::kBandwidth,
+            statistics_proxy_->GetStats().quality_limitation_reason);
+}
+
+TEST_F(SendStatisticsProxyTest, QualityLimitationReasonIsNoneWhenNotLimited) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  // Observe a limitation due to CPU. This makes sure the test doesn't pass
+  // due to "none" being the default value.
+  cpu_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+  // Go back to not being limited.
+  cpu_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
+
+  EXPECT_EQ(QualityLimitationReason::kNone,
+            statistics_proxy_->GetStats().quality_limitation_reason);
+}
+
+TEST_F(SendStatisticsProxyTest, QualityLimitationDurationIncreasesWithTime) {
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+
+  // Not limited for 3000 ms
+  fake_clock_.AdvanceTimeMilliseconds(3000);
+  // CPU limited for 2000 ms
+  cpu_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+  fake_clock_.AdvanceTimeMilliseconds(2000);
+  // Bandwidth limited for 1000 ms
+  cpu_counts.num_resolution_reductions = 0;
+  quality_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
+  fake_clock_.AdvanceTimeMilliseconds(1000);
+  // CPU limited for another 2000 ms
+  cpu_counts.num_resolution_reductions = 1;
+  quality_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
+  fake_clock_.AdvanceTimeMilliseconds(2000);
+
+  auto quality_limitation_durations_ms =
+      statistics_proxy_->GetStats().quality_limitation_durations_ms;
+
+  EXPECT_EQ(3000,
+            quality_limitation_durations_ms[QualityLimitationReason::kNone]);
+  EXPECT_EQ(4000,
+            quality_limitation_durations_ms[QualityLimitationReason::kCpu]);
+  EXPECT_EQ(
+      1000,
+      quality_limitation_durations_ms[QualityLimitationReason::kBandwidth]);
+  EXPECT_EQ(0,
+            quality_limitation_durations_ms[QualityLimitationReason::kOther]);
+}
+
 TEST_F(SendStatisticsProxyTest, SwitchContentTypeUpdatesHistograms) {
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
@@ -786,12 +1213,12 @@ TEST_F(SendStatisticsProxyTest, SwitchContentTypeUpdatesHistograms) {
   // No switch, stats should not be updated.
   VideoEncoderConfig config;
   config.content_type = VideoEncoderConfig::ContentType::kRealtimeVideo;
-  statistics_proxy_->OnEncoderReconfigured(config, 50);
+  statistics_proxy_->OnEncoderReconfigured(config, {});
   EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.InputWidthInPixels"));
 
   // Switch to screenshare, real-time stats should be updated.
   config.content_type = VideoEncoderConfig::ContentType::kScreen;
-  statistics_proxy_->OnEncoderReconfigured(config, 50);
+  statistics_proxy_->OnEncoderReconfigured(config, {});
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InputWidthInPixels"));
 }
 
@@ -808,7 +1235,7 @@ TEST_F(SendStatisticsProxyTest, InputResolutionHistogramsAreUpdated) {
 
 TEST_F(SendStatisticsProxyTest, SentResolutionHistogramsAreUpdated) {
   const int64_t kMaxEncodedFrameWindowMs = 800;
-  const int kFps = 20;
+  const int kFps = 5;
   const int kNumFramesPerWindow = kFps * kMaxEncodedFrameWindowMs / 1000;
   const int kMinSamples =  // Sample added when removed from EncodedFrameMap.
       SendStatisticsProxy::kMinRequiredMetricsSamples + kNumFramesPerWindow;
@@ -817,7 +1244,7 @@ TEST_F(SendStatisticsProxyTest, SentResolutionHistogramsAreUpdated) {
   // Not enough samples, stats should not be updated.
   for (int i = 0; i < kMinSamples - 1; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
-    ++encoded_image._timeStamp;
+    encoded_image.SetTimestamp(encoded_image.Timestamp() + 90 * 1000 / kFps);
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   }
   SetUp();  // Reset stats proxy also causes histograms to be reported.
@@ -825,10 +1252,10 @@ TEST_F(SendStatisticsProxyTest, SentResolutionHistogramsAreUpdated) {
   EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.SentHeightInPixels"));
 
   // Enough samples, max resolution per frame should be reported.
-  encoded_image._timeStamp = 0xfffffff0;  // Will wrap.
+  encoded_image.SetTimestamp(0xffff0000);  // Will wrap.
   for (int i = 0; i < kMinSamples; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
-    ++encoded_image._timeStamp;
+    encoded_image.SetTimestamp(encoded_image.Timestamp() + 90 * 1000 / kFps);
     encoded_image._encodedWidth = kWidth;
     encoded_image._encodedHeight = kHeight;
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
@@ -864,7 +1291,7 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramIsUpdated) {
   int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000 + 1;
   for (int i = 0; i < frames; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
-    ++encoded_image._timeStamp;
+    encoded_image.SetTimestamp(encoded_image.Timestamp() + 1);
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
     // Frame with same timestamp should not be counted.
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
@@ -905,7 +1332,7 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramExcludesSuspendedTime) {
   int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000;
   for (int i = 0; i < frames; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
-    encoded_image._timeStamp = i + 1;
+    encoded_image.SetTimestamp(i + 1);
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   }
   // Suspend.
@@ -914,7 +1341,7 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramExcludesSuspendedTime) {
 
   for (int i = 0; i < frames; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
-    encoded_image._timeStamp = i + 1;
+    encoded_image.SetTimestamp(i + 1);
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   }
   // Suspended time interval should not affect the framerate.
@@ -924,10 +1351,12 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramExcludesSuspendedTime) {
 }
 
 TEST_F(SendStatisticsProxyTest, CpuLimitedHistogramNotUpdatedWhenDisabled) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  cpu_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  cpu_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
@@ -938,16 +1367,20 @@ TEST_F(SendStatisticsProxyTest, CpuLimitedHistogramNotUpdatedWhenDisabled) {
 }
 
 TEST_F(SendStatisticsProxyTest, CpuLimitedHistogramUpdated) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  cpu_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  cpu_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
 
-  cpu_counts.resolution = 1;
-  statistics_proxy_->OnCpuAdaptationChanged(cpu_counts, quality_counts);
+  cpu_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kCpu, cpu_counts,
+      quality_counts);
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
@@ -1088,10 +1521,10 @@ TEST_F(SendStatisticsProxyTest, VerifyQpHistogramStats_Vp8) {
   codec_info.codecType = kVideoCodecVP8;
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
-    codec_info.codecSpecific.VP8.simulcastIdx = 0;
+    encoded_image.SetSpatialIndex(0);
     encoded_image.qp_ = kQpIdx0;
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-    codec_info.codecSpecific.VP8.simulcastIdx = 1;
+    encoded_image.SetSpatialIndex(1);
     encoded_image.qp_ = kQpIdx1;
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
   }
@@ -1113,7 +1546,7 @@ TEST_F(SendStatisticsProxyTest, VerifyQpHistogramStats_Vp8OneSsrc) {
   codec_info.codecType = kVideoCodecVP8;
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
-    codec_info.codecSpecific.VP8.simulcastIdx = 0;
+    encoded_image.SetSpatialIndex(0);
     encoded_image.qp_ = kQpIdx0;
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
   }
@@ -1130,10 +1563,10 @@ TEST_F(SendStatisticsProxyTest, VerifyQpHistogramStats_Vp9) {
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
     encoded_image.qp_ = kQpIdx0;
-    codec_info.codecSpecific.VP9.spatial_idx = 0;
+    encoded_image.SetSpatialIndex(0);
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
     encoded_image.qp_ = kQpIdx1;
-    codec_info.codecSpecific.VP9.spatial_idx = 1;
+    encoded_image.SetSpatialIndex(1);
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
   }
   statistics_proxy_.reset();
@@ -1156,7 +1589,6 @@ TEST_F(SendStatisticsProxyTest, VerifyQpHistogramStats_Vp9OneSpatialLayer) {
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
     encoded_image.qp_ = kQpIdx0;
-    codec_info.codecSpecific.VP9.spatial_idx = 0;
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
   }
   statistics_proxy_.reset();
@@ -1170,20 +1602,46 @@ TEST_F(SendStatisticsProxyTest, VerifyQpHistogramStats_H264) {
   codec_info.codecType = kVideoCodecH264;
 
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
+    encoded_image.SetSpatialIndex(0);
     encoded_image.qp_ = kQpIdx0;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
+    encoded_image.SetSpatialIndex(1);
+    encoded_image.qp_ = kQpIdx1;
     statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
   }
   statistics_proxy_.reset();
-  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.Encoded.Qp.H264"));
-  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.Encoded.Qp.H264", kQpIdx0));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.Encoded.Qp.H264.S0"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.Encoded.Qp.H264.S0", kQpIdx0));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.Encoded.Qp.H264.S1"));
+  EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.Encoded.Qp.H264.S1", kQpIdx1));
 }
 
 TEST_F(SendStatisticsProxyTest,
-       BandwidthLimitedHistogramsNotUpdatedWhenDisabled) {
+       BandwidthLimitedHistogramsNotUpdatedForOneStream) {
+  // Configure one stream.
+  VideoEncoderConfig config;
+  config.content_type = VideoEncoderConfig::ContentType::kRealtimeVideo;
+  VideoStream stream1;
+  stream1.width = kWidth;
+  stream1.height = kHeight;
+  statistics_proxy_->OnEncoderReconfigured(config, {stream1});
+
+  const int64_t kMaxEncodedFrameWindowMs = 800;
+  const int kFps = 20;
+  const int kNumFramesPerWindow = kFps * kMaxEncodedFrameWindowMs / 1000;
+  const int kMinSamples =  // Sample added when removed from EncodedFrameMap.
+      SendStatisticsProxy::kMinRequiredMetricsSamples + kNumFramesPerWindow;
+
+  // Stream encoded.
   EncodedImage encoded_image;
-  // encoded_image.adapt_reason_.bw_resolutions_disabled by default: -1
-  for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
+  encoded_image._encodedWidth = kWidth;
+  encoded_image._encodedHeight = kHeight;
+  for (int i = 0; i < kMinSamples; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                               (kRtpClockRateHz / kFps));
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
 
   // Histograms are updated when the statistics_proxy_ is deleted.
   statistics_proxy_.reset();
@@ -1194,12 +1652,37 @@ TEST_F(SendStatisticsProxyTest,
 }
 
 TEST_F(SendStatisticsProxyTest,
-       BandwidthLimitedHistogramsUpdatedWhenEnabled_NoResolutionDisabled) {
-  const int kResolutionsDisabled = 0;
+       BandwidthLimitedHistogramsUpdatedForTwoStreams_NoResolutionDisabled) {
+  // Configure two streams.
+  VideoEncoderConfig config;
+  config.content_type = VideoEncoderConfig::ContentType::kRealtimeVideo;
+  VideoStream stream1;
+  stream1.width = kWidth / 2;
+  stream1.height = kHeight / 2;
+  VideoStream stream2;
+  stream2.width = kWidth;
+  stream2.height = kHeight;
+  statistics_proxy_->OnEncoderReconfigured(config, {stream1, stream2});
+
+  const int64_t kMaxEncodedFrameWindowMs = 800;
+  const int kFps = 20;
+  const int kNumFramesPerWindow = kFps * kMaxEncodedFrameWindowMs / 1000;
+  const int kMinSamples =  // Sample added when removed from EncodedFrameMap.
+      SendStatisticsProxy::kMinRequiredMetricsSamples + kNumFramesPerWindow;
+
+  // Two streams encoded.
   EncodedImage encoded_image;
-  encoded_image.adapt_reason_.bw_resolutions_disabled = kResolutionsDisabled;
-  for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
+  for (int i = 0; i < kMinSamples; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                               (kRtpClockRateHz / kFps));
+    encoded_image._encodedWidth = kWidth;
+    encoded_image._encodedHeight = kHeight;
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    encoded_image._encodedWidth = kWidth / 2;
+    encoded_image._encodedHeight = kHeight / 2;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
 
   // Histograms are updated when the statistics_proxy_ is deleted.
   statistics_proxy_.reset();
@@ -1213,12 +1696,34 @@ TEST_F(SendStatisticsProxyTest,
 }
 
 TEST_F(SendStatisticsProxyTest,
-       BandwidthLimitedHistogramsUpdatedWhenEnabled_OneResolutionDisabled) {
-  const int kResolutionsDisabled = 1;
+       BandwidthLimitedHistogramsUpdatedForTwoStreams_OneResolutionDisabled) {
+  // Configure two streams.
+  VideoEncoderConfig config;
+  config.content_type = VideoEncoderConfig::ContentType::kRealtimeVideo;
+  VideoStream stream1;
+  stream1.width = kWidth / 2;
+  stream1.height = kHeight / 2;
+  VideoStream stream2;
+  stream2.width = kWidth;
+  stream2.height = kHeight;
+  statistics_proxy_->OnEncoderReconfigured(config, {stream1, stream2});
+
+  const int64_t kMaxEncodedFrameWindowMs = 800;
+  const int kFps = 20;
+  const int kNumFramesPerWindow = kFps * kMaxEncodedFrameWindowMs / 1000;
+  const int kMinSamples =  // Sample added when removed from EncodedFrameMap.
+      SendStatisticsProxy::kMinRequiredMetricsSamples + kNumFramesPerWindow;
+
+  // One stream encoded.
   EncodedImage encoded_image;
-  encoded_image.adapt_reason_.bw_resolutions_disabled = kResolutionsDisabled;
-  for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
+  encoded_image._encodedWidth = kWidth / 2;
+  encoded_image._encodedHeight = kHeight / 2;
+  for (int i = 0; i < kMinSamples; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                               (kRtpClockRateHz / kFps));
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
 
   // Histograms are updated when the statistics_proxy_ is deleted.
   statistics_proxy_.reset();
@@ -1226,21 +1731,23 @@ TEST_F(SendStatisticsProxyTest,
                    "WebRTC.Video.BandwidthLimitedResolutionInPercent"));
   EXPECT_EQ(1, metrics::NumEvents(
                    "WebRTC.Video.BandwidthLimitedResolutionInPercent", 100));
-  // Resolutions disabled.
+  // One resolution disabled.
   EXPECT_EQ(1, metrics::NumSamples(
                    "WebRTC.Video.BandwidthLimitedResolutionsDisabled"));
-  EXPECT_EQ(
-      1, metrics::NumEvents("WebRTC.Video.BandwidthLimitedResolutionsDisabled",
-                            kResolutionsDisabled));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   "WebRTC.Video.BandwidthLimitedResolutionsDisabled", 1));
 }
 
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsNotUpdatedWhenDisabled) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  quality_counts.resolution = -1;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  quality_counts.num_resolution_reductions = absl::nullopt;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EncodedImage encoded_image;
+  encoded_image.SetSpatialIndex(0);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
 
@@ -1254,11 +1761,14 @@ TEST_F(SendStatisticsProxyTest,
 
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsUpdatedWhenEnabled_NoResolutionDownscale) {
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  quality_counts.resolution = 0;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  quality_counts.num_resolution_reductions = 0;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EncodedImage encoded_image;
+  encoded_image.SetSpatialIndex(0);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
 
@@ -1276,11 +1786,14 @@ TEST_F(SendStatisticsProxyTest,
 TEST_F(SendStatisticsProxyTest,
        QualityLimitedHistogramsUpdatedWhenEnabled_TwoResolutionDownscales) {
   const int kDownscales = 2;
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  quality_counts.resolution = kDownscales;
-  statistics_proxy_->SetAdaptationStats(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  quality_counts.num_resolution_reductions = kDownscales;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kNone, cpu_counts,
+      quality_counts);
   EncodedImage encoded_image;
+  encoded_image.SetSpatialIndex(0);
   for (int i = 0; i < SendStatisticsProxy::kMinRequiredMetricsSamples; ++i)
     statistics_proxy_->OnSendEncodedImage(encoded_image, &kDefaultCodecInfo);
   // Histograms are updated when the statistics_proxy_ is deleted.
@@ -1300,25 +1813,70 @@ TEST_F(SendStatisticsProxyTest,
 TEST_F(SendStatisticsProxyTest, GetStatsReportsBandwidthLimitedResolution) {
   // Initially false.
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
-  // No resolution scale by default.
-  EncodedImage encoded_image;
-  statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
-  EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
 
-  // Simulcast disabled resolutions
-  encoded_image.adapt_reason_.bw_resolutions_disabled = 1;
+  // Configure two streams.
+  VideoEncoderConfig config;
+  config.content_type = VideoEncoderConfig::ContentType::kRealtimeVideo;
+  VideoStream stream1;
+  stream1.width = kWidth / 2;
+  stream1.height = kHeight / 2;
+  VideoStream stream2;
+  stream2.width = kWidth;
+  stream2.height = kHeight;
+  statistics_proxy_->OnEncoderReconfigured(config, {stream1, stream2});
+
+  const int64_t kMaxEncodedFrameWindowMs = 800;
+  const int kFps = 20;
+  const int kMinSamples =  // Sample added when removed from EncodedFrameMap.
+      kFps * kMaxEncodedFrameWindowMs / 1000;
+
+  // One stream encoded.
+  EncodedImage encoded_image;
+  encoded_image._encodedWidth = kWidth / 2;
+  encoded_image._encodedHeight = kHeight / 2;
+  for (int i = 0; i < kMinSamples; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                               (kRtpClockRateHz / kFps));
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
+  }
+
+  // First frame removed from EncodedFrameMap, stats updated.
+  fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+  encoded_image.SetTimestamp(encoded_image.Timestamp() + 1);
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
 
-  encoded_image.adapt_reason_.bw_resolutions_disabled = 0;
+  // Two streams encoded.
+  for (int i = 0; i < kMinSamples; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                               (kRtpClockRateHz / kFps));
+    encoded_image._encodedWidth = kWidth;
+    encoded_image._encodedHeight = kHeight;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+    encoded_image._encodedWidth = kWidth / 2;
+    encoded_image._encodedHeight = kHeight / 2;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
+  }
+
+  // First frame with two streams removed, expect no resolution limit.
+  fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+  encoded_image.SetTimestamp(encoded_image.Timestamp() +
+                             (kRtpClockRateHz / kFps));
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_FALSE(statistics_proxy_->GetStats().bw_limited_resolution);
 
   // Resolution scaled due to quality.
-  VideoStreamEncoder::AdaptCounts cpu_counts;
-  VideoStreamEncoder::AdaptCounts quality_counts;
-  quality_counts.resolution = 1;
-  statistics_proxy_->OnQualityAdaptationChanged(cpu_counts, quality_counts);
+  SendStatisticsProxy::AdaptationSteps cpu_counts;
+  SendStatisticsProxy::AdaptationSteps quality_counts;
+  quality_counts.num_resolution_reductions = 1;
+  statistics_proxy_->OnAdaptationChanged(
+      VideoStreamEncoderObserver::AdaptationReason::kQuality, cpu_counts,
+      quality_counts);
   statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   EXPECT_TRUE(statistics_proxy_->GetStats().bw_limited_resolution);
 }
@@ -1337,10 +1895,8 @@ TEST_F(SendStatisticsProxyTest, GetStatsReportsTargetMediaBitrate) {
 
 TEST_F(SendStatisticsProxyTest, NoSubstreams) {
   uint32_t excluded_ssrc =
-      std::max(
-          *std::max_element(config_.rtp.ssrcs.begin(), config_.rtp.ssrcs.end()),
-          *std::max_element(config_.rtp.rtx.ssrcs.begin(),
-                            config_.rtp.rtx.ssrcs.end())) +
+      std::max(*absl::c_max_element(config_.rtp.ssrcs),
+               *absl::c_max_element(config_.rtp.rtx.ssrcs)) +
       1;
   // From RtcpStatisticsCallback.
   RtcpStatistics rtcp_stats;
@@ -1369,13 +1925,13 @@ TEST_F(SendStatisticsProxyTest, EncodedResolutionTimesOut) {
   EncodedImage encoded_image;
   encoded_image._encodedWidth = kEncodedWidth;
   encoded_image._encodedHeight = kEncodedHeight;
+  encoded_image.SetSpatialIndex(0);
 
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
-  codec_info.codecSpecific.VP8.simulcastIdx = 0;
 
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-  codec_info.codecSpecific.VP8.simulcastIdx = 1;
+  encoded_image.SetSpatialIndex(1);
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
 
   VideoSendStream::Stats stats = statistics_proxy_->GetStats();
@@ -1398,7 +1954,6 @@ TEST_F(SendStatisticsProxyTest, EncodedResolutionTimesOut) {
 
   // Report stats for second SSRC to make sure it's not outdated along with the
   // first SSRC.
-  codec_info.codecSpecific.VP8.simulcastIdx = 1;
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
 
   // Forward 1 ms, reach timeout, substream 0 should have no resolution
@@ -1417,13 +1972,13 @@ TEST_F(SendStatisticsProxyTest, ClearsResolutionFromInactiveSsrcs) {
   EncodedImage encoded_image;
   encoded_image._encodedWidth = kEncodedWidth;
   encoded_image._encodedHeight = kEncodedHeight;
+  encoded_image.SetSpatialIndex(0);
 
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
-  codec_info.codecSpecific.VP8.simulcastIdx = 0;
 
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-  codec_info.codecSpecific.VP8.simulcastIdx = 1;
+  encoded_image.SetSpatialIndex(1);
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
 
   statistics_proxy_->OnInactiveSsrc(config_.rtp.ssrcs[1]);
@@ -1473,7 +2028,7 @@ TEST_F(SendStatisticsProxyTest, ResetsRtcpCountersOnContentChange) {
   // Changing content type causes histograms to be reported.
   VideoEncoderConfig config;
   config.content_type = VideoEncoderConfig::ContentType::kScreen;
-  statistics_proxy_->OnEncoderReconfigured(config, 50);
+  statistics_proxy_->OnEncoderReconfigured(config, {});
 
   EXPECT_EQ(1,
             metrics::NumSamples("WebRTC.Video.NackPacketsReceivedPerMinute"));
@@ -1637,7 +2192,7 @@ TEST_F(SendStatisticsProxyTest, ResetsRtpCountersOnContentChange) {
   // Changing content type causes histograms to be reported.
   VideoEncoderConfig config;
   config.content_type = VideoEncoderConfig::ContentType::kScreen;
-  statistics_proxy_->OnEncoderReconfigured(config, 50000);
+  statistics_proxy_->OnEncoderReconfigured(config, {});
 
   // Interval: 3500 bytes * 4 / 2 sec = 7000 bytes / sec  = 56 kbps
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.BitrateSentInKbps"));
@@ -1820,13 +2375,46 @@ TEST_F(SendStatisticsProxyTest, FecBitrateNotReportedWhenNotEnabled) {
 }
 
 TEST_F(SendStatisticsProxyTest, GetStatsReportsEncoderImplementationName) {
-  const char* kName = "encoderName";
+  const std::string kName = "encoderName";
+  statistics_proxy_->OnEncoderImplementationChanged(kName);
+  EXPECT_EQ(kName, statistics_proxy_->GetStats().encoder_implementation_name);
+}
+
+TEST_F(SendStatisticsProxyTest, Vp9SvcLowSpatialLayerDoesNotUpdateResolution) {
+  static const int kEncodedWidth = 123;
+  static const int kEncodedHeight = 81;
   EncodedImage encoded_image;
+  encoded_image._encodedWidth = kEncodedWidth;
+  encoded_image._encodedHeight = kEncodedHeight;
+  encoded_image.SetSpatialIndex(0);
+
   CodecSpecificInfo codec_info;
-  codec_info.codec_name = kName;
+  codec_info.codecType = kVideoCodecVP9;
+
+  // For first picture, it is expected that low layer updates resolution.
+  codec_info.codecSpecific.VP9.end_of_picture = false;
   statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
-  EXPECT_STREQ(
-      kName, statistics_proxy_->GetStats().encoder_implementation_name.c_str());
+  VideoSendStream::Stats stats = statistics_proxy_->GetStats();
+  EXPECT_EQ(kEncodedWidth, stats.substreams[config_.rtp.ssrcs[0]].width);
+  EXPECT_EQ(kEncodedHeight, stats.substreams[config_.rtp.ssrcs[0]].height);
+
+  // Top layer updates resolution.
+  encoded_image._encodedWidth = kEncodedWidth * 2;
+  encoded_image._encodedHeight = kEncodedHeight * 2;
+  codec_info.codecSpecific.VP9.end_of_picture = true;
+  statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
+  stats = statistics_proxy_->GetStats();
+  EXPECT_EQ(kEncodedWidth * 2, stats.substreams[config_.rtp.ssrcs[0]].width);
+  EXPECT_EQ(kEncodedHeight * 2, stats.substreams[config_.rtp.ssrcs[0]].height);
+
+  // Low layer of next frame doesn't update resolution.
+  encoded_image._encodedWidth = kEncodedWidth;
+  encoded_image._encodedHeight = kEncodedHeight;
+  codec_info.codecSpecific.VP9.end_of_picture = false;
+  statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
+  stats = statistics_proxy_->GetStats();
+  EXPECT_EQ(kEncodedWidth * 2, stats.substreams[config_.rtp.ssrcs[0]].width);
+  EXPECT_EQ(kEncodedHeight * 2, stats.substreams[config_.rtp.ssrcs[0]].height);
 }
 
 class ForcedFallbackTest : public SendStatisticsProxyTest {
@@ -1834,17 +2422,18 @@ class ForcedFallbackTest : public SendStatisticsProxyTest {
   explicit ForcedFallbackTest(const std::string& field_trials)
       : SendStatisticsProxyTest(field_trials) {
     codec_info_.codecType = kVideoCodecVP8;
-    codec_info_.codecSpecific.VP8.simulcastIdx = 0;
     codec_info_.codecSpecific.VP8.temporalIdx = 0;
-    codec_info_.codec_name = "fake_codec";
     encoded_image_._encodedWidth = kWidth;
     encoded_image_._encodedHeight = kHeight;
+    encoded_image_.SetSpatialIndex(0);
   }
 
   ~ForcedFallbackTest() override {}
 
  protected:
   void InsertEncodedFrames(int num_frames, int interval_ms) {
+    statistics_proxy_->OnEncoderImplementationChanged(codec_name_);
+
     // First frame is not updating stats, insert initial frame.
     if (statistics_proxy_->GetStats().frames_encoded == 0) {
       statistics_proxy_->OnSendEncodedImage(encoded_image_, &codec_info_);
@@ -1859,6 +2448,7 @@ class ForcedFallbackTest : public SendStatisticsProxyTest {
 
   EncodedImage encoded_image_;
   CodecSpecificInfo codec_info_;
+  std::string codec_name_;
   const std::string kPrefix = "WebRTC.Video.Encoder.ForcedSw";
   const int kFrameIntervalMs = 1000;
   const int kMinFrames = 20;  // Min run time 20 sec.
@@ -1912,7 +2502,7 @@ TEST_F(ForcedFallbackEnabled, StatsNotUpdatedForTemporalLayers) {
 }
 
 TEST_F(ForcedFallbackEnabled, StatsNotUpdatedForSimulcast) {
-  codec_info_.codecSpecific.VP8.simulcastIdx = 1;
+  encoded_image_.SetSpatialIndex(1);
   InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
   statistics_proxy_.reset();
   EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
@@ -1937,7 +2527,7 @@ TEST_F(ForcedFallbackEnabled, EnteredLowResolutionNotSetIfNotLibvpx) {
 }
 
 TEST_F(ForcedFallbackEnabled, EnteredLowResolutionSetIfLibvpx) {
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(1, kFrameIntervalMs);
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);
 }
@@ -1949,7 +2539,7 @@ TEST_F(ForcedFallbackDisabled, EnteredLowResolutionNotSetIfAboveMaxPixels) {
 }
 
 TEST_F(ForcedFallbackDisabled, EnteredLowResolutionNotSetIfLibvpx) {
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(1, kFrameIntervalMs);
   EXPECT_FALSE(statistics_proxy_->GetStats().has_entered_low_resolution);
 }
@@ -1967,7 +2557,7 @@ TEST_F(ForcedFallbackEnabled, OneFallbackEvent) {
   EXPECT_FALSE(statistics_proxy_->GetStats().has_entered_low_resolution);
   InsertEncodedFrames(15, 1000);
   EXPECT_FALSE(statistics_proxy_->GetStats().has_entered_low_resolution);
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(5, 1000);
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);
 
@@ -1985,18 +2575,18 @@ TEST_F(ForcedFallbackEnabled, ThreeFallbackEvents) {
   // Three changes. Video: 60000 ms, fallback: 15000 ms (25%).
   InsertEncodedFrames(10, 1000);
   EXPECT_FALSE(statistics_proxy_->GetStats().has_entered_low_resolution);
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(15, 500);
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);
-  codec_info_.codec_name = "notlibvpx";
+  codec_name_ = "notlibvpx";
   InsertEncodedFrames(20, 1000);
   InsertEncodedFrames(3, kMaxFrameDiffMs);  // Should not be included.
   InsertEncodedFrames(10, 1000);
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);
-  codec_info_.codec_name = "notlibvpx2";
+  codec_name_ = "notlibvpx2";
   InsertEncodedFrames(10, 500);
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(15, 500);
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);
 
@@ -2009,7 +2599,7 @@ TEST_F(ForcedFallbackEnabled, ThreeFallbackEvents) {
 
 TEST_F(ForcedFallbackEnabled, NoFallbackIfAboveMaxPixels) {
   encoded_image_._encodedWidth = kWidth + 1;
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
 
   EXPECT_FALSE(statistics_proxy_->GetStats().has_entered_low_resolution);
@@ -2020,7 +2610,7 @@ TEST_F(ForcedFallbackEnabled, NoFallbackIfAboveMaxPixels) {
 
 TEST_F(ForcedFallbackEnabled, FallbackIfAtMaxPixels) {
   encoded_image_._encodedWidth = kWidth;
-  codec_info_.codec_name = "libvpx";
+  codec_name_ = "libvpx";
   InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
 
   EXPECT_TRUE(statistics_proxy_->GetStats().has_entered_low_resolution);

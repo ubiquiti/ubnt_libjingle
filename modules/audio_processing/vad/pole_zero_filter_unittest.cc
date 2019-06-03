@@ -17,7 +17,7 @@
 
 #include "modules/audio_processing/vad/vad_audio_proc_internal.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 
@@ -53,7 +53,7 @@ class PoleZeroFilterTest : public ::testing::Test {
                                           kCoeffDenominator,
                                           kFilterOrder)) {}
 
-  ~PoleZeroFilterTest() {}
+  ~PoleZeroFilterTest() override {}
 
   void FilterSubframes(int num_subframes);
 

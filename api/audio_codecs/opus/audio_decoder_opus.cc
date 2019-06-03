@@ -14,15 +14,27 @@
 #include <utility>
 #include <vector>
 
-#include "common_types.h"  // NOLINT(build/include)
+#include "absl/memory/memory.h"
+#include "absl/strings/match.h"
 #include "modules/audio_coding/codecs/opus/audio_decoder_opus.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
-rtc::Optional<AudioDecoderOpus::Config> AudioDecoderOpus::SdpToConfig(
+bool AudioDecoderOpus::Config::IsOk() const {
+  if (sample_rate_hz != 16000 && sample_rate_hz != 48000) {
+    // Unsupported sample rate. (libopus supports a few other rates as
+    // well; we can add support for them when needed.)
+    return false;
+  }
+  if (num_channels != 1 && num_channels != 2) {
+    return false;
+  }
+  return true;
+}
+
+absl::optional<AudioDecoderOpus::Config> AudioDecoderOpus::SdpToConfig(
     const SdpAudioFormat& format) {
-  const auto num_channels = [&]() -> rtc::Optional<int> {
+  const auto num_channels = [&]() -> absl::optional<int> {
     auto stereo = format.parameters.find("stereo");
     if (stereo != format.parameters.end()) {
       if (stereo->second == "0") {
@@ -30,17 +42,20 @@ rtc::Optional<AudioDecoderOpus::Config> AudioDecoderOpus::SdpToConfig(
       } else if (stereo->second == "1") {
         return 2;
       } else {
-        return rtc::nullopt;  // Bad stereo parameter.
+        return absl::nullopt;  // Bad stereo parameter.
       }
     }
     return 1;  // Default to mono.
   }();
-  if (STR_CASE_CMP(format.name.c_str(), "opus") == 0 &&
+  if (absl::EqualsIgnoreCase(format.name, "opus") &&
       format.clockrate_hz == 48000 && format.num_channels == 2 &&
       num_channels) {
-    return Config{*num_channels};
+    Config config;
+    config.num_channels = *num_channels;
+    RTC_DCHECK(config.IsOk());
+    return config;
   } else {
-    return rtc::nullopt;
+    return absl::nullopt;
   }
 }
 
@@ -51,12 +66,15 @@ void AudioDecoderOpus::AppendSupportedDecoders(
   opus_info.supports_network_adaption = true;
   SdpAudioFormat opus_format(
       {"opus", 48000, 2, {{"minptime", "10"}, {"useinbandfec", "1"}}});
-  specs->push_back({std::move(opus_format), std::move(opus_info)});
+  specs->push_back({std::move(opus_format), opus_info});
 }
 
 std::unique_ptr<AudioDecoder> AudioDecoderOpus::MakeAudioDecoder(
-    Config config) {
-  return rtc::MakeUnique<AudioDecoderOpusImpl>(config.num_channels);
+    Config config,
+    absl::optional<AudioCodecPairId> /*codec_pair_id*/) {
+  RTC_DCHECK(config.IsOk());
+  return absl::make_unique<AudioDecoderOpusImpl>(config.num_channels,
+                                                 config.sample_rate_hz);
 }
 
 }  // namespace webrtc

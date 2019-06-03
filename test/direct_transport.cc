@@ -9,76 +9,58 @@
  */
 #include "test/direct_transport.h"
 
+#include "absl/memory/memory.h"
 #include "call/call.h"
-#include "rtc_base/ptr_util.h"
-#include "system_wrappers/include/clock.h"
+#include "call/fake_network_pipe.h"
+#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "rtc_base/time_utils.h"
 #include "test/single_threaded_task_queue.h"
 
 namespace webrtc {
 namespace test {
 
-DirectTransport::DirectTransport(
-    SingleThreadedTaskQueueForTesting* task_queue,
-    Call* send_call,
-    const std::map<uint8_t, MediaType>& payload_type_map)
-    : DirectTransport(task_queue,
-                      FakeNetworkPipe::Config(),
-                      send_call,
-                      payload_type_map) {
+Demuxer::Demuxer(const std::map<uint8_t, MediaType>& payload_type_map)
+    : payload_type_map_(payload_type_map) {}
+
+MediaType Demuxer::GetMediaType(const uint8_t* packet_data,
+                                const size_t packet_length) const {
+  if (!RtpHeaderParser::IsRtcp(packet_data, packet_length)) {
+    RTC_CHECK_GE(packet_length, 2);
+    const uint8_t payload_type = packet_data[1] & 0x7f;
+    std::map<uint8_t, MediaType>::const_iterator it =
+        payload_type_map_.find(payload_type);
+    RTC_CHECK(it != payload_type_map_.end())
+        << "payload type " << static_cast<int>(payload_type) << " unknown.";
+    return it->second;
+  }
+  return MediaType::ANY;
 }
 
 DirectTransport::DirectTransport(
     SingleThreadedTaskQueueForTesting* task_queue,
-    const FakeNetworkPipe::Config& config,
+    std::unique_ptr<SimulatedPacketReceiverInterface> pipe,
     Call* send_call,
     const std::map<uint8_t, MediaType>& payload_type_map)
-    : DirectTransport(
-          task_queue,
-          config,
-          send_call,
-          std::unique_ptr<Demuxer>(new DemuxerImpl(payload_type_map))) {
-}
-
-DirectTransport::DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                                 const FakeNetworkPipe::Config& config,
-                                 Call* send_call,
-                                 std::unique_ptr<Demuxer> demuxer)
     : send_call_(send_call),
-      clock_(Clock::GetRealTimeClock()),
       task_queue_(task_queue),
-      fake_network_(rtc::MakeUnique<FakeNetworkPipe>(clock_, config,
-                                                      std::move(demuxer))) {
-  Start();
-}
-
-DirectTransport::DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                                 std::unique_ptr<FakeNetworkPipe> pipe,
-                                 Call* send_call)
-    : send_call_(send_call),
-      clock_(Clock::GetRealTimeClock()),
-      task_queue_(task_queue),
+      demuxer_(payload_type_map),
       fake_network_(std::move(pipe)) {
   Start();
 }
 
 DirectTransport::~DirectTransport() {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
-  // Constructor updates |next_scheduled_task_|, so it's guaranteed to
-  // be initialized.
-  task_queue_->CancelTask(next_scheduled_task_);
-}
-
-void DirectTransport::SetConfig(const FakeNetworkPipe::Config& config) {
-  fake_network_->SetConfig(config);
+  if (next_process_task_)
+    task_queue_->CancelTask(*next_process_task_);
 }
 
 void DirectTransport::StopSending() {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
-  task_queue_->CancelTask(next_scheduled_task_);
+  rtc::CritScope cs(&process_lock_);
+  if (next_process_task_)
+    task_queue_->CancelTask(*next_process_task_);
 }
 
 void DirectTransport::SetReceiver(PacketReceiver* receiver) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
+  rtc::CritScope cs(&process_lock_);
   fake_network_->SetReceiver(receiver);
 }
 
@@ -86,17 +68,30 @@ bool DirectTransport::SendRtp(const uint8_t* data,
                               size_t length,
                               const PacketOptions& options) {
   if (send_call_) {
-    rtc::SentPacket sent_packet(options.packet_id,
-                                clock_->TimeInMilliseconds());
+    rtc::SentPacket sent_packet(options.packet_id, rtc::TimeMillis());
+    sent_packet.info.included_in_feedback = options.included_in_feedback;
+    sent_packet.info.included_in_allocation = options.included_in_allocation;
+    sent_packet.info.packet_size_bytes = length;
+    sent_packet.info.packet_type = rtc::PacketType::kData;
     send_call_->OnSentPacket(sent_packet);
   }
-  fake_network_->SendPacket(data, length);
+  SendPacket(data, length);
   return true;
 }
 
 bool DirectTransport::SendRtcp(const uint8_t* data, size_t length) {
-  fake_network_->SendPacket(data, length);
+  SendPacket(data, length);
   return true;
+}
+
+void DirectTransport::SendPacket(const uint8_t* data, size_t length) {
+  MediaType media_type = demuxer_.GetMediaType(data, length);
+  int64_t send_time_us = rtc::TimeMicros();
+  fake_network_->DeliverPacket(media_type, rtc::CopyOnWriteBuffer(data, length),
+                               send_time_us);
+  rtc::CritScope cs(&process_lock_);
+  if (!next_process_task_)
+    ProcessPackets();
 }
 
 int DirectTransport::GetAverageDelayMs() {
@@ -109,18 +104,20 @@ void DirectTransport::Start() {
     send_call_->SignalChannelNetworkState(MediaType::AUDIO, kNetworkUp);
     send_call_->SignalChannelNetworkState(MediaType::VIDEO, kNetworkUp);
   }
-  SendPackets();
 }
 
-void DirectTransport::SendPackets() {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
-
-  fake_network_->Process();
-
-  int64_t delay_ms = fake_network_->TimeUntilNextProcess();
-  next_scheduled_task_ = task_queue_->PostDelayedTask([this]() {
-    SendPackets();
-  }, delay_ms);
+void DirectTransport::ProcessPackets() {
+  next_process_task_.reset();
+  auto delay_ms = fake_network_->TimeUntilNextProcess();
+  if (delay_ms) {
+    next_process_task_ = task_queue_->PostDelayedTask(
+        [this]() {
+          fake_network_->Process();
+          rtc::CritScope cs(&process_lock_);
+          ProcessPackets();
+        },
+        *delay_ms);
+  }
 }
 }  // namespace test
 }  // namespace webrtc

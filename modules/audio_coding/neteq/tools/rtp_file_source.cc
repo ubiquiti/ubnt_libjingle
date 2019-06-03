@@ -12,9 +12,7 @@
 
 #include <assert.h>
 #include <string.h>
-#ifdef WIN32
-#include <winsock2.h>
-#else
+#ifndef WIN32
 #include <netinet/in.h>
 #endif
 
@@ -28,8 +26,9 @@
 namespace webrtc {
 namespace test {
 
-RtpFileSource* RtpFileSource::Create(const std::string& file_name) {
-  RtpFileSource* source = new RtpFileSource();
+RtpFileSource* RtpFileSource::Create(const std::string& file_name,
+                                     absl::optional<uint32_t> ssrc_filter) {
+  RtpFileSource* source = new RtpFileSource(ssrc_filter);
   RTC_CHECK(source->OpenFile(file_name));
   return source;
 }
@@ -46,8 +45,7 @@ bool RtpFileSource::ValidPcap(const std::string& file_name) {
   return !!temp_file;
 }
 
-RtpFileSource::~RtpFileSource() {
-}
+RtpFileSource::~RtpFileSource() {}
 
 bool RtpFileSource::RegisterRtpHeaderExtension(RTPExtensionType type,
                                                uint8_t id) {
@@ -75,7 +73,7 @@ std::unique_ptr<Packet> RtpFileSource::NextPacket() {
       continue;
     }
     if (filter_.test(packet->header().payloadType) ||
-        (use_ssrc_filter_ && packet->header().ssrc != ssrc_)) {
+        (ssrc_filter_ && packet->header().ssrc != *ssrc_filter_)) {
       // This payload type should be filtered out. Continue to the next packet.
       continue;
     }
@@ -83,9 +81,10 @@ std::unique_ptr<Packet> RtpFileSource::NextPacket() {
   }
 }
 
-RtpFileSource::RtpFileSource()
+RtpFileSource::RtpFileSource(absl::optional<uint32_t> ssrc_filter)
     : PacketSource(),
-      parser_(RtpHeaderParser::Create()) {}
+      parser_(RtpHeaderParser::Create()),
+      ssrc_filter_(ssrc_filter) {}
 
 bool RtpFileSource::OpenFile(const std::string& file_name) {
   rtp_reader_.reset(RtpFileReader::Create(RtpFileReader::kRtpDump, file_name));

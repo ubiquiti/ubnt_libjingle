@@ -12,23 +12,21 @@
 
 #include "modules/audio_processing/test/conversational_speech/mock_wavreader.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/pathutils.h"
 #include "test/gmock.h"
 
 namespace webrtc {
 namespace test {
 namespace conversational_speech {
 
-using testing::_;
-using testing::Invoke;
+using ::testing::_;
+using ::testing::Invoke;
 
 MockWavReaderFactory::MockWavReaderFactory(
     const Params& default_params,
     const std::map<std::string, const Params>& params)
-        : default_params_(default_params),
-          audiotrack_names_params_(params) {
-  ON_CALL(*this, Create(_)).WillByDefault(Invoke(
-      this, &MockWavReaderFactory::CreateMock));
+    : default_params_(default_params), audiotrack_names_params_(params) {
+  ON_CALL(*this, Create(_))
+      .WillByDefault(Invoke(this, &MockWavReaderFactory::CreateMock));
 }
 
 MockWavReaderFactory::MockWavReaderFactory(const Params& default_params)
@@ -40,17 +38,17 @@ MockWavReaderFactory::~MockWavReaderFactory() = default;
 std::unique_ptr<WavReaderInterface> MockWavReaderFactory::CreateMock(
     const std::string& filepath) {
   // Search the parameters corresponding to filepath.
-  const rtc::Pathname audiotrack_file_path(filepath);
-  const auto it = audiotrack_names_params_.find(
-      audiotrack_file_path.filename());
+  size_t delimiter = filepath.find_last_of("/\\");  // Either windows or posix
+  std::string filename =
+      filepath.substr(delimiter == std::string::npos ? 0 : delimiter + 1);
+  const auto it = audiotrack_names_params_.find(filename);
 
   // If not found, use default parameters.
   if (it == audiotrack_names_params_.end()) {
     RTC_LOG(LS_VERBOSE) << "using default parameters for " << filepath;
-    return std::unique_ptr<WavReaderInterface>(
-        new MockWavReader(default_params_.sample_rate,
-                          default_params_.num_channels,
-                          default_params_.num_samples));
+    return std::unique_ptr<WavReaderInterface>(new MockWavReader(
+        default_params_.sample_rate, default_params_.num_channels,
+        default_params_.num_samples));
   }
 
   // Found, use the audiotrack-specific parameters.
@@ -58,10 +56,8 @@ std::unique_ptr<WavReaderInterface> MockWavReaderFactory::CreateMock(
   RTC_LOG(LS_VERBOSE) << "sample_rate " << it->second.sample_rate;
   RTC_LOG(LS_VERBOSE) << "num_channels " << it->second.num_channels;
   RTC_LOG(LS_VERBOSE) << "num_samples " << it->second.num_samples;
-  return std::unique_ptr<WavReaderInterface>(
-      new MockWavReader(it->second.sample_rate,
-                        it->second.num_channels,
-                        it->second.num_samples));
+  return std::unique_ptr<WavReaderInterface>(new MockWavReader(
+      it->second.sample_rate, it->second.num_channels, it->second.num_samples));
 }
 
 }  // namespace conversational_speech

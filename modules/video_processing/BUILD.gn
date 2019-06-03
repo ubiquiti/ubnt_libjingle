@@ -6,12 +6,12 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-import("//build/config/arm.gni")
 import("../../webrtc.gni")
 
 build_video_processing_sse2 = current_cpu == "x86" || current_cpu == "x64"
 
 rtc_static_library("video_processing") {
+  visibility = [ "*" ]
   sources = [
     "util/denoiser_filter.cc",
     "util/denoiser_filter_c.cc",
@@ -27,22 +27,23 @@ rtc_static_library("video_processing") {
   deps = [
     ":denoiser_filter",
     "..:module_api",
+    "../../api:scoped_refptr",
+    "../../api/video:video_frame",
+    "../../api/video:video_frame_i420",
     "../../common_audio",
     "../../common_video",
     "../../modules/utility",
+    "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
-    "../../system_wrappers",
+    "../../rtc_base/system:arch",
+    "../../system_wrappers:cpu_features_api",
+    "//third_party/libyuv",
   ]
   if (build_video_processing_sse2) {
     deps += [ ":video_processing_sse2" ]
   }
   if (rtc_build_with_neon) {
     deps += [ ":video_processing_neon" ]
-  }
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
   }
 }
 
@@ -70,12 +71,7 @@ if (build_video_processing_sse2) {
       "../../system_wrappers",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
-    if (is_posix) {
+    if (is_posix || is_fuchsia) {
       cflags = [ "-msse2" ]
     }
   }
@@ -107,14 +103,15 @@ if (rtc_include_tests) {
       "test/denoiser_test.cc",
     ]
     deps = [
+      ":denoiser_filter",
       ":video_processing",
-      "../../common_video:common_video",
+      "../../api:scoped_refptr",
+      "../../api/video:video_frame",
+      "../../api/video:video_frame_i420",
+      "../../common_video",
+      "../../test:fileutils",
       "../../test:test_support",
       "../../test:video_test_common",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }

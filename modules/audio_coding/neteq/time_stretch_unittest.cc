@@ -21,7 +21,7 @@
 #include "modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "rtc_base/checks.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 
@@ -34,8 +34,8 @@ TEST(TimeStretch, CreateAndDestroy) {
   const int kOverlapSamples = 5 * kSampleRate / 8000;
   BackgroundNoise bgn(kNumChannels);
   Accelerate accelerate(kSampleRate, kNumChannels, bgn);
-  PreemptiveExpand preemptive_expand(
-      kSampleRate, kNumChannels, bgn, kOverlapSamples);
+  PreemptiveExpand preemptive_expand(kSampleRate, kNumChannels, bgn,
+                                     kOverlapSamples);
 }
 
 TEST(TimeStretch, CreateUsingFactory) {

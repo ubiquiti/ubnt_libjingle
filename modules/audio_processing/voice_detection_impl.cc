@@ -10,9 +10,11 @@
 
 #include "modules/audio_processing/voice_detection_impl.h"
 
+#include "api/audio/audio_frame.h"
 #include "common_audio/vad/include/webrtc_vad.h"
 #include "modules/audio_processing/audio_buffer.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructor_magic.h"
 
 namespace webrtc {
 class VoiceDetectionImpl::Vad {
@@ -23,10 +25,9 @@ class VoiceDetectionImpl::Vad {
     int error = WebRtcVad_Init(state_);
     RTC_DCHECK_EQ(0, error);
   }
-  ~Vad() {
-    WebRtcVad_Free(state_);
-  }
+  ~Vad() { WebRtcVad_Free(state_); }
   VadInst* state() { return state_; }
+
  private:
   VadInst* state_ = nullptr;
   RTC_DISALLOW_COPY_AND_ASSIGN(Vad);
@@ -65,9 +66,9 @@ void VoiceDetectionImpl::ProcessCaptureAudio(AudioBuffer* audio) {
 
   RTC_DCHECK_GE(160, audio->num_frames_per_band());
   // TODO(ajm): concatenate data in frame buffer here.
-  int vad_ret = WebRtcVad_Process(vad_->state(), sample_rate_hz_,
-                                  audio->mixed_low_pass_data(),
-                                  frame_size_samples_);
+  int vad_ret =
+      WebRtcVad_Process(vad_->state(), sample_rate_hz_,
+                        audio->mixed_low_pass_data(), frame_size_samples_);
   if (vad_ret == 0) {
     stream_has_voice_ = false;
     audio->set_activity(AudioFrame::kVadPassive);
@@ -103,7 +104,7 @@ int VoiceDetectionImpl::set_stream_has_voice(bool has_voice) {
 bool VoiceDetectionImpl::stream_has_voice() const {
   rtc::CritScope cs(crit_);
   // TODO(ajm): enable this assertion?
-  //RTC_DCHECK(using_external_vad_ || is_component_enabled());
+  // RTC_DCHECK(using_external_vad_ || is_component_enabled());
   return stream_has_voice_;
 }
 
@@ -142,7 +143,7 @@ VoiceDetection::Likelihood VoiceDetectionImpl::likelihood() const {
 
 int VoiceDetectionImpl::set_frame_size_ms(int size) {
   rtc::CritScope cs(crit_);
-  RTC_DCHECK_EQ(10, size); // TODO(ajm): remove when supported.
+  RTC_DCHECK_EQ(10, size);  // TODO(ajm): remove when supported.
   frame_size_ms_ = size;
   Initialize(sample_rate_hz_);
   return AudioProcessing::kNoError;

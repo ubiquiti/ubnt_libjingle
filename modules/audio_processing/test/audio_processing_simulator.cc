@@ -11,23 +11,55 @@
 #include "modules/audio_processing/test/audio_processing_simulator.h"
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/memory/memory.h"
+#include "api/audio/echo_canceller3_config_json.h"
+#include "api/audio/echo_canceller3_factory.h"
 #include "common_audio/include/audio_util.h"
 #include "modules/audio_processing/aec_dump/aec_dump_factory.h"
+#include "modules/audio_processing/echo_cancellation_impl.h"
+#include "modules/audio_processing/echo_control_mobile_impl.h"
 #include "modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "modules/audio_processing/test/fake_recording_device.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/stringutils.h"
+#include "rtc_base/strings/json.h"
+#include "rtc_base/strings/string_builder.h"
 
 namespace webrtc {
 namespace test {
 namespace {
+// Helper for reading JSON from a file and parsing it to an AEC3 configuration.
+EchoCanceller3Config ReadAec3ConfigFromJsonFile(const std::string& filename) {
+  std::string json_string;
+  std::string s;
+  std::ifstream f(filename.c_str());
+  if (f.fail()) {
+    std::cout << "Failed to open the file " << filename << std::endl;
+    RTC_CHECK(false);
+  }
+  while (std::getline(f, s)) {
+    json_string += s;
+  }
+
+  bool parsing_successful;
+  EchoCanceller3Config cfg;
+  Aec3ConfigFromJsonString(json_string, &cfg, &parsing_successful);
+  if (!parsing_successful) {
+    std::cout << "Parsing of json string failed: " << std::endl
+              << json_string << std::endl;
+    RTC_CHECK(false);
+  }
+  RTC_CHECK(EchoCanceller3Config::Validate(&cfg));
+
+  return cfg;
+}
 
 void CopyFromAudioFrame(const AudioFrame& src, ChannelBuffer<float>* dest) {
   RTC_CHECK_EQ(src.num_channels_, dest->num_channels());
@@ -41,10 +73,10 @@ void CopyFromAudioFrame(const AudioFrame& src, ChannelBuffer<float>* dest) {
 
 std::string GetIndexedOutputWavFilename(const std::string& wav_name,
                                         int counter) {
-  std::stringstream ss;
+  rtc::StringBuilder ss;
   ss << wav_name.substr(0, wav_name.size() - 4) << "_" << counter
      << wav_name.substr(wav_name.size() - 4);
-  return ss.str();
+  return ss.Release();
 }
 
 void WriteEchoLikelihoodGraphFileHeader(std::ofstream* output_file) {
@@ -60,9 +92,29 @@ void WriteEchoLikelihoodGraphFileFooter(std::ofstream* output_file) {
                  << "  plt.plot(x, y)" << std::endl
                  << "  plt.ylabel('Echo likelihood')" << std::endl
                  << "  plt.xlabel('Time (s)')" << std::endl
-                 << "  plt.ylim([0,1])" << std::endl
                  << "  plt.show()" << std::endl;
 }
+
+// RAII class for execution time measurement. Updates the provided
+// ApiCallStatistics based on the time between ScopedTimer creation and
+// leaving the enclosing scope.
+class ScopedTimer {
+ public:
+  ScopedTimer(ApiCallStatistics* api_call_statistics_,
+              ApiCallStatistics::CallType call_type)
+      : start_time_(rtc::TimeNanos()),
+        call_type_(call_type),
+        api_call_statistics_(api_call_statistics_) {}
+
+  ~ScopedTimer() {
+    api_call_statistics_->Add(rtc::TimeNanos() - start_time_, call_type_);
+  }
+
+ private:
+  const int64_t start_time_;
+  const ApiCallStatistics::CallType call_type_;
+  ApiCallStatistics* const api_call_statistics_;
+};
 
 }  // namespace
 
@@ -83,13 +135,23 @@ void CopyToAudioFrame(const ChannelBuffer<float>& src, AudioFrame* dest) {
 }
 
 AudioProcessingSimulator::AudioProcessingSimulator(
-    const SimulationSettings& settings)
+    const SimulationSettings& settings,
+    std::unique_ptr<AudioProcessingBuilder> ap_builder)
     : settings_(settings),
+      ap_builder_(ap_builder ? std::move(ap_builder)
+                             : absl::make_unique<AudioProcessingBuilder>()),
       analog_mic_level_(settings.initial_mic_level),
       fake_recording_device_(
           settings.initial_mic_level,
           settings_.simulate_mic_gain ? *settings.simulated_mic_kind : 0),
       worker_queue_("file_writer_task_queue") {
+  RTC_CHECK(!settings_.dump_internal_data || WEBRTC_APM_DEBUG_DUMP == 1);
+  ApmDataDumper::SetActivated(settings_.dump_internal_data);
+  if (settings_.dump_internal_data_output_dir.has_value()) {
+    ApmDataDumper::SetOutputDirectory(
+        settings_.dump_internal_data_output_dir.value());
+  }
+
   if (settings_.ed_graph_output_filename &&
       !settings_.ed_graph_output_filename->empty()) {
     residual_echo_likelihood_graph_writer_.open(
@@ -107,13 +169,6 @@ AudioProcessingSimulator::~AudioProcessingSimulator() {
     WriteEchoLikelihoodGraphFileFooter(&residual_echo_likelihood_graph_writer_);
     residual_echo_likelihood_graph_writer_.close();
   }
-}
-
-AudioProcessingSimulator::ScopedTimer::~ScopedTimer() {
-  int64_t interval = rtc::TimeNanos() - start_time_;
-  proc_time_->sum += interval;
-  proc_time_->max = std::max(proc_time_->max, interval);
-  proc_time_->min = std::min(proc_time_->min, interval);
 }
 
 void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
@@ -147,12 +202,14 @@ void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
   // Process the current audio frame.
   if (fixed_interface) {
     {
-      const auto st = ScopedTimer(mutable_proc_time());
+      const auto st = ScopedTimer(&api_call_statistics_,
+                                  ApiCallStatistics::CallType::kCapture);
       RTC_CHECK_EQ(AudioProcessing::kNoError, ap_->ProcessStream(&fwd_frame_));
     }
     CopyFromAudioFrame(fwd_frame_, out_buf_.get());
   } else {
-    const auto st = ScopedTimer(mutable_proc_time());
+    const auto st = ScopedTimer(&api_call_statistics_,
+                                ApiCallStatistics::CallType::kCapture);
     RTC_CHECK_EQ(AudioProcessing::kNoError,
                  ap_->ProcessStream(in_buf_->channels(), in_config_,
                                     out_config_, out_buf_->channels()));
@@ -171,9 +228,9 @@ void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
   }
 
   if (residual_echo_likelihood_graph_writer_.is_open()) {
-    auto stats = ap_->GetStatistics();
-    residual_echo_likelihood_graph_writer_ << stats.residual_echo_likelihood
-                                           << ", ";
+    auto stats = ap_->GetStatistics(true /*has_remote_tracks*/);
+    residual_echo_likelihood_graph_writer_
+        << stats.residual_echo_likelihood.value_or(-1.f) << ", ";
   }
 
   ++num_process_stream_calls_;
@@ -181,13 +238,16 @@ void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
 
 void AudioProcessingSimulator::ProcessReverseStream(bool fixed_interface) {
   if (fixed_interface) {
-    const auto st = ScopedTimer(mutable_proc_time());
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->ProcessReverseStream(&rev_frame_));
+    {
+      const auto st = ScopedTimer(&api_call_statistics_,
+                                  ApiCallStatistics::CallType::kRender);
+      RTC_CHECK_EQ(AudioProcessing::kNoError,
+                   ap_->ProcessReverseStream(&rev_frame_));
+    }
     CopyFromAudioFrame(rev_frame_, reverse_out_buf_.get());
-
   } else {
-    const auto st = ScopedTimer(mutable_proc_time());
+    const auto st = ScopedTimer(&api_call_statistics_,
+                                ApiCallStatistics::CallType::kRender);
     RTC_CHECK_EQ(AudioProcessing::kNoError,
                  ap_->ProcessReverseStream(
                      reverse_in_buf_->channels(), reverse_in_config_,
@@ -308,28 +368,78 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   Config config;
   AudioProcessing::Config apm_config;
   std::unique_ptr<EchoControlFactory> echo_control_factory;
-  if (settings_.use_bf && *settings_.use_bf) {
-    config.Set<Beamforming>(new Beamforming(
-        true, ParseArrayGeometry(*settings_.microphone_positions),
-        SphericalPointf(DegreesToRadians(settings_.target_angle_degrees), 0.f,
-                        1.f)));
-  }
   if (settings_.use_ts) {
     config.Set<ExperimentalNs>(new ExperimentalNs(*settings_.use_ts));
   }
-  if (settings_.use_ie) {
-    config.Set<Intelligibility>(new Intelligibility(*settings_.use_ie));
-  }
   if (settings_.use_agc2) {
     apm_config.gain_controller2.enabled = *settings_.use_agc2;
-    apm_config.gain_controller2.fixed_gain_db = settings_.agc2_fixed_gain_db;
+    if (settings_.agc2_fixed_gain_db) {
+      apm_config.gain_controller2.fixed_digital.gain_db =
+          *settings_.agc2_fixed_gain_db;
+    }
+    if (settings_.agc2_use_adaptive_gain) {
+      apm_config.gain_controller2.adaptive_digital.enabled =
+          *settings_.agc2_use_adaptive_gain;
+      apm_config.gain_controller2.adaptive_digital.level_estimator =
+          settings_.agc2_adaptive_level_estimator;
+    }
   }
-  if (settings_.use_aec3 && *settings_.use_aec3) {
-    echo_control_factory.reset(new EchoCanceller3Factory());
+  if (settings_.use_pre_amplifier) {
+    apm_config.pre_amplifier.enabled = *settings_.use_pre_amplifier;
+    if (settings_.pre_amplifier_gain_factor) {
+      apm_config.pre_amplifier.fixed_gain_factor =
+          *settings_.pre_amplifier_gain_factor;
+    }
   }
-  if (settings_.use_lc) {
-    apm_config.level_controller.enabled = *settings_.use_lc;
+
+  const bool use_legacy_aec = settings_.use_aec && *settings_.use_aec &&
+                              settings_.use_legacy_aec &&
+                              *settings_.use_legacy_aec;
+  const bool use_aec = settings_.use_aec && *settings_.use_aec;
+  const bool use_aecm = settings_.use_aecm && *settings_.use_aecm;
+  if (use_legacy_aec || use_aec || use_aecm) {
+    apm_config.echo_canceller.enabled = true;
+    apm_config.echo_canceller.mobile_mode = use_aecm;
+    apm_config.echo_canceller.use_legacy_aec = use_legacy_aec;
   }
+
+  RTC_CHECK(!(use_legacy_aec && settings_.aec_settings_filename))
+      << "The legacy AEC cannot be configured using settings";
+
+  if (use_aec && !use_legacy_aec) {
+    EchoCanceller3Config cfg;
+    if (settings_.aec_settings_filename) {
+      if (settings_.use_verbose_logging) {
+        std::cout << "Reading AEC Parameters from JSON input." << std::endl;
+      }
+      cfg = ReadAec3ConfigFromJsonFile(*settings_.aec_settings_filename);
+      echo_control_factory.reset(new EchoCanceller3Factory(cfg));
+    }
+
+    if (settings_.print_aec_parameter_values) {
+      if (!settings_.use_quiet_output) {
+        std::cout << "AEC settings:" << std::endl;
+      }
+      std::cout << Aec3ConfigToJsonString(cfg) << std::endl;
+    }
+  }
+
+  if (settings_.use_drift_compensation && *settings_.use_drift_compensation) {
+    RTC_LOG(LS_ERROR) << "Ignoring deprecated setting: AEC2 drift compensation";
+  }
+  if (settings_.aec_suppression_level) {
+    auto level = static_cast<webrtc::EchoCancellationImpl::SuppressionLevel>(
+        *settings_.aec_suppression_level);
+    if (level ==
+        webrtc::EchoCancellationImpl::SuppressionLevel::kLowSuppression) {
+      RTC_LOG(LS_ERROR) << "Ignoring deprecated setting: AEC2 low suppression";
+    } else {
+      apm_config.echo_canceller.legacy_moderate_suppression_level =
+          (level == webrtc::EchoCancellationImpl::SuppressionLevel::
+                        kModerateSuppression);
+    }
+  }
+
   if (settings_.use_hpf) {
     apm_config.high_pass_filter.enabled = *settings_.use_hpf;
   }
@@ -343,25 +453,27 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   config.Set<DelayAgnostic>(new DelayAgnostic(!settings_.use_delay_agnostic ||
                                               *settings_.use_delay_agnostic));
   config.Set<ExperimentalAgc>(new ExperimentalAgc(
-      !settings_.use_experimental_agc || *settings_.use_experimental_agc));
+      !settings_.use_experimental_agc || *settings_.use_experimental_agc,
+      !!settings_.use_experimental_agc_agc2_level_estimator &&
+          *settings_.use_experimental_agc_agc2_level_estimator,
+      !!settings_.experimental_agc_disable_digital_adaptive &&
+          *settings_.experimental_agc_disable_digital_adaptive,
+      !!settings_.experimental_agc_analyze_before_aec &&
+          *settings_.experimental_agc_analyze_before_aec));
   if (settings_.use_ed) {
     apm_config.residual_echo_detector.enabled = *settings_.use_ed;
   }
 
-  ap_.reset(AudioProcessing::Create(config, nullptr,
-                                    std::move(echo_control_factory), nullptr));
+  RTC_CHECK(ap_builder_);
+  if (echo_control_factory) {
+    ap_builder_->SetEchoControlFactory(std::move(echo_control_factory));
+  }
+  ap_.reset((*ap_builder_).Create(config));
+
   RTC_CHECK(ap_);
 
   ap_->ApplyConfig(apm_config);
 
-  if (settings_.use_aec) {
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->echo_cancellation()->Enable(*settings_.use_aec));
-  }
-  if (settings_.use_aecm) {
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->echo_control_mobile()->Enable(*settings_.use_aecm));
-  }
   if (settings_.use_agc) {
     RTC_CHECK_EQ(AudioProcessing::kNoError,
                  ap_->gain_control()->Enable(*settings_.use_agc));
@@ -397,32 +509,6 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
         AudioProcessing::kNoError,
         ap_->gain_control()->set_mode(
             static_cast<webrtc::GainControl::Mode>(*settings_.agc_mode)));
-  }
-
-  if (settings_.use_drift_compensation) {
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->echo_cancellation()->enable_drift_compensation(
-                     *settings_.use_drift_compensation));
-  }
-
-  if (settings_.aec_suppression_level) {
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->echo_cancellation()->set_suppression_level(
-                     static_cast<webrtc::EchoCancellation::SuppressionLevel>(
-                         *settings_.aec_suppression_level)));
-  }
-
-  if (settings_.aecm_routing_mode) {
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->echo_control_mobile()->set_routing_mode(
-                     static_cast<webrtc::EchoControlMobile::RoutingMode>(
-                         *settings_.aecm_routing_mode)));
-  }
-
-  if (settings_.use_aecm_comfort_noise) {
-    RTC_CHECK_EQ(AudioProcessing::kNoError,
-                 ap_->echo_control_mobile()->enable_comfort_noise(
-                     *settings_.use_aecm_comfort_noise));
   }
 
   if (settings_.vad_likelihood) {

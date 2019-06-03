@@ -21,6 +21,7 @@ secondary_source = "//build/secondary/"
 # their includes checked for proper dependencies when you run either
 # "gn check" or "gn gen --check".
 check_targets = [
+  ":webrtc_common",
   "//api/*",
   "//audio/*",
   "//backup/*",
@@ -31,7 +32,6 @@ check_targets = [
   "//logging/*",
   "//media/*",
   "//modules/*",
-  "//ortc/*",
   "//p2p/*",
   "//pc/*",
   "//rtc_base/*",
@@ -41,7 +41,7 @@ check_targets = [
   "//system_wrappers/*",
   "//test/*",
   "//video/*",
-  "//voice_engine/*",
+  "//third_party/libyuv/*",
 ]
 
 # These are the list of GN files that run exec_script. This whitelist exists
@@ -62,8 +62,11 @@ default_args = {
 
   mac_sdk_min = "10.12"
 
-  # http://bugs.webrtc.org/8570
-  ios_deployment_target = "9.0"
+  ios_deployment_target = "10.0"
+
+  # The SDK API level, in contrast, is set by build/android/AndroidManifest.xml.
+  android32_ndk_api_level = 16
+  android64_ndk_api_level = 21
 
   # WebRTC does not want to switch to C++14 yet.
   use_cxx11 = true
@@ -74,4 +77,6 @@ default_args = {
   # WebRTC does not provide the gflags dependency. Because libyuv uses it only
   # for unittests, it can be disabled (see third_party/libyuv/BUILD.gn)
   libyuv_use_gflags = false
+
+  gtest_enable_absl_printers = true
 }

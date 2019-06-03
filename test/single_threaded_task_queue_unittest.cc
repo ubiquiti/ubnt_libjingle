@@ -14,8 +14,8 @@
 #include <memory>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "rtc_base/event.h"
-#include "rtc_base/ptr_util.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -37,7 +37,7 @@ TEST(SingleThreadedTaskQueueForTestingTest, ExecutesPostedTasks) {
   SingleThreadedTaskQueueForTesting task_queue("task_queue");
 
   std::atomic<bool> executed(false);
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   task_queue.PostTask([&executed, &done]() {
     executed.store(true);
@@ -60,17 +60,16 @@ TEST(SingleThreadedTaskQueueForTestingTest,
 
   std::vector<std::unique_ptr<rtc::Event>> done_events;
   for (size_t i = 0; i < kCount; i++) {
-    done_events.emplace_back(rtc::MakeUnique<rtc::Event>(false, false));
+    done_events.emplace_back(absl::make_unique<rtc::Event>());
   }
 
   // To avoid the tasks which comprise the actual test from running before they
   // have all be posted, which could result in only one task ever being in the
   // queue at any given time, post one waiting task that would block the
   // task-queue, and unblock only after all tasks have been posted.
-  rtc::Event rendezvous(true, false);
-  task_queue.PostTask([&rendezvous]() {
-    ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs));
-  });
+  rtc::Event rendezvous;
+  task_queue.PostTask(
+      [&rendezvous]() { ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs)); });
 
   // Post the tasks which comprise the test.
   for (size_t i = 0; i < kCount; i++) {
@@ -96,7 +95,7 @@ TEST(SingleThreadedTaskQueueForTestingTest, PostToTaskQueueFromOwnThread) {
   SingleThreadedTaskQueueForTesting task_queue("task_queue");
 
   std::atomic<bool> executed(false);
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   auto internally_posted_task = [&executed, &done]() {
     executed.store(true);
@@ -125,10 +124,9 @@ TEST(SingleThreadedTaskQueueForTestingTest, TasksExecutedInSequence) {
 
   // Prevent the chain from being set in motion before we've had time to
   // schedule it all, lest the queue only contain one task at a time.
-  rtc::Event rendezvous(true, false);
-  task_queue.PostTask([&rendezvous]() {
-    ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs));
-  });
+  rtc::Event rendezvous;
+  task_queue.PostTask(
+      [&rendezvous]() { ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs)); });
 
   for (size_t i = 0; i < 3; i++) {
     task_queue.PostTask([&accumulator, i]() {  // |i| passed by value.
@@ -138,10 +136,8 @@ TEST(SingleThreadedTaskQueueForTestingTest, TasksExecutedInSequence) {
   }
 
   // The test will wait for the task-queue to finish.
-  rtc::Event done(true, false);
-  task_queue.PostTask([&done]() {
-    done.Set();
-  });
+  rtc::Event done;
+  task_queue.PostTask([&done]() { done.Set(); });
 
   rendezvous.Set();  // Set the chain in motion.
 
@@ -154,15 +150,17 @@ TEST(SingleThreadedTaskQueueForTestingTest, ExecutesPostedDelayedTask) {
   SingleThreadedTaskQueueForTesting task_queue("task_queue");
 
   std::atomic<bool> executed(false);
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   constexpr int64_t delay_ms = 20;
   static_assert(delay_ms < kMaxWaitTimeMs / 2, "Delay too long for tests.");
 
-  task_queue.PostDelayedTask([&executed, &done]() {
-    executed.store(true);
-    done.Set();
-  }, delay_ms);
+  task_queue.PostDelayedTask(
+      [&executed, &done]() {
+        executed.store(true);
+        done.Set();
+      },
+      delay_ms);
   ASSERT_TRUE(done.Wait(kMaxWaitTimeMs));
 
   EXPECT_TRUE(executed.load());
@@ -176,12 +174,10 @@ TEST(SingleThreadedTaskQueueForTestingTest, DoesNotExecuteDelayedTaskTooSoon) {
   constexpr int64_t delay_ms = 2000;
   static_assert(delay_ms < kMaxWaitTimeMs / 2, "Delay too long for tests.");
 
-  task_queue.PostDelayedTask([&executed]() {
-    executed.store(true);
-  }, delay_ms);
+  task_queue.PostDelayedTask([&executed]() { executed.store(true); }, delay_ms);
 
   // Wait less than is enough, make sure the task was not yet executed.
-  rtc::Event not_done(true, false);
+  rtc::Event not_done;
   ASSERT_FALSE(not_done.Wait(delay_ms / 2));
   EXPECT_FALSE(executed.load());
 }
@@ -199,7 +195,7 @@ TEST(SingleThreadedTaskQueueForTestingTest,
   static_assert(earlier_delay_ms + later_delay_ms < kMaxWaitTimeMs / 2,
                 "Delay too long for tests.");
 
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   auto earlier_task = [&earlier_executed, &later_executed]() {
     EXPECT_FALSE(later_executed.load());
@@ -233,7 +229,7 @@ TEST(SingleThreadedTaskQueueForTestingTest,
   static_assert(earlier_delay_ms + later_delay_ms < kMaxWaitTimeMs / 2,
                 "Delay too long for tests.");
 
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   auto earlier_task = [&earlier_executed, &later_executed]() {
     EXPECT_FALSE(later_executed.load());
@@ -257,21 +253,16 @@ TEST(SingleThreadedTaskQueueForTestingTest,
 TEST(SingleThreadedTaskQueueForTestingTest, ExternalThreadCancelsTask) {
   SingleThreadedTaskQueueForTesting task_queue("task_queue");
 
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   // Prevent the to-be-cancelled task from being executed before we've had
   // time to cancel it.
-  rtc::Event rendezvous(true, false);
-  task_queue.PostTask([&rendezvous]() {
-    ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs));
-  });
+  rtc::Event rendezvous;
+  task_queue.PostTask(
+      [&rendezvous]() { ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs)); });
 
-  TaskId cancelled_task_id = task_queue.PostTask([]() {
-    EXPECT_TRUE(false);
-  });
-  task_queue.PostTask([&done]() {
-    done.Set();
-  });
+  TaskId cancelled_task_id = task_queue.PostTask([]() { EXPECT_TRUE(false); });
+  task_queue.PostTask([&done]() { done.Set(); });
 
   task_queue.CancelTask(cancelled_task_id);
 
@@ -288,13 +279,12 @@ TEST(SingleThreadedTaskQueueForTestingTest, ExternalThreadCancelsTask) {
 TEST(SingleThreadedTaskQueueForTestingTest, InternalThreadCancelsTask) {
   SingleThreadedTaskQueueForTesting task_queue("task_queue");
 
-  rtc::Event done(true, false);
+  rtc::Event done;
 
   // Prevent the chain from being set-off before we've set everything up.
-  rtc::Event rendezvous(true, false);
-  task_queue.PostTask([&rendezvous]() {
-    ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs));
-  });
+  rtc::Event rendezvous;
+  task_queue.PostTask(
+      [&rendezvous]() { ASSERT_TRUE(rendezvous.Wait(kMaxWaitTimeMs)); });
 
   // This is the canceller-task. It takes cancelled_task_id by reference,
   // because the ID will only become known after the cancelled task is
@@ -306,15 +296,11 @@ TEST(SingleThreadedTaskQueueForTestingTest, InternalThreadCancelsTask) {
   task_queue.PostTask(canceller_task);
 
   // This task will be cancelled by the task before it.
-  auto cancelled_task = []() {
-    EXPECT_TRUE(false);
-  };
+  auto cancelled_task = []() { EXPECT_TRUE(false); };
   cancelled_task_id = task_queue.PostTask(cancelled_task);
 
   // When this task runs, it will allow the test to be finished.
-  auto completion_marker_task = [&done]() {
-    done.Set();
-  };
+  auto completion_marker_task = [&done]() { done.Set(); };
   task_queue.PostTask(completion_marker_task);
 
   rendezvous.Set();  // Set the chain in motion.
@@ -330,7 +316,7 @@ TEST(SingleThreadedTaskQueueForTestingTest, SendTask) {
   task_queue.SendTask([&executed]() {
     // Intentionally delay, so that if SendTask didn't block, the sender thread
     // would have time to read |executed|.
-    rtc::Event delay(true, false);
+    rtc::Event delay;
     ASSERT_FALSE(delay.Wait(1000));
     executed.store(true);
   });
@@ -341,7 +327,7 @@ TEST(SingleThreadedTaskQueueForTestingTest, SendTask) {
 TEST(SingleThreadedTaskQueueForTestingTest,
      DestructTaskQueueWhileTasksPending) {
   auto task_queue =
-      rtc::MakeUnique<SingleThreadedTaskQueueForTesting>("task_queue");
+      absl::make_unique<SingleThreadedTaskQueueForTesting>("task_queue");
 
   std::atomic<size_t> counter(0);
 
@@ -349,7 +335,7 @@ TEST(SingleThreadedTaskQueueForTestingTest,
   for (size_t i = 0; i < tasks; i++) {
     task_queue->PostTask([&counter]() {
       std::atomic_fetch_add(&counter, static_cast<size_t>(1));
-      rtc::Event delay(true, false);
+      rtc::Event delay;
       ASSERT_FALSE(delay.Wait(500));
     });
   }

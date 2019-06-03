@@ -13,17 +13,14 @@
 #include <assert.h>
 #include <string.h>
 
-#include "common_audio/resampler/include/resampler.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace acm2 {
 
-ACMResampler::ACMResampler() {
-}
+ACMResampler::ACMResampler() {}
 
-ACMResampler::~ACMResampler() {
-}
+ACMResampler::~ACMResampler() {}
 
 int ACMResampler::Resample10Msec(const int16_t* in_audio,
                                  int in_freq_hz,

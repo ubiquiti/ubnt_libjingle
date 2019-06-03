@@ -13,19 +13,19 @@
 
 #if defined(WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE)
 
+#include <stdint.h>
 #include <memory>
 
+#include "api/task_queue/task_queue_factory.h"
 #include "modules/audio_device/audio_device_buffer.h"
 #include "modules/audio_device/include/audio_device.h"
-#include "rtc_base/checks.h"
-#include "rtc_base/criticalsection.h"
 
 namespace webrtc {
 
 class AudioDeviceGeneric;
 class AudioManager;
 
-class AudioDeviceModuleImpl : public AudioDeviceModule {
+class AudioDeviceModuleImpl : public AudioDeviceModuleForTest {
  public:
   enum PlatformType {
     kPlatformNotSupported = 0,
@@ -41,7 +41,8 @@ class AudioDeviceModuleImpl : public AudioDeviceModule {
   int32_t CreatePlatformSpecificObjects();
   int32_t AttachAudioBuffer();
 
-  AudioDeviceModuleImpl(const AudioLayer audioLayer);
+  AudioDeviceModuleImpl(AudioLayer audio_layer,
+                        TaskQueueFactory* task_queue_factory);
   ~AudioDeviceModuleImpl() override;
 
   // Retrieve the currently utilized audio layer
@@ -86,10 +87,6 @@ class AudioDeviceModuleImpl : public AudioDeviceModule {
   int32_t StartRecording() override;
   int32_t StopRecording() override;
   bool Recording() const override;
-
-  // Microphone Automatic Gain Control (AGC)
-  int32_t SetAGC(bool enable) override;
-  bool AGC() const override;
 
   // Audio mixer initialization
   int32_t InitSpeaker() override;
@@ -151,6 +148,11 @@ class AudioDeviceModuleImpl : public AudioDeviceModule {
   }
 #endif
   AudioDeviceBuffer* GetAudioDeviceBuffer() { return &audio_device_buffer_; }
+
+  int RestartPlayoutInternally() override { return -1; }
+  int RestartRecordingInternally() override { return -1; }
+  int SetPlayoutSampleRate(uint32_t sample_rate) override { return -1; }
+  int SetRecordingSampleRate(uint32_t sample_rate) override { return -1; }
 
  private:
   PlatformType Platform() const;

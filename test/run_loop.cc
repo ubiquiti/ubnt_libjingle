@@ -14,9 +14,10 @@
 namespace webrtc {
 namespace test {
 
-void PressEnterToContinue() {
+void PressEnterToContinue(SingleThreadedTaskQueueForTesting&) {
   puts(">> Press ENTER to continue...");
-  while (getc(stdin) != '\n' && !feof(stdin));
+  while (getc(stdin) != '\n' && !feof(stdin))
+    ;
 }
 }  // namespace test
 }  // namespace webrtc

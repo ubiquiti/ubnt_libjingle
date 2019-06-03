@@ -71,7 +71,7 @@ class SplitIlbcTest : public ::testing::TestWithParam<std::pair<int, int> > {
 TEST_P(SplitIlbcTest, NumFrames) {
   AudioDecoderIlbcImpl decoder;
   const size_t frame_length_samples = frame_length_ms_ * 8;
-  const auto generate_payload = [] (size_t payload_length_bytes) {
+  const auto generate_payload = [](size_t payload_length_bytes) {
     rtc::Buffer payload(payload_length_bytes);
     // Fill payload with increasing integers {0, 1, 2, ...}.
     for (size_t i = 0; i < payload.size(); ++i) {
@@ -103,8 +103,9 @@ TEST_P(SplitIlbcTest, NumFrames) {
 // Also test the maximum number of frames in one packet for 20 and 30 ms.
 // The maximum is defined by the largest payload length that can be uniquely
 // resolved to a frame size of either 38 bytes (20 ms) or 50 bytes (30 ms).
-INSTANTIATE_TEST_CASE_P(
-    IlbcTest, SplitIlbcTest,
+INSTANTIATE_TEST_SUITE_P(
+    IlbcTest,
+    SplitIlbcTest,
     ::testing::Values(std::pair<int, int>(1, 20),  // 1 frame, 20 ms.
                       std::pair<int, int>(2, 20),  // 2 frames, 20 ms.
                       std::pair<int, int>(3, 20),  // And so on.

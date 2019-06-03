@@ -11,13 +11,13 @@
 #include "rtc_tools/event_log_visualizer/plot_python.h"
 
 #include <stdio.h>
-
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "rtc_base/checks.h"
 
 namespace webrtc {
-namespace plotting {
 
 PythonPlot::PythonPlot() {}
 
@@ -39,9 +39,9 @@ void PythonPlot::Draw() {
       // List x coordinates
       printf("x%zu = [", i);
       if (series_list_[i].points.size() > 0)
-        printf("%G", series_list_[i].points[0].x);
+        printf("%.3f", series_list_[i].points[0].x);
       for (size_t j = 1; j < series_list_[i].points.size(); j++)
-        printf(", %G", series_list_[i].points[j].x);
+        printf(", %.3f", series_list_[i].points[j].x);
       printf("]\n");
 
       // List y coordinates
@@ -103,8 +103,8 @@ void PythonPlot::Draw() {
     }
 
     // IntervalSeries
-    printf("interval_colors = ['#ff8e82','#5092fc','#c4ffc4']\n");
-    RTC_CHECK_LE(interval_list_.size(), 3);
+    printf("interval_colors = ['#ff8e82','#5092fc','#c4ffc4','#aaaaaa']\n");
+    RTC_CHECK_LE(interval_list_.size(), 4);
     // To get the intervals to show up in the legend we have to create patches
     // for them.
     printf("legend_patches = []\n");
@@ -158,17 +158,27 @@ void PythonPlot::Draw() {
   }
 }
 
-PythonPlotCollection::PythonPlotCollection() {}
+PythonPlotCollection::PythonPlotCollection(bool shared_xaxis)
+    : shared_xaxis_(shared_xaxis) {}
 
 PythonPlotCollection::~PythonPlotCollection() {}
 
 void PythonPlotCollection::Draw() {
   printf("import matplotlib.pyplot as plt\n");
+  printf("plt.rcParams.update({'figure.max_open_warning': 0})\n");
   printf("import matplotlib.patches as mpatches\n");
   printf("import matplotlib.patheffects as pe\n");
   printf("import colorsys\n");
   for (size_t i = 0; i < plots_.size(); i++) {
     printf("plt.figure(%zu)\n", i);
+    if (shared_xaxis_) {
+      // Link x-axes across all figures for synchronized zooming.
+      if (i == 0) {
+        printf("axis0 = plt.subplot(111)\n");
+      } else {
+        printf("plt.subplot(111, sharex=axis0)\n");
+      }
+    }
     plots_[i]->Draw();
   }
   printf("plt.show()\n");
@@ -180,5 +190,4 @@ Plot* PythonPlotCollection::AppendNewPlot() {
   return plot;
 }
 
-}  // namespace plotting
 }  // namespace webrtc

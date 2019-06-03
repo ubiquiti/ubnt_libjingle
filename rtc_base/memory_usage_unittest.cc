@@ -9,7 +9,7 @@
  */
 
 #include "rtc_base/memory_usage.h"
-#include <cstdio>
+
 #include "test/gtest.h"
 
 namespace rtc {
@@ -20,4 +20,3 @@ TEST(GetMemoryUsage, SimpleTest) {
 }
 
 }  // namespace rtc
-

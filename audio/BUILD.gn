@@ -14,51 +14,76 @@ if (is_android) {
 
 rtc_static_library("audio") {
   sources = [
+    "audio_level.cc",
+    "audio_level.h",
     "audio_receive_stream.cc",
     "audio_receive_stream.h",
     "audio_send_stream.cc",
     "audio_send_stream.h",
     "audio_state.cc",
     "audio_state.h",
-    "audio_transport_proxy.cc",
-    "audio_transport_proxy.h",
+    "audio_transport_impl.cc",
+    "audio_transport_impl.h",
+    "channel_receive.cc",
+    "channel_receive.h",
+    "channel_send.cc",
+    "channel_send.h",
     "conversion.h",
     "null_audio_poller.cc",
     "null_audio_poller.h",
-    "scoped_voe_interface.h",
-    "time_interval.cc",
-    "time_interval.h",
+    "remix_resample.cc",
+    "remix_resample.h",
+    "transport_feedback_packet_loss_tracker.cc",
+    "transport_feedback_packet_loss_tracker.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
-    "..:webrtc_common",
-    "../api:audio_mixer_api",
+    "../api:array_view",
     "../api:call_api",
-    "../api:optional",
+    "../api:function_view",
+    "../api:libjingle_peerconnection_api",
+    "../api:rtp_headers",
+    "../api:scoped_refptr",
+    "../api:transport_api",
+    "../api/audio:aec3_factory",
+    "../api/audio:audio_frame_api",
+    "../api/audio:audio_mixer_api",
     "../api/audio_codecs:audio_codecs_api",
-    "../api/audio_codecs:builtin_audio_encoder_factory",
+    "../api/task_queue",
     "../call:bitrate_allocator",
     "../call:call_interfaces",
     "../call:rtp_interfaces",
     "../common_audio",
-    "../modules/audio_coding:cng",
+    "../common_audio:common_audio_c",
+    "../logging:rtc_event_audio",
+    "../logging:rtc_event_log_api",
+    "../logging:rtc_stream_config",
+    "../modules/audio_coding",
+    "../modules/audio_coding:audio_encoder_cng",
+    "../modules/audio_coding:audio_network_adaptor_config",
     "../modules/audio_device",
     "../modules/audio_processing",
-    "../modules/bitrate_controller:bitrate_controller",
-    "../modules/congestion_controller:congestion_controller",
-    "../modules/pacing:pacing",
-    "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
-    "../modules/rtp_rtcp:rtp_rtcp",
-    "../rtc_base:rtc_base",
+    "../modules/audio_processing:api",
+    "../modules/bitrate_controller",
+    "../modules/pacing",
+    "../modules/remote_bitrate_estimator",
+    "../modules/rtp_rtcp",
+    "../modules/rtp_rtcp:rtp_rtcp_format",
+    "../modules/utility",
+    "../rtc_base",
+    "../rtc_base:audio_format_to_string",
+    "../rtc_base:checks",
+    "../rtc_base:rate_limiter",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
+    "../rtc_base:safe_minmax",
+    "../rtc_base/experiments:audio_allocation_settings",
     "../system_wrappers",
-    "../voice_engine",
+    "../system_wrappers:field_trial",
+    "../system_wrappers:metrics",
+    "utility:audio_frame_operations",
+    "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 if (rtc_include_tests) {
@@ -71,16 +96,14 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":audio",
-      "../system_wrappers:system_wrappers",
-      "../test:fake_audio_device",
+      "../api:simulated_network_api",
+      "../call:fake_network",
+      "../call:simulated_network",
+      "../system_wrappers",
       "../test:test_common",
       "../test:test_support",
+      "//third_party/abseil-cpp/absl/memory",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("audio_tests") {
@@ -91,47 +114,60 @@ if (rtc_include_tests) {
       "audio_send_stream_tests.cc",
       "audio_send_stream_unittest.cc",
       "audio_state_unittest.cc",
-      "time_interval_unittest.cc",
+      "mock_voe_channel_proxy.h",
+      "remix_resample_unittest.cc",
+      "test/audio_stats_test.cc",
+      "test/media_transport_test.cc",
+      "transport_feedback_packet_loss_tracker_unittest.cc",
     ]
     deps = [
       ":audio",
       ":audio_end_to_end_test",
+      "../api:libjingle_peerconnection_api",
+      "../api:loopback_media_transport",
       "../api:mock_audio_mixer",
+      "../api:mock_frame_decryptor",
+      "../api:mock_frame_encryptor",
+      "../api/audio:audio_frame_api",
+      "../api/audio_codecs:audio_codecs_api",
+      "../api/audio_codecs/opus:audio_decoder_opus",
+      "../api/audio_codecs/opus:audio_encoder_opus",
+      "../api/task_queue:default_task_queue_factory",
+      "../api/units:time_delta",
+      "../call:mock_bitrate_allocator",
+      "../call:mock_call_interfaces",
       "../call:mock_rtp_interfaces",
       "../call:rtp_interfaces",
       "../call:rtp_receiver",
+      "../call:rtp_sender",
+      "../common_audio",
+      "../logging:mocks",
+      "../logging:rtc_event_log_api",
+      "../modules/audio_device:audio_device_impl",  # For TestAudioDeviceModule
       "../modules/audio_device:mock_audio_device",
       "../modules/audio_mixer:audio_mixer_impl",
       "../modules/audio_processing:audio_processing_statistics",
-      "../modules/congestion_controller:congestion_controller",
-      "../modules/congestion_controller:mock_congestion_controller",
-      "../modules/pacing:mock_paced_sender",
-      "../modules/pacing:pacing",
+      "../modules/audio_processing:mocks",
+      "../modules/pacing",
       "../modules/rtp_rtcp:mock_rtp_rtcp",
       "../modules/rtp_rtcp:rtp_rtcp_format",
+      "../modules/utility",
+      "../rtc_base:checks",
       "../rtc_base:rtc_base_approved",
       "../rtc_base:rtc_base_tests_utils",
-      "../rtc_base:rtc_task_queue",
-      "../system_wrappers:system_wrappers",
+      "../rtc_base:safe_compare",
+      "../rtc_base:task_queue_for_test",
+      "../rtc_base:timeutils",
+      "../system_wrappers",
       "../test:audio_codec_mocks",
+      "../test:field_trial",
       "../test:rtp_test_utils",
       "../test:test_common",
       "../test:test_support",
-      "../voice_engine",
       "utility:utility_tests",
-      "//testing/gmock",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/memory",
     ]
-
-    if (!rtc_use_memcheck) {
-      # This test is timing dependent, which rules out running on memcheck bots.
-      sources += [ "test/audio_stats_test.cc" ]
-    }
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   if (rtc_enable_protobuf) {
@@ -144,13 +180,13 @@ if (rtc_include_tests) {
 
       deps = [
         ":audio_end_to_end_test",
+        "../api:simulated_network_api",
         "../common_audio",
         "../rtc_base:rtc_base_approved",
         "../system_wrappers",
-        "../test:fake_audio_device",
+        "../test:fileutils",
         "../test:test_common",
         "../test:test_main",
-        "//testing/gmock",
         "//testing/gtest",
       ]
       if (is_android) {
@@ -158,12 +194,30 @@ if (rtc_include_tests) {
       }
 
       data = [
-        "../resources/voice_engine/audio_dtx16.wav",
         "../resources/voice_engine/audio_tiny16.wav",
         "../resources/voice_engine/audio_tiny48.wav",
-        "test/low_bandwidth_audio_test.py",
       ]
-      if (is_linux) {
+    }
+
+    group("low_bandwidth_audio_perf_test") {
+      testonly = true
+
+      deps = [
+        ":low_bandwidth_audio_test",
+      ]
+
+      data = [
+        "test/low_bandwidth_audio_test.py",
+        "../resources/voice_engine/audio_tiny16.wav",
+        "../resources/voice_engine/audio_tiny48.wav",
+      ]
+      if (is_win) {
+        data += [ "${root_out_dir}/low_bandwidth_audio_test.exe" ]
+      } else {
+        data += [ "${root_out_dir}/low_bandwidth_audio_test" ]
+      }
+
+      if (is_linux || is_android) {
         data += [
           "../tools_webrtc/audio_quality/linux/PolqaOem64",
           "../tools_webrtc/audio_quality/linux/pesq",
@@ -181,10 +235,7 @@ if (rtc_include_tests) {
         data += [ "../tools_webrtc/audio_quality/mac/pesq" ]
       }
 
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163)
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
+      write_runtime_deps = "${root_out_dir}/${target_name}.runtime_deps"
     }
   }
 
@@ -196,25 +247,26 @@ if (rtc_include_tests) {
       "test/audio_bwe_integration_test.h",
     ]
     deps = [
+      "../api:simulated_network_api",
+      "../api/task_queue",
+      "../call:fake_network",
+      "../call:simulated_network",
       "../common_audio",
       "../rtc_base:rtc_base_approved",
+      "../rtc_base:task_queue_for_test",
       "../system_wrappers",
-      "../test:fake_audio_device",
       "../test:field_trial",
+      "../test:fileutils",
       "../test:single_threaded_task_queue",
       "../test:test_common",
       "../test:test_main",
-      "//testing/gmock",
+      "../test:test_support",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/memory",
     ]
 
     data = [
       "//resources/voice_engine/audio_dtx16.wav",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }

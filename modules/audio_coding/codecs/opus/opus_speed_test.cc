@@ -23,9 +23,12 @@ class OpusSpeedTest : public AudioCodecSpeedTest {
   OpusSpeedTest();
   void SetUp() override;
   void TearDown() override;
-  float EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
-                     size_t max_bytes, size_t* encoded_bytes) override;
-  float DecodeABlock(const uint8_t* bit_stream, size_t encoded_bytes,
+  float EncodeABlock(int16_t* in_data,
+                     uint8_t* bit_stream,
+                     size_t max_bytes,
+                     size_t* encoded_bytes) override;
+  float DecodeABlock(const uint8_t* bit_stream,
+                     size_t encoded_bytes,
                      int16_t* out_data) override;
   WebRtcOpusEncInst* opus_encoder_;
   WebRtcOpusDecInst* opus_decoder_;
@@ -36,16 +39,15 @@ OpusSpeedTest::OpusSpeedTest()
                           kOpusSamplingKhz,
                           kOpusSamplingKhz),
       opus_encoder_(NULL),
-      opus_decoder_(NULL) {
-}
+      opus_decoder_(NULL) {}
 
 void OpusSpeedTest::SetUp() {
   AudioCodecSpeedTest::SetUp();
   // If channels_ == 1, use Opus VOIP mode, otherwise, audio mode.
   int app = channels_ == 1 ? 0 : 1;
   /* Create encoder memory. */
-  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_encoder_, channels_, app));
-  EXPECT_EQ(0, WebRtcOpus_DecoderCreate(&opus_decoder_, channels_));
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_encoder_, channels_, app, 48000));
+  EXPECT_EQ(0, WebRtcOpus_DecoderCreate(&opus_decoder_, channels_, 48000));
   /* Set bitrate. */
   EXPECT_EQ(0, WebRtcOpus_SetBitRate(opus_encoder_, bit_rate_));
 }
@@ -57,12 +59,13 @@ void OpusSpeedTest::TearDown() {
   EXPECT_EQ(0, WebRtcOpus_DecoderFree(opus_decoder_));
 }
 
-float OpusSpeedTest::EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
-                                  size_t max_bytes, size_t* encoded_bytes) {
+float OpusSpeedTest::EncodeABlock(int16_t* in_data,
+                                  uint8_t* bit_stream,
+                                  size_t max_bytes,
+                                  size_t* encoded_bytes) {
   clock_t clocks = clock();
-  int value = WebRtcOpus_Encode(opus_encoder_, in_data,
-                                input_length_sample_, max_bytes,
-                                bit_stream);
+  int value = WebRtcOpus_Encode(opus_encoder_, in_data, input_length_sample_,
+                                max_bytes, bit_stream);
   clocks = clock() - clocks;
   EXPECT_GT(value, 0);
   *encoded_bytes = static_cast<size_t>(value);
@@ -70,7 +73,8 @@ float OpusSpeedTest::EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
 }
 
 float OpusSpeedTest::DecodeABlock(const uint8_t* bit_stream,
-                                  size_t encoded_bytes, int16_t* out_data) {
+                                  size_t encoded_bytes,
+                                  int16_t* out_data) {
   int value;
   int16_t audio_type;
   clock_t clocks = clock();
@@ -84,25 +88,25 @@ float OpusSpeedTest::DecodeABlock(const uint8_t* bit_stream,
 /* Test audio length in second. */
 constexpr size_t kDurationSec = 400;
 
-#define ADD_TEST(complexity) \
-TEST_P(OpusSpeedTest, OpusSetComplexityTest##complexity) { \
-  /* Set complexity. */ \
-  printf("Setting complexity to %d ...\n", complexity); \
-  EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_encoder_, complexity)); \
-  EncodeDecode(kDurationSec); \
-}
+#define ADD_TEST(complexity)                                           \
+  TEST_P(OpusSpeedTest, OpusSetComplexityTest##complexity) {           \
+    /* Set complexity. */                                              \
+    printf("Setting complexity to %d ...\n", complexity);              \
+    EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_encoder_, complexity)); \
+    EncodeDecode(kDurationSec);                                        \
+  }
 
-ADD_TEST(10);
-ADD_TEST(9);
-ADD_TEST(8);
-ADD_TEST(7);
-ADD_TEST(6);
-ADD_TEST(5);
-ADD_TEST(4);
-ADD_TEST(3);
-ADD_TEST(2);
-ADD_TEST(1);
-ADD_TEST(0);
+ADD_TEST(10)
+ADD_TEST(9)
+ADD_TEST(8)
+ADD_TEST(7)
+ADD_TEST(6)
+ADD_TEST(5)
+ADD_TEST(4)
+ADD_TEST(3)
+ADD_TEST(2)
+ADD_TEST(1)
+ADD_TEST(0)
 
 #define ADD_BANDWIDTH_TEST(bandwidth)                                \
   TEST_P(OpusSpeedTest, OpusSetBandwidthTest##bandwidth) {           \
@@ -112,11 +116,11 @@ ADD_TEST(0);
     EncodeDecode(kDurationSec);                                      \
   }
 
-ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_NARROWBAND);
-ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_MEDIUMBAND);
-ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_WIDEBAND);
-ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_SUPERWIDEBAND);
-ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_FULLBAND);
+ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_NARROWBAND)
+ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_MEDIUMBAND)
+ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_WIDEBAND)
+ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_SUPERWIDEBAND)
+ADD_BANDWIDTH_TEST(OPUS_BANDWIDTH_FULLBAND)
 
 // List all test cases: (channel, bit rat, filename, extension).
 const coding_param param_set[] = {
@@ -136,7 +140,8 @@ const coding_param param_set[] = {
                     string("pcm"),
                     true)};
 
-INSTANTIATE_TEST_CASE_P(AllTest, OpusSpeedTest,
-                        ::testing::ValuesIn(param_set));
+INSTANTIATE_TEST_SUITE_P(AllTest,
+                         OpusSpeedTest,
+                         ::testing::ValuesIn(param_set));
 
 }  // namespace webrtc

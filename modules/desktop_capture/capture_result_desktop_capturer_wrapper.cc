@@ -20,17 +20,17 @@ namespace webrtc {
 CaptureResultDesktopCapturerWrapper::CaptureResultDesktopCapturerWrapper(
     std::unique_ptr<DesktopCapturer> base_capturer,
     ResultObserver* observer)
-    : DesktopCapturerWrapper(std::move(base_capturer)),
-      observer_(observer) {
+    : DesktopCapturerWrapper(std::move(base_capturer)), observer_(observer) {
   RTC_DCHECK(observer_);
 }
 
-CaptureResultDesktopCapturerWrapper::
-~CaptureResultDesktopCapturerWrapper() = default;
+CaptureResultDesktopCapturerWrapper::~CaptureResultDesktopCapturerWrapper() =
+    default;
 
 void CaptureResultDesktopCapturerWrapper::Start(Callback* callback) {
   if ((callback_ == nullptr) != (callback == nullptr)) {
     if (callback) {
+      callback_ = callback;
       base_capturer_->Start(this);
     } else {
       base_capturer_->Start(nullptr);

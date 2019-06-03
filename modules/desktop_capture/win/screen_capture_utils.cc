@@ -17,6 +17,7 @@
 
 #include "modules/desktop_capture/desktop_capturer.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/string_utils.h"
 #include "rtc_base/win32.h"
 
 namespace webrtc {
@@ -30,9 +31,9 @@ bool GetScreenList(DesktopCapturer::SourceList* screens,
 
   BOOL enum_result = TRUE;
   for (int device_index = 0;; ++device_index) {
-    DISPLAY_DEVICE device;
+    DISPLAY_DEVICEW device;
     device.cb = sizeof(device);
-    enum_result = EnumDisplayDevices(NULL, device_index, &device, 0);
+    enum_result = EnumDisplayDevicesW(NULL, device_index, &device, 0);
 
     // |enum_result| is 0 if we have enumerated all devices.
     if (!enum_result)
@@ -56,9 +57,9 @@ bool IsScreenValid(DesktopCapturer::SourceId screen, std::wstring* device_key) {
     return true;
   }
 
-  DISPLAY_DEVICE device;
+  DISPLAY_DEVICEW device;
   device.cb = sizeof(device);
-  BOOL enum_result = EnumDisplayDevices(NULL, screen, &device, 0);
+  BOOL enum_result = EnumDisplayDevicesW(NULL, screen, &device, 0);
   if (enum_result)
     *device_key = device.DeviceKey;
 
@@ -78,9 +79,9 @@ DesktopRect GetScreenRect(DesktopCapturer::SourceId screen,
     return GetFullscreenRect();
   }
 
-  DISPLAY_DEVICE device;
+  DISPLAY_DEVICEW device;
   device.cb = sizeof(device);
-  BOOL result = EnumDisplayDevices(NULL, screen, &device, 0);
+  BOOL result = EnumDisplayDevicesW(NULL, screen, &device, 0);
   if (!result)
     return DesktopRect();
 
@@ -91,18 +92,17 @@ DesktopRect GetScreenRect(DesktopCapturer::SourceId screen,
   if (device_key != device.DeviceKey)
     return DesktopRect();
 
-  DEVMODE device_mode;
+  DEVMODEW device_mode;
   device_mode.dmSize = sizeof(device_mode);
   device_mode.dmDriverExtra = 0;
-  result = EnumDisplaySettingsEx(
-      device.DeviceName, ENUM_CURRENT_SETTINGS, &device_mode, 0);
+  result = EnumDisplaySettingsExW(device.DeviceName, ENUM_CURRENT_SETTINGS,
+                                  &device_mode, 0);
   if (!result)
     return DesktopRect();
 
-  return DesktopRect::MakeXYWH(device_mode.dmPosition.x,
-                               device_mode.dmPosition.y,
-                               device_mode.dmPelsWidth,
-                               device_mode.dmPelsHeight);
+  return DesktopRect::MakeXYWH(
+      device_mode.dmPosition.x, device_mode.dmPosition.y,
+      device_mode.dmPelsWidth, device_mode.dmPelsHeight);
 }
 
 }  // namespace webrtc

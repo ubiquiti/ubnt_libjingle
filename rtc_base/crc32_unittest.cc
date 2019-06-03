@@ -9,16 +9,18 @@
  */
 
 #include "rtc_base/crc32.h"
-#include "rtc_base/gunit.h"
 
 #include <string>
+
+#include "test/gtest.h"
 
 namespace rtc {
 
 TEST(Crc32Test, TestBasic) {
   EXPECT_EQ(0U, ComputeCrc32(""));
   EXPECT_EQ(0x352441C2U, ComputeCrc32("abc"));
-  EXPECT_EQ(0x171A3F5FU,
+  EXPECT_EQ(
+      0x171A3F5FU,
       ComputeCrc32("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"));
 }
 

@@ -10,27 +10,12 @@
 
 #include "modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
 
-#include <algorithm>
-#include <limits>
+#include <cstdint>
 
-#include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/codecs/g711/g711_interface.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
-
-namespace {
-
-template <typename T>
-typename T::Config CreateConfig(const CodecInst& codec_inst) {
-  typename T::Config config;
-  config.frame_size_ms = codec_inst.pacsize / 8;
-  config.num_channels = codec_inst.channels;
-  config.payload_type = codec_inst.pltype;
-  return config;
-}
-
-}  // namespace
 
 bool AudioEncoderPcm::Config::IsOk() const {
   return (frame_size_ms % 10 == 0) && (num_channels >= 1);
@@ -42,8 +27,8 @@ AudioEncoderPcm::AudioEncoderPcm(const Config& config, int sample_rate_hz)
       payload_type_(config.payload_type),
       num_10ms_frames_per_packet_(
           static_cast<size_t>(config.frame_size_ms / 10)),
-      full_frame_samples_(
-          config.num_channels * config.frame_size_ms * sample_rate_hz / 1000),
+      full_frame_samples_(config.num_channels * config.frame_size_ms *
+                          sample_rate_hz / 1000),
       first_timestamp_in_buffer_(0) {
   RTC_CHECK_GT(sample_rate_hz, 0) << "Sample rate must be larger than 0 Hz";
   RTC_CHECK_EQ(config.frame_size_ms % 10, 0)
@@ -70,8 +55,8 @@ size_t AudioEncoderPcm::Max10MsFramesInAPacket() const {
 }
 
 int AudioEncoderPcm::GetTargetBitrate() const {
-  return static_cast<int>(
-      8 * BytesPerSample() * SampleRateHz() * NumChannels());
+  return static_cast<int>(8 * BytesPerSample() * SampleRateHz() *
+                          NumChannels());
 }
 
 AudioEncoder::EncodedInfo AudioEncoderPcm::EncodeImpl(
@@ -89,13 +74,12 @@ AudioEncoder::EncodedInfo AudioEncoderPcm::EncodeImpl(
   EncodedInfo info;
   info.encoded_timestamp = first_timestamp_in_buffer_;
   info.payload_type = payload_type_;
-  info.encoded_bytes =
-      encoded->AppendData(full_frame_samples_ * BytesPerSample(),
-                          [&] (rtc::ArrayView<uint8_t> encoded) {
-                            return EncodeCall(&speech_buffer_[0],
-                                              full_frame_samples_,
-                                              encoded.data());
-                          });
+  info.encoded_bytes = encoded->AppendData(
+      full_frame_samples_ * BytesPerSample(),
+      [&](rtc::ArrayView<uint8_t> encoded) {
+        return EncodeCall(&speech_buffer_[0], full_frame_samples_,
+                          encoded.data());
+      });
   speech_buffer_.clear();
   info.encoder_type = GetCodecType();
   return info;
@@ -104,9 +88,6 @@ AudioEncoder::EncodedInfo AudioEncoderPcm::EncodeImpl(
 void AudioEncoderPcm::Reset() {
   speech_buffer_.clear();
 }
-
-AudioEncoderPcmA::AudioEncoderPcmA(const CodecInst& codec_inst)
-    : AudioEncoderPcmA(CreateConfig<AudioEncoderPcmA>(codec_inst)) {}
 
 size_t AudioEncoderPcmA::EncodeCall(const int16_t* audio,
                                     size_t input_len,
@@ -121,9 +102,6 @@ size_t AudioEncoderPcmA::BytesPerSample() const {
 AudioEncoder::CodecType AudioEncoderPcmA::GetCodecType() const {
   return AudioEncoder::CodecType::kPcmA;
 }
-
-AudioEncoderPcmU::AudioEncoderPcmU(const CodecInst& codec_inst)
-    : AudioEncoderPcmU(CreateConfig<AudioEncoderPcmU>(codec_inst)) {}
 
 size_t AudioEncoderPcmU::EncodeCall(const int16_t* audio,
                                     size_t input_len,

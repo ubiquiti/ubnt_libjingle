@@ -15,9 +15,9 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/flags.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
-using testing::InitGoogleTest;
+using ::testing::InitGoogleTest;
 
 namespace webrtc {
 namespace test {
@@ -25,7 +25,7 @@ namespace {
 static const int kInputSampleRateKhz = 8;
 static const int kOutputSampleRateKhz = 8;
 
-DEFINE_int(frame_size_ms, 20, "Codec frame size (milliseconds).");
+WEBRTC_DEFINE_int(frame_size_ms, 20, "Codec frame size (milliseconds).");
 
 }  // namespace
 
@@ -35,7 +35,7 @@ class NetEqIlbcQualityTest : public NetEqQualityTest {
       : NetEqQualityTest(FLAG_frame_size_ms,
                          kInputSampleRateKhz,
                          kOutputSampleRateKhz,
-                         NetEqDecoder::kDecoderILBC) {
+                         SdpAudioFormat("ilbc", 8000, 1)) {
     // Flag validation
     RTC_CHECK(FLAG_frame_size_ms == 20 || FLAG_frame_size_ms == 30 ||
               FLAG_frame_size_ms == 40 || FLAG_frame_size_ms == 60)
@@ -52,7 +52,8 @@ class NetEqIlbcQualityTest : public NetEqQualityTest {
 
   int EncodeBlock(int16_t* in_data,
                   size_t block_size_samples,
-                  rtc::Buffer* payload, size_t max_bytes) override {
+                  rtc::Buffer* payload,
+                  size_t max_bytes) override {
     const size_t kFrameSizeSamples = 80;  // Samples per 10 ms.
     size_t encoded_samples = 0;
     uint32_t dummy_timestamp = 0;

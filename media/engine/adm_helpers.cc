@@ -11,6 +11,7 @@
 #include "media/engine/adm_helpers.h"
 
 #include "modules/audio_device/include/audio_device.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -27,7 +28,7 @@ namespace adm_helpers {
 // the ADM functions, depending on the ID type.
 #if defined(WEBRTC_WIN)
 #define AUDIO_DEVICE_ID \
-    (AudioDeviceModule::WindowsDeviceType::kDefaultCommunicationDevice)
+  (AudioDeviceModule::WindowsDeviceType::kDefaultCommunicationDevice)
 #else
 #define AUDIO_DEVICE_ID (0u)
 #endif  // defined(WEBRTC_WIN)

@@ -10,17 +10,26 @@
 
 #include "audio/test/audio_bwe_integration_test.h"
 
+#include "absl/memory/memory.h"
+#include "api/task_queue/queued_task.h"
+#include "api/task_queue/task_queue_base.h"
+#include "call/fake_network_pipe.h"
+#include "call/simulated_network.h"
 #include "common_audio/wav_file.h"
-#include "rtc_base/ptr_util.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 namespace test {
 
 namespace {
+enum : int {  // The first valid value is 1.
+  kTransportSequenceNumberExtensionId = 1,
+};
+
 // Wait a second between stopping sending and stopping receiving audio.
 constexpr int kExtraProcessTimeMs = 1000;
 }  // namespace
@@ -37,14 +46,14 @@ size_t AudioBweTest::GetNumFlexfecStreams() const {
   return 0;
 }
 
-std::unique_ptr<test::FakeAudioDevice::Capturer>
+std::unique_ptr<TestAudioDeviceModule::Capturer>
 AudioBweTest::CreateCapturer() {
-  return test::FakeAudioDevice::CreateWavFileReader(AudioInputFile());
+  return TestAudioDeviceModule::CreateWavFileReader(AudioInputFile());
 }
 
 void AudioBweTest::OnFakeAudioDevicesCreated(
-    test::FakeAudioDevice* send_audio_device,
-    test::FakeAudioDevice* recv_audio_device) {
+    TestAudioDeviceModule* send_audio_device,
+    TestAudioDeviceModule* recv_audio_device) {
   send_audio_device_ = send_audio_device;
 }
 
@@ -53,14 +62,20 @@ test::PacketTransport* AudioBweTest::CreateSendTransport(
     Call* sender_call) {
   return new test::PacketTransport(
       task_queue, sender_call, this, test::PacketTransport::kSender,
-      test::CallTest::payload_type_map_, GetNetworkPipeConfig());
+      test::CallTest::payload_type_map_,
+      absl::make_unique<FakeNetworkPipe>(
+          Clock::GetRealTimeClock(),
+          absl::make_unique<SimulatedNetwork>(GetNetworkPipeConfig())));
 }
 
 test::PacketTransport* AudioBweTest::CreateReceiveTransport(
     SingleThreadedTaskQueueForTesting* task_queue) {
   return new test::PacketTransport(
       task_queue, nullptr, this, test::PacketTransport::kReceiver,
-      test::CallTest::payload_type_map_, GetNetworkPipeConfig());
+      test::CallTest::payload_type_map_,
+      absl::make_unique<FakeNetworkPipe>(
+          Clock::GetRealTimeClock(),
+          absl::make_unique<SimulatedNetwork>(GetNetworkPipeConfig())));
 }
 
 void AudioBweTest::PerformTest() {
@@ -68,7 +83,7 @@ void AudioBweTest::PerformTest() {
   SleepMs(GetNetworkPipeConfig().queue_delay_ms + kExtraProcessTimeMs);
 }
 
-class StatsPollTask : public rtc::QueuedTask {
+class StatsPollTask : public QueuedTask {
  public:
   explicit StatsPollTask(Call* sender_call) : sender_call_(sender_call) {}
 
@@ -77,8 +92,8 @@ class StatsPollTask : public rtc::QueuedTask {
     RTC_CHECK(sender_call_);
     Call::Stats call_stats = sender_call_->GetStats();
     EXPECT_GT(call_stats.send_bandwidth_bps, 25000);
-    rtc::TaskQueue::Current()->PostDelayedTask(
-        std::unique_ptr<QueuedTask>(this), 100);
+    TaskQueueBase::Current()->PostDelayedTask(std::unique_ptr<QueuedTask>(this),
+                                              100);
     return false;
   }
   Call* sender_call_;
@@ -115,8 +130,8 @@ class NoBandwidthDropAfterDtx : public AudioBweTest {
     return test::ResourcePath("voice_engine/audio_dtx16", "wav");
   }
 
-  FakeNetworkPipe::Config GetNetworkPipeConfig() override {
-    FakeNetworkPipe::Config pipe_config;
+  BuiltInNetworkBehaviorConfig GetNetworkPipeConfig() override {
+    BuiltInNetworkBehaviorConfig pipe_config;
     pipe_config.link_capacity_kbps = 50;
     pipe_config.queue_length_packets = 1500;
     pipe_config.queue_delay_ms = 300;
@@ -129,14 +144,14 @@ class NoBandwidthDropAfterDtx : public AudioBweTest {
 
   void PerformTest() override {
     stats_poller_.PostDelayedTask(
-        std::unique_ptr<rtc::QueuedTask>(new StatsPollTask(sender_call_)), 100);
-    sender_call_->OnTransportOverheadChanged(webrtc::MediaType::AUDIO, 0);
+        absl::make_unique<StatsPollTask>(sender_call_), 100);
+    sender_call_->OnAudioTransportOverheadChanged(0);
     AudioBweTest::PerformTest();
   }
 
  private:
   Call* sender_call_;
-  rtc::TaskQueue stats_poller_;
+  TaskQueueForTest stats_poller_;
 };
 
 using AudioBweIntegrationTest = CallTest;

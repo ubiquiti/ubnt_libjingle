@@ -11,11 +11,11 @@
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 
 #include <string.h>
-
 #include <algorithm>
-#include <iterator>
 #include <utility>
 
+#include "absl/algorithm/container.h"
+#include "modules/include/module_common_types_public.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/flexfec_header_reader_writer.h"
@@ -52,7 +52,7 @@ int32_t ForwardErrorCorrection::Packet::Release() {
 // the std::unique_ptr's are not covariant w.r.t. the types that
 // they are pointing to.
 template <typename S, typename T>
-bool ForwardErrorCorrection::SortablePacket::LessThan::operator() (
+bool ForwardErrorCorrection::SortablePacket::LessThan::operator()(
     const S& first,
     const T& second) {
   RTC_DCHECK_EQ(first->ssrc, second->ssrc);
@@ -155,16 +155,19 @@ int ForwardErrorCorrection::EncodeFec(const PacketList& media_packets,
     fec_packets->push_back(&generated_fec_packets_[i]);
   }
 
-  const internal::PacketMaskTable mask_table(fec_mask_type, num_media_packets);
+  internal::PacketMaskTable mask_table(fec_mask_type, num_media_packets);
   packet_mask_size_ = internal::PacketMaskSize(num_media_packets);
   memset(packet_masks_, 0, num_fec_packets * packet_mask_size_);
   internal::GeneratePacketMasks(num_media_packets, num_fec_packets,
                                 num_important_packets, use_unequal_protection,
-                                mask_table, packet_masks_);
+                                &mask_table, packet_masks_);
 
   // Adapt packet masks to missing media packets.
   int num_mask_bits = InsertZerosInPacketMasks(media_packets, num_fec_packets);
   if (num_mask_bits < 0) {
+    RTC_LOG(LS_INFO) << "Due to sequence number gaps, cannot protect media "
+                        "packets with a single block of FEC packets.";
+    fec_packets->clear();
     return -1;
   }
   packet_mask_size_ = internal::PacketMaskSize(num_mask_bits);
@@ -378,9 +381,8 @@ void ForwardErrorCorrection::UpdateCoveringFecPackets(
     const RecoveredPacket& packet) {
   for (auto& fec_packet : received_fec_packets_) {
     // Is this FEC packet protecting the media packet |packet|?
-    auto protected_it = std::lower_bound(fec_packet->protected_packets.begin(),
-                                         fec_packet->protected_packets.end(),
-                                         &packet, SortablePacket::LessThan());
+    auto protected_it = absl::c_lower_bound(
+        fec_packet->protected_packets, &packet, SortablePacket::LessThan());
     if (protected_it != fec_packet->protected_packets.end() &&
         (*protected_it)->seq_num == packet.seq_num) {
       // Found an FEC packet which is protecting |packet|.
@@ -652,7 +654,7 @@ void ForwardErrorCorrection::AttemptRecovery(
         continue;
       }
 
-      auto recovered_packet_ptr = recovered_packet.get();
+      auto* recovered_packet_ptr = recovered_packet.get();
       // Add recovered packet to the list of recovered packets and update any
       // FEC packets covering this packet with a pointer to the data.
       // TODO(holmer): Consider replacing this with a binary search for the

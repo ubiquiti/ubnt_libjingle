@@ -10,12 +10,17 @@
 
 package org.appspot.apprtc;
 
+import android.Manifest;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.util.Log;
@@ -44,8 +49,9 @@ import org.json.JSONException;
 public class ConnectActivity extends Activity {
   private static final String TAG = "ConnectActivity";
   private static final int CONNECTION_REQUEST = 1;
+  private static final int PERMISSION_REQUEST = 2;
   private static final int REMOVE_FAVORITE_INDEX = 0;
-  private static boolean commandLineRun = false;
+  private static boolean commandLineRun;
 
   private ImageButton addFavoriteButton;
   private EditText roomEditText;
@@ -104,16 +110,7 @@ public class ConnectActivity extends Activity {
     addFavoriteButton = findViewById(R.id.add_favorite_button);
     addFavoriteButton.setOnClickListener(addFavoriteListener);
 
-    // If an implicit VIEW intent is launching the app, go directly to that URL.
-    final Intent intent = getIntent();
-    if ("android.intent.action.VIEW".equals(intent.getAction()) && !commandLineRun) {
-      boolean loopback = intent.getBooleanExtra(CallActivity.EXTRA_LOOPBACK, false);
-      int runTimeMs = intent.getIntExtra(CallActivity.EXTRA_RUNTIME, 0);
-      boolean useValuesFromIntent =
-          intent.getBooleanExtra(CallActivity.EXTRA_USE_VALUES_FROM_INTENT, false);
-      String room = sharedPref.getString(keyprefRoom, "");
-      connectToRoom(room, true, loopback, useValuesFromIntent, runTimeMs);
-    }
+    requestPermissions();
   }
 
   @Override
@@ -210,6 +207,95 @@ public class ConnectActivity extends Activity {
     }
   }
 
+  @Override
+  public void onRequestPermissionsResult(
+      int requestCode, String[] permissions, int[] grantResults) {
+    if (requestCode == PERMISSION_REQUEST) {
+      String[] missingPermissions = getMissingPermissions();
+      if (missingPermissions.length != 0) {
+        // User didn't grant all the permissions. Warn that the application might not work
+        // correctly.
+        new AlertDialog.Builder(this)
+            .setMessage(R.string.missing_permissions_try_again)
+            .setPositiveButton(R.string.yes,
+                (dialog, id) -> {
+                  // User wants to try giving the permissions again.
+                  dialog.cancel();
+                  requestPermissions();
+                })
+            .setNegativeButton(R.string.no,
+                (dialog, id) -> {
+                  // User doesn't want to give the permissions.
+                  dialog.cancel();
+                  onPermissionsGranted();
+                })
+            .show();
+      } else {
+        // All permissions granted.
+        onPermissionsGranted();
+      }
+    }
+  }
+
+  private void onPermissionsGranted() {
+    // If an implicit VIEW intent is launching the app, go directly to that URL.
+    final Intent intent = getIntent();
+    if ("android.intent.action.VIEW".equals(intent.getAction()) && !commandLineRun) {
+      boolean loopback = intent.getBooleanExtra(CallActivity.EXTRA_LOOPBACK, false);
+      int runTimeMs = intent.getIntExtra(CallActivity.EXTRA_RUNTIME, 0);
+      boolean useValuesFromIntent =
+          intent.getBooleanExtra(CallActivity.EXTRA_USE_VALUES_FROM_INTENT, false);
+      String room = sharedPref.getString(keyprefRoom, "");
+      connectToRoom(room, true, loopback, useValuesFromIntent, runTimeMs);
+    }
+  }
+
+  @TargetApi(Build.VERSION_CODES.M)
+  private void requestPermissions() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      // Dynamic permissions are not required before Android M.
+      onPermissionsGranted();
+      return;
+    }
+
+    String[] missingPermissions = getMissingPermissions();
+    if (missingPermissions.length != 0) {
+      requestPermissions(missingPermissions, PERMISSION_REQUEST);
+    } else {
+      onPermissionsGranted();
+    }
+  }
+
+  @TargetApi(Build.VERSION_CODES.M)
+  private String[] getMissingPermissions() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      return new String[0];
+    }
+
+    PackageInfo info;
+    try {
+      info = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS);
+    } catch (PackageManager.NameNotFoundException e) {
+      Log.w(TAG, "Failed to retrieve permissions.");
+      return new String[0];
+    }
+
+    if (info.requestedPermissions == null) {
+      Log.w(TAG, "No requested permissions.");
+      return new String[0];
+    }
+
+    ArrayList<String> missingPermissions = new ArrayList<>();
+    for (int i = 0; i < info.requestedPermissions.length; i++) {
+      if ((info.requestedPermissionsFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) == 0) {
+        missingPermissions.add(info.requestedPermissions[i]);
+      }
+    }
+    Log.d(TAG, "Missing permissions: " + missingPermissions);
+
+    return missingPermissions.toArray(new String[missingPermissions.size()]);
+  }
+
   /**
    * Get a value from the shared preference or from the intent, if it does not
    * exist the default is used.
@@ -235,7 +321,7 @@ public class ConnectActivity extends Activity {
    */
   private boolean sharedPrefGetBoolean(
       int attributeId, String intentName, int defaultId, boolean useFromIntent) {
-    boolean defaultValue = Boolean.valueOf(getString(defaultId));
+    boolean defaultValue = Boolean.parseBoolean(getString(defaultId));
     if (useFromIntent) {
       return getIntent().getBooleanExtra(intentName, defaultValue);
     } else {
@@ -266,6 +352,7 @@ public class ConnectActivity extends Activity {
     }
   }
 
+  @SuppressWarnings("StringSplitter")
   private void connectToRoom(String roomId, boolean commandLineRun, boolean loopback,
       boolean useValuesFromIntent, int runTimeMs) {
     ConnectActivity.commandLineRun = commandLineRun;
@@ -314,9 +401,13 @@ public class ConnectActivity extends Activity {
         CallActivity.EXTRA_NOAUDIOPROCESSING_ENABLED, R.string.pref_noaudioprocessing_default,
         useValuesFromIntent);
 
-    // Check Disable Audio Processing flag.
     boolean aecDump = sharedPrefGetBoolean(R.string.pref_aecdump_key,
         CallActivity.EXTRA_AECDUMP_ENABLED, R.string.pref_aecdump_default, useValuesFromIntent);
+
+    boolean saveInputAudioToFile =
+        sharedPrefGetBoolean(R.string.pref_enable_save_input_audio_to_file_key,
+            CallActivity.EXTRA_SAVE_INPUT_AUDIO_TO_FILE_ENABLED,
+            R.string.pref_enable_save_input_audio_to_file_default, useValuesFromIntent);
 
     // Check OpenSL ES enabled flag.
     boolean useOpenSLES = sharedPrefGetBoolean(R.string.pref_opensles_key,
@@ -335,11 +426,6 @@ public class ConnectActivity extends Activity {
     // Check Disable built-in NS flag.
     boolean disableBuiltInNS = sharedPrefGetBoolean(R.string.pref_disable_built_in_ns_key,
         CallActivity.EXTRA_DISABLE_BUILT_IN_NS, R.string.pref_disable_built_in_ns_default,
-        useValuesFromIntent);
-
-    // Check Enable level control.
-    boolean enableLevelControl = sharedPrefGetBoolean(R.string.pref_enable_level_control_key,
-        CallActivity.EXTRA_ENABLE_LEVEL_CONTROL, R.string.pref_enable_level_control_key,
         useValuesFromIntent);
 
     // Check Disable gain control
@@ -429,6 +515,11 @@ public class ConnectActivity extends Activity {
     boolean tracing = sharedPrefGetBoolean(R.string.pref_tracing_key, CallActivity.EXTRA_TRACING,
         R.string.pref_tracing_default, useValuesFromIntent);
 
+    // Check Enable RtcEventLog.
+    boolean rtcEventLogEnabled = sharedPrefGetBoolean(R.string.pref_enable_rtceventlog_key,
+        CallActivity.EXTRA_ENABLE_RTCEVENTLOG, R.string.pref_enable_rtceventlog_default,
+        useValuesFromIntent);
+
     // Get datachannel options
     boolean dataChannelEnabled = sharedPrefGetBoolean(R.string.pref_enable_datachannel_key,
         CallActivity.EXTRA_DATA_CHANNEL_ENABLED, R.string.pref_enable_datachannel_default,
@@ -470,19 +561,19 @@ public class ConnectActivity extends Activity {
       intent.putExtra(CallActivity.EXTRA_FLEXFEC_ENABLED, flexfecEnabled);
       intent.putExtra(CallActivity.EXTRA_NOAUDIOPROCESSING_ENABLED, noAudioProcessing);
       intent.putExtra(CallActivity.EXTRA_AECDUMP_ENABLED, aecDump);
+      intent.putExtra(CallActivity.EXTRA_SAVE_INPUT_AUDIO_TO_FILE_ENABLED, saveInputAudioToFile);
       intent.putExtra(CallActivity.EXTRA_OPENSLES_ENABLED, useOpenSLES);
       intent.putExtra(CallActivity.EXTRA_DISABLE_BUILT_IN_AEC, disableBuiltInAEC);
       intent.putExtra(CallActivity.EXTRA_DISABLE_BUILT_IN_AGC, disableBuiltInAGC);
       intent.putExtra(CallActivity.EXTRA_DISABLE_BUILT_IN_NS, disableBuiltInNS);
-      intent.putExtra(CallActivity.EXTRA_ENABLE_LEVEL_CONTROL, enableLevelControl);
       intent.putExtra(CallActivity.EXTRA_DISABLE_WEBRTC_AGC_AND_HPF, disableWebRtcAGCAndHPF);
       intent.putExtra(CallActivity.EXTRA_AUDIO_BITRATE, audioStartBitrate);
       intent.putExtra(CallActivity.EXTRA_AUDIOCODEC, audioCodec);
       intent.putExtra(CallActivity.EXTRA_DISPLAY_HUD, displayHud);
       intent.putExtra(CallActivity.EXTRA_TRACING, tracing);
+      intent.putExtra(CallActivity.EXTRA_ENABLE_RTCEVENTLOG, rtcEventLogEnabled);
       intent.putExtra(CallActivity.EXTRA_CMDLINE, commandLineRun);
       intent.putExtra(CallActivity.EXTRA_RUNTIME, runTimeMs);
-
       intent.putExtra(CallActivity.EXTRA_DATA_CHANNEL_ENABLED, dataChannelEnabled);
 
       if (dataChannelEnabled) {

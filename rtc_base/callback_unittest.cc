@@ -9,19 +9,26 @@
  */
 
 #include "rtc_base/callback.h"
+
 #include "rtc_base/bind.h"
-#include "rtc_base/gunit.h"
 #include "rtc_base/keep_ref_until_done.h"
-#include "rtc_base/refcount.h"
+#include "rtc_base/ref_count.h"
+#include "test/gtest.h"
 
 namespace rtc {
 
 namespace {
 
 void f() {}
-int g() { return 42; }
-int h(int x) { return x * x; }
-void i(int& x) { x *= x; }  // NOLINT: Testing refs
+int g() {
+  return 42;
+}
+int h(int x) {
+  return x * x;
+}
+void i(int& x) {
+  x *= x;
+}  // NOLINT: Testing refs
 
 struct BindTester {
   int a() { return 24; }

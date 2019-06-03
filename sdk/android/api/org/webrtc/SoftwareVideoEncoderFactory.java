@@ -10,18 +10,20 @@
 
 package org.webrtc;
 
+import android.support.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
 public class SoftwareVideoEncoderFactory implements VideoEncoderFactory {
+  @Nullable
   @Override
   public VideoEncoder createEncoder(VideoCodecInfo info) {
     if (info.name.equalsIgnoreCase("VP8")) {
-      return new VP8Encoder();
+      return new LibvpxVp8Encoder();
     }
-    if (info.name.equalsIgnoreCase("VP9") && VP9Encoder.isSupported()) {
-      return new VP9Encoder();
+    if (info.name.equalsIgnoreCase("VP9") && LibvpxVp9Encoder.nativeIsSupported()) {
+      return new LibvpxVp9Encoder();
     }
 
     return null;
@@ -36,7 +38,7 @@ public class SoftwareVideoEncoderFactory implements VideoEncoderFactory {
     List<VideoCodecInfo> codecs = new ArrayList<VideoCodecInfo>();
 
     codecs.add(new VideoCodecInfo("VP8", new HashMap<>()));
-    if (VP9Encoder.isSupported()) {
+    if (LibvpxVp9Encoder.nativeIsSupported()) {
       codecs.add(new VideoCodecInfo("VP9", new HashMap<>()));
     }
 

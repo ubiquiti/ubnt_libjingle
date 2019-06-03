@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "modules/audio_coding/codecs/opus/opus_interface.h"
 #include "modules/audio_coding/codecs/opus/opus_inst.h"
+#include "modules/audio_coding/codecs/opus/opus_interface.h"
 #include "modules/audio_coding/neteq/tools/neteq_quality_test.h"
 #include "rtc_base/flags.h"
 
-using testing::InitGoogleTest;
+using ::testing::InitGoogleTest;
 
 namespace webrtc {
 namespace test {
@@ -22,22 +22,26 @@ namespace {
 static const int kOpusBlockDurationMs = 20;
 static const int kOpusSamplingKhz = 48;
 
-DEFINE_int(bit_rate_kbps, 32, "Target bit rate (kbps).");
+WEBRTC_DEFINE_int(bit_rate_kbps, 32, "Target bit rate (kbps).");
 
-DEFINE_int(complexity, 10, "Complexity: 0 ~ 10 -- defined as in Opus"
-    "specification.");
+WEBRTC_DEFINE_int(complexity,
+                  10,
+                  "Complexity: 0 ~ 10 -- defined as in Opus"
+                  "specification.");
 
-DEFINE_int(maxplaybackrate, 48000, "Maximum playback rate (Hz).");
+WEBRTC_DEFINE_int(maxplaybackrate, 48000, "Maximum playback rate (Hz).");
 
-DEFINE_int(application, 0, "Application mode: 0 -- VOIP, 1 -- Audio.");
+WEBRTC_DEFINE_int(application, 0, "Application mode: 0 -- VOIP, 1 -- Audio.");
 
-DEFINE_int(reported_loss_rate, 10, "Reported percentile of packet loss.");
+WEBRTC_DEFINE_int(reported_loss_rate,
+                  10,
+                  "Reported percentile of packet loss.");
 
-DEFINE_bool(fec, false, "Enable FEC for encoding (-nofec to disable).");
+WEBRTC_DEFINE_bool(fec, false, "Enable FEC for encoding (-nofec to disable).");
 
-DEFINE_bool(dtx, false, "Enable DTX for encoding (-nodtx to disable).");
+WEBRTC_DEFINE_bool(dtx, false, "Enable DTX for encoding (-nodtx to disable).");
 
-DEFINE_int(sub_packets, 1, "Number of sub packets to repacketize.");
+WEBRTC_DEFINE_int(sub_packets, 1, "Number of sub packets to repacketize.");
 
 }  // namespace
 
@@ -46,8 +50,11 @@ class NetEqOpusQualityTest : public NetEqQualityTest {
   NetEqOpusQualityTest();
   void SetUp() override;
   void TearDown() override;
-  int EncodeBlock(int16_t* in_data, size_t block_size_samples,
-                  rtc::Buffer* payload, size_t max_bytes) override;
+  int EncodeBlock(int16_t* in_data,
+                  size_t block_size_samples,
+                  rtc::Buffer* payload,
+                  size_t max_bytes) override;
+
  private:
   WebRtcOpusEncInst* opus_encoder_;
   OpusRepacketizer* repacketizer_;
@@ -66,7 +73,7 @@ NetEqOpusQualityTest::NetEqOpusQualityTest()
     : NetEqQualityTest(kOpusBlockDurationMs * FLAG_sub_packets,
                        kOpusSamplingKhz,
                        kOpusSamplingKhz,
-                       NetEqDecoder::kDecoderOpus),
+                       SdpAudioFormat("opus", 48000, 2)),
       opus_encoder_(NULL),
       repacketizer_(NULL),
       sub_block_size_samples_(
@@ -96,14 +103,15 @@ NetEqOpusQualityTest::NetEqOpusQualityTest()
 
   // Redefine decoder type if input is stereo.
   if (channels_ > 1) {
-    decoder_type_ = NetEqDecoder::kDecoderOpus_2ch;
+    audio_format_ = SdpAudioFormat(
+        "opus", 48000, 2, std::map<std::string, std::string>{{"stereo", "1"}});
   }
   application_ = FLAG_application;
 }
 
 void NetEqOpusQualityTest::SetUp() {
   // Create encoder memory.
-  WebRtcOpus_EncoderCreate(&opus_encoder_, channels_, application_);
+  WebRtcOpus_EncoderCreate(&opus_encoder_, channels_, application_, 48000);
   ASSERT_TRUE(opus_encoder_);
 
   // Create repacketizer.
@@ -120,8 +128,7 @@ void NetEqOpusQualityTest::SetUp() {
   }
   EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_encoder_, complexity_));
   EXPECT_EQ(0, WebRtcOpus_SetMaxPlaybackRate(opus_encoder_, maxplaybackrate_));
-  EXPECT_EQ(0, WebRtcOpus_SetPacketLossRate(opus_encoder_,
-                                            target_loss_rate_));
+  EXPECT_EQ(0, WebRtcOpus_SetPacketLossRate(opus_encoder_, target_loss_rate_));
   NetEqQualityTest::SetUp();
 }
 
@@ -134,26 +141,25 @@ void NetEqOpusQualityTest::TearDown() {
 
 int NetEqOpusQualityTest::EncodeBlock(int16_t* in_data,
                                       size_t block_size_samples,
-                                      rtc::Buffer* payload, size_t max_bytes) {
+                                      rtc::Buffer* payload,
+                                      size_t max_bytes) {
   EXPECT_EQ(block_size_samples, sub_block_size_samples_ * sub_packets_);
   int16_t* pointer = in_data;
   int value;
   opus_repacketizer_init(repacketizer_);
   for (int idx = 0; idx < sub_packets_; idx++) {
-    payload->AppendData(max_bytes, [&] (rtc::ArrayView<uint8_t> payload) {
-        value = WebRtcOpus_Encode(opus_encoder_,
-                                  pointer, sub_block_size_samples_,
-                                  max_bytes, payload.data());
+    payload->AppendData(max_bytes, [&](rtc::ArrayView<uint8_t> payload) {
+      value = WebRtcOpus_Encode(opus_encoder_, pointer, sub_block_size_samples_,
+                                max_bytes, payload.data());
 
-        Log() << "Encoded a frame with Opus mode "
-              << (value == 0 ? 0 : payload[0] >> 3)
-              << std::endl;
+      Log() << "Encoded a frame with Opus mode "
+            << (value == 0 ? 0 : payload[0] >> 3) << std::endl;
 
-        return (value >= 0) ? static_cast<size_t>(value) : 0;
-      });
+      return (value >= 0) ? static_cast<size_t>(value) : 0;
+    });
 
-    if (OPUS_OK != opus_repacketizer_cat(repacketizer_,
-                                         payload->data(), value)) {
+    if (OPUS_OK !=
+        opus_repacketizer_cat(repacketizer_, payload->data(), value)) {
       opus_repacketizer_init(repacketizer_);
       // If the repacketization fails, we discard this frame.
       return 0;

@@ -11,7 +11,6 @@
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
 
 #include <memory>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -19,15 +18,16 @@
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/random.h"
+#include "rtc_base/strings/string_builder.h"
 #include "test/gtest.h"
 
 namespace webrtc {
 namespace {
 
 std::string ProduceDebugText(int sample_rate_hz) {
-  std::ostringstream ss;
+  rtc::StringBuilder ss;
   ss << "Sample rate: " << sample_rate_hz;
-  return ss.str();
+  return ss.Release();
 }
 
 }  // namespace
@@ -45,12 +45,16 @@ TEST(RenderDelayBuffer, BufferOverflow) {
       EXPECT_EQ(RenderDelayBuffer::BufferingEvent::kNone,
                 delay_buffer->Insert(block_to_insert));
     }
+    bool overrun_occurred = false;
     for (size_t k = 0; k < 1000; ++k) {
-      delay_buffer->Insert(block_to_insert);
+      RenderDelayBuffer::BufferingEvent event =
+          delay_buffer->Insert(block_to_insert);
+      overrun_occurred =
+          overrun_occurred ||
+          RenderDelayBuffer::BufferingEvent::kRenderOverrun == event;
     }
 
-    EXPECT_EQ(RenderDelayBuffer::BufferingEvent::kRenderOverrun,
-              delay_buffer->Insert(block_to_insert));
+    EXPECT_TRUE(overrun_occurred);
   }
 }
 
@@ -63,18 +67,20 @@ TEST(RenderDelayBuffer, AvailableBlock) {
       kNumBands, std::vector<float>(kBlockSize, 1.f));
   EXPECT_EQ(RenderDelayBuffer::BufferingEvent::kNone,
             delay_buffer->Insert(input_block));
-  delay_buffer->PrepareCaptureCall();
+  delay_buffer->PrepareCaptureProcessing();
 }
 
-// Verifies the SetDelay method.
-TEST(RenderDelayBuffer, SetDelay) {
+// Verifies the AlignFromDelay method.
+TEST(RenderDelayBuffer, AlignFromDelay) {
   EchoCanceller3Config config;
   std::unique_ptr<RenderDelayBuffer> delay_buffer(
       RenderDelayBuffer::Create(config, 1));
-  EXPECT_EQ(config.delay.min_echo_path_delay_blocks, delay_buffer->Delay());
-  for (size_t delay = config.delay.min_echo_path_delay_blocks + 1; delay < 20;
-       ++delay) {
-    delay_buffer->SetDelay(delay);
+  ASSERT_TRUE(delay_buffer->Delay());
+  delay_buffer->Reset();
+  size_t initial_internal_delay = 0;
+  for (size_t delay = initial_internal_delay;
+       delay < initial_internal_delay + 20; ++delay) {
+    ASSERT_TRUE(delay_buffer->AlignFromDelay(delay));
     EXPECT_EQ(delay, delay_buffer->Delay());
   }
 }
@@ -87,7 +93,7 @@ TEST(RenderDelayBuffer, SetDelay) {
 TEST(RenderDelayBuffer, DISABLED_WrongDelay) {
   std::unique_ptr<RenderDelayBuffer> delay_buffer(
       RenderDelayBuffer::Create(EchoCanceller3Config(), 3));
-  EXPECT_DEATH(delay_buffer->SetDelay(21), "");
+  EXPECT_DEATH(delay_buffer->AlignFromDelay(21), "");
 }
 
 // Verifies the check for the number of bands in the inserted blocks.

@@ -11,12 +11,12 @@
 # This script counts net line count contributions by author. Besides
 # amusement, the value of these stats are of course questionable.
 
-git log "$@" --pretty=format:%ae --shortstat \
+git log --pretty=format:%ae --shortstat "$@" \
   | sed '/^ /s/,/\n/g' \
   | gawk '
 /^[^ ]/ {
   /* Some author "email addresses" have a trailing @svn-id, strip that out. */
-  author = gensub(/^([^@]*@[^@]*).*/, "\\1", "", $1);
+  author = gensub(/^([^@]*@[^@]*).*/, "\\1", "g", $1);
 }
 /^ .*insertion/ { total[author] += $1 }
 /^ .*deletion/ { total[author] -= $1 }

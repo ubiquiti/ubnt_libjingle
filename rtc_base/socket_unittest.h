@@ -19,11 +19,12 @@ namespace rtc {
 // Generic socket tests, to be used when testing individual socketservers.
 // Derive your specific test class from SocketTest, install your
 // socketserver, and call the SocketTest test methods.
-class SocketTest : public testing::Test {
+class SocketTest : public ::testing::Test {
  protected:
-  SocketTest() : kIPv4Loopback(INADDR_LOOPBACK),
-                 kIPv6Loopback(in6addr_loopback),
-                 ss_(nullptr) {}
+  SocketTest()
+      : kIPv4Loopback(INADDR_LOOPBACK),
+        kIPv6Loopback(in6addr_loopback),
+        ss_(nullptr) {}
   void SetUp() override;
   void TestConnectIPv4();
   void TestConnectIPv6();
@@ -65,8 +66,9 @@ class SocketTest : public testing::Test {
   const IPAddress kIPv6Loopback;
 
  protected:
-  void TcpInternal(const IPAddress& loopback, size_t data_size,
-      ptrdiff_t max_send_size);
+  void TcpInternal(const IPAddress& loopback,
+                   size_t data_size,
+                   ptrdiff_t max_send_size);
 
  private:
   void ConnectInternal(const IPAddress& loopback);

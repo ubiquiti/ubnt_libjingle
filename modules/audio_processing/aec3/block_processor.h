@@ -11,9 +11,12 @@
 #ifndef MODULES_AUDIO_PROCESSING_AEC3_BLOCK_PROCESSOR_H_
 #define MODULES_AUDIO_PROCESSING_AEC3_BLOCK_PROCESSOR_H_
 
+#include <stddef.h>
 #include <memory>
 #include <vector>
 
+#include "api/audio/echo_canceller3_config.h"
+#include "api/audio/echo_control.h"
 #include "modules/audio_processing/aec3/echo_remover.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
 #include "modules/audio_processing/aec3/render_delay_controller.h"
@@ -41,6 +44,9 @@ class BlockProcessor {
 
   // Get current metrics.
   virtual void GetMetrics(EchoControl::Metrics* metrics) const = 0;
+
+  // Provides an optional external estimate of the audio buffer delay.
+  virtual void SetAudioBufferDelay(size_t delay_ms) = 0;
 
   // Processes a block of capture data.
   virtual void ProcessCapture(

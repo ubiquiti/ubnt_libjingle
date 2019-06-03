@@ -10,13 +10,13 @@
 
 #include "modules/desktop_capture/desktop_frame.h"
 
+#include <string.h>
 #include <utility>
 
-#include <string.h>
-
+#include "absl/memory/memory.h"
+#include "modules/desktop_capture/desktop_capture_types.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -36,7 +36,8 @@ DesktopFrame::DesktopFrame(DesktopSize size,
 
 DesktopFrame::~DesktopFrame() = default;
 
-void DesktopFrame::CopyPixelsFrom(const uint8_t* src_buffer, int src_stride,
+void DesktopFrame::CopyPixelsFrom(const uint8_t* src_buffer,
+                                  int src_stride,
                                   const DesktopRect& dest_rect) {
   RTC_CHECK(DesktopRect::MakeSize(size()).ContainsRect(dest_rect));
 
@@ -51,15 +52,32 @@ void DesktopFrame::CopyPixelsFrom(const uint8_t* src_buffer, int src_stride,
 void DesktopFrame::CopyPixelsFrom(const DesktopFrame& src_frame,
                                   const DesktopVector& src_pos,
                                   const DesktopRect& dest_rect) {
-  RTC_CHECK(DesktopRect::MakeSize(src_frame.size()).ContainsRect(
-      DesktopRect::MakeOriginSize(src_pos, dest_rect.size())));
+  RTC_CHECK(DesktopRect::MakeSize(src_frame.size())
+                .ContainsRect(
+                    DesktopRect::MakeOriginSize(src_pos, dest_rect.size())));
 
-  CopyPixelsFrom(src_frame.GetFrameDataAtPos(src_pos),
-                 src_frame.stride(), dest_rect);
+  CopyPixelsFrom(src_frame.GetFrameDataAtPos(src_pos), src_frame.stride(),
+                 dest_rect);
 }
 
 DesktopRect DesktopFrame::rect() const {
-  return DesktopRect::MakeOriginSize(top_left(), size());
+  const float scale = scale_factor();
+  // Only scale the size.
+  return DesktopRect::MakeXYWH(top_left().x(), top_left().y(),
+                               size().width() / scale, size().height() / scale);
+}
+
+float DesktopFrame::scale_factor() const {
+  float scale = 1.0f;
+
+#if defined(WEBRTC_MAC)
+  // At least on Windows the logical and physical pixel are the same
+  // See http://crbug.com/948362.
+  if (!dpi().is_zero() && dpi().x() == dpi().y())
+    scale = dpi().x() / kStandardDPI;
+#endif
+
+  return scale;
 }
 
 uint8_t* DesktopFrame::GetFrameDataAtPos(const DesktopVector& pos) const {
@@ -72,6 +90,7 @@ void DesktopFrame::CopyFrameInfoFrom(const DesktopFrame& other) {
   set_capturer_id(other.capturer_id());
   *mutable_updated_region() = other.updated_region();
   set_top_left(other.top_left());
+  set_icc_profile(other.icc_profile());
 }
 
 void DesktopFrame::MoveFrameInfoFrom(DesktopFrame* other) {
@@ -80,11 +99,13 @@ void DesktopFrame::MoveFrameInfoFrom(DesktopFrame* other) {
   set_capturer_id(other->capturer_id());
   mutable_updated_region()->Swap(other->mutable_updated_region());
   set_top_left(other->top_left());
+  set_icc_profile(other->icc_profile());
 }
 
 BasicDesktopFrame::BasicDesktopFrame(DesktopSize size)
-    : DesktopFrame(size, kBytesPerPixel * size.width(),
-                   new uint8_t[kBytesPerPixel * size.width() * size.height()],
+    : DesktopFrame(size,
+                   kBytesPerPixel * size.width(),
+                   new uint8_t[kBytesPerPixel * size.width() * size.height()](),
                    nullptr) {}
 
 BasicDesktopFrame::~BasicDesktopFrame() {
@@ -115,7 +136,7 @@ std::unique_ptr<DesktopFrame> SharedMemoryDesktopFrame::Create(
   if (!shared_memory)
     return nullptr;
 
-  return rtc::MakeUnique<SharedMemoryDesktopFrame>(
+  return absl::make_unique<SharedMemoryDesktopFrame>(
       size, size.width() * kBytesPerPixel, std::move(shared_memory));
 }
 
@@ -131,9 +152,7 @@ SharedMemoryDesktopFrame::SharedMemoryDesktopFrame(
     DesktopSize size,
     int stride,
     std::unique_ptr<SharedMemory> shared_memory)
-    : SharedMemoryDesktopFrame(size,
-                               stride,
-                               shared_memory.release()) {}
+    : SharedMemoryDesktopFrame(size, stride, shared_memory.release()) {}
 
 SharedMemoryDesktopFrame::~SharedMemoryDesktopFrame() {
   delete shared_memory_;

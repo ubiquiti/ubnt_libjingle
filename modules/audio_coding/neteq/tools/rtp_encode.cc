@@ -21,6 +21,8 @@
 #include <map>
 #include <string>
 
+#include "absl/memory/memory.h"
+#include "api/audio/audio_frame.h"
 #include "api/audio_codecs/L16/audio_encoder_L16.h"
 #include "api/audio_codecs/g711/audio_encoder_g711.h"
 #include "api/audio_codecs/g722/audio_encoder_g722.h"
@@ -32,28 +34,30 @@
 #include "modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "rtc_base/flags.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ptr_util.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 namespace test {
 namespace {
 
 // Define command line flags.
-DEFINE_bool(list_codecs, false, "Enumerate all codecs");
-DEFINE_string(codec, "opus", "Codec to use");
-DEFINE_int(frame_len, 0, "Frame length in ms; 0 indicates codec default value");
-DEFINE_int(bitrate, 0, "Bitrate in kbps; 0 indicates codec default value");
-DEFINE_int(payload_type,
-           -1,
-           "RTP payload type; -1 indicates codec default value");
-DEFINE_int(cng_payload_type,
-           -1,
-           "RTP payload type for CNG; -1 indicates default value");
-DEFINE_int(ssrc, 0, "SSRC to write to the RTP header");
-DEFINE_bool(dtx, false, "Use DTX/CNG");
-DEFINE_int(sample_rate, 48000, "Sample rate of the input file");
-DEFINE_bool(help, false, "Print this message");
+WEBRTC_DEFINE_bool(list_codecs, false, "Enumerate all codecs");
+WEBRTC_DEFINE_string(codec, "opus", "Codec to use");
+WEBRTC_DEFINE_int(frame_len,
+                  0,
+                  "Frame length in ms; 0 indicates codec default value");
+WEBRTC_DEFINE_int(bitrate,
+                  0,
+                  "Bitrate in kbps; 0 indicates codec default value");
+WEBRTC_DEFINE_int(payload_type,
+                  -1,
+                  "RTP payload type; -1 indicates codec default value");
+WEBRTC_DEFINE_int(cng_payload_type,
+                  -1,
+                  "RTP payload type for CNG; -1 indicates default value");
+WEBRTC_DEFINE_int(ssrc, 0, "SSRC to write to the RTP header");
+WEBRTC_DEFINE_bool(dtx, false, "Use DTX/CNG");
+WEBRTC_DEFINE_int(sample_rate, 48000, "Sample rate of the input file");
+WEBRTC_DEFINE_bool(help, false, "Print this message");
 
 // Add new codecs here, and to the map below.
 enum class CodecType {
@@ -103,13 +107,11 @@ class Packetizer : public AudioPacketizationCallback {
         ssrc_(ssrc),
         timestamp_rate_hz_(timestamp_rate_hz) {}
 
-  int32_t SendData(FrameType frame_type,
+  int32_t SendData(AudioFrameType frame_type,
                    uint8_t payload_type,
                    uint32_t timestamp,
                    const uint8_t* payload_data,
-                   size_t payload_len_bytes,
-                   const RTPFragmentationHeader* fragmentation) override {
-    RTC_CHECK(!fragmentation);
+                   size_t payload_len_bytes) override {
     if (payload_len_bytes == 0) {
       return 0;
     }
@@ -163,9 +165,16 @@ void SetFrameLenIfFlagIsPositive(int* config_frame_len) {
   }
 }
 
-AudioEncoderL16::Config Pcm16bConfig(CodecType codec_type) {
-  AudioEncoderL16::Config config;
+template <typename T>
+typename T::Config GetCodecConfig() {
+  typename T::Config config;
   SetFrameLenIfFlagIsPositive(&config.frame_size_ms);
+  RTC_CHECK(config.IsOk());
+  return config;
+}
+
+AudioEncoderL16::Config Pcm16bConfig(CodecType codec_type) {
+  auto config = GetCodecConfig<AudioEncoderL16>();
   switch (codec_type) {
     case CodecType::kPcm16b8:
       config.sample_rate_hz = 8000;
@@ -189,20 +198,18 @@ std::unique_ptr<AudioEncoder> CreateEncoder(CodecType codec_type,
                                             int payload_type) {
   switch (codec_type) {
     case CodecType::kOpus: {
-      AudioEncoderOpusConfig config;
+      AudioEncoderOpus::Config config = GetCodecConfig<AudioEncoderOpus>();
       if (FLAG_bitrate > 0) {
         config.bitrate_bps = FLAG_bitrate;
       }
       config.dtx_enabled = FLAG_dtx;
-      SetFrameLenIfFlagIsPositive(&config.frame_size_ms);
       RTC_CHECK(config.IsOk());
       return AudioEncoderOpus::MakeAudioEncoder(config, payload_type);
     }
 
     case CodecType::kPcmU:
     case CodecType::kPcmA: {
-      AudioEncoderG711::Config config;
-      SetFrameLenIfFlagIsPositive(&config.frame_size_ms);
+      AudioEncoderG711::Config config = GetCodecConfig<AudioEncoderG711>();
       config.type = codec_type == CodecType::kPcmU
                         ? AudioEncoderG711::Config::Type::kPcmU
                         : AudioEncoderG711::Config::Type::kPcmA;
@@ -211,10 +218,8 @@ std::unique_ptr<AudioEncoder> CreateEncoder(CodecType codec_type,
     }
 
     case CodecType::kG722: {
-      AudioEncoderG722Config config;
-      SetFrameLenIfFlagIsPositive(&config.frame_size_ms);
-      RTC_CHECK(config.IsOk());
-      return AudioEncoderG722::MakeAudioEncoder(config, payload_type);
+      return AudioEncoderG722::MakeAudioEncoder(
+          GetCodecConfig<AudioEncoderG722>(), payload_type);
     }
 
     case CodecType::kPcm16b8:
@@ -226,32 +231,33 @@ std::unique_ptr<AudioEncoder> CreateEncoder(CodecType codec_type,
     }
 
     case CodecType::kIlbc: {
-      AudioEncoderIlbcConfig config;
-      SetFrameLenIfFlagIsPositive(&config.frame_size_ms);
-      RTC_CHECK(config.IsOk());
-      return AudioEncoderIlbc::MakeAudioEncoder(config, payload_type);
+      return AudioEncoderIlbc::MakeAudioEncoder(
+          GetCodecConfig<AudioEncoderIlbc>(), payload_type);
     }
 
     case CodecType::kIsac: {
-      AudioEncoderIsac::Config config;
-      SetFrameLenIfFlagIsPositive(&config.frame_size_ms);
-      RTC_CHECK(config.IsOk());
-      return AudioEncoderIsac::MakeAudioEncoder(config, payload_type);
+      return AudioEncoderIsac::MakeAudioEncoder(
+          GetCodecConfig<AudioEncoderIsac>(), payload_type);
     }
   }
   RTC_NOTREACHED();
   return nullptr;
 }
 
-AudioEncoderCng::Config GetCngConfig(int sample_rate_hz) {
-  AudioEncoderCng::Config cng_config;
+AudioEncoderCngConfig GetCngConfig(int sample_rate_hz) {
+  AudioEncoderCngConfig cng_config;
   const auto default_payload_type = [&] {
     switch (sample_rate_hz) {
-      case 8000: return 13;
-      case 16000: return 98;
-      case 32000: return 99;
-      case 48000: return 100;
-      default: RTC_NOTREACHED();
+      case 8000:
+        return 13;
+      case 16000:
+        return 98;
+      case 32000:
+        return 99;
+      case 48000:
+        return 100;
+      default:
+        RTC_NOTREACHED();
     }
     return 0;
   };
@@ -305,10 +311,10 @@ int RunRtpEncode(int argc, char* argv[]) {
 
   // Create an external VAD/CNG encoder if needed.
   if (FLAG_dtx && !codec_it->second.internal_dtx) {
-    AudioEncoderCng::Config cng_config = GetCngConfig(codec->SampleRateHz());
+    AudioEncoderCngConfig cng_config = GetCngConfig(codec->SampleRateHz());
     RTC_DCHECK(codec);
     cng_config.speech_encoder = std::move(codec);
-    codec = rtc::MakeUnique<AudioEncoderCng>(std::move(cng_config));
+    codec = CreateComfortNoiseEncoder(std::move(cng_config));
   }
   RTC_DCHECK(codec);
 

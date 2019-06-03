@@ -12,6 +12,7 @@
 
 #include <math.h>
 #include <array>
+#include <cmath>
 #include <vector>
 
 #include "api/array_view.h"
@@ -35,8 +36,8 @@ void ProduceSinusoid(int sample_rate_hz,
   // Produce a sinusoid of the specified frequency.
   for (size_t k = *sample_counter, j = 0; k < (*sample_counter + kBlockSize);
        ++k, ++j) {
-    x[j] =
-        32767.f * sin(2.f * kPi * sinusoidal_frequency_hz * k / sample_rate_hz);
+    x[j] = 32767.f *
+           std::sin(2.f * kPi * sinusoidal_frequency_hz * k / sample_rate_hz);
   }
   *sample_counter = *sample_counter + kBlockSize;
 }
@@ -46,7 +47,7 @@ void ProduceSinusoid(int sample_rate_hz,
 #if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
 // Verifies that the check for non-null output parameter works.
 TEST(RenderSignalAnalyzer, NullMaskOutput) {
-  RenderSignalAnalyzer analyzer;
+  RenderSignalAnalyzer analyzer(EchoCanceller3Config{});
   EXPECT_DEATH(analyzer.MaskRegionsAroundNarrowBands(nullptr), "");
 }
 
@@ -54,7 +55,7 @@ TEST(RenderSignalAnalyzer, NullMaskOutput) {
 
 // Verify that no narrow bands are detected in a Gaussian noise signal.
 TEST(RenderSignalAnalyzer, NoFalseDetectionOfNarrowBands) {
-  RenderSignalAnalyzer analyzer;
+  RenderSignalAnalyzer analyzer(EchoCanceller3Config{});
   Random random_generator(42U);
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::array<float, kBlockSize> x_old;
@@ -70,10 +71,10 @@ TEST(RenderSignalAnalyzer, NoFalseDetectionOfNarrowBands) {
     if (k == 0) {
       render_delay_buffer->Reset();
     }
-    render_delay_buffer->PrepareCaptureCall();
+    render_delay_buffer->PrepareCaptureProcessing();
 
-    analyzer.Update(render_delay_buffer->GetRenderBuffer(),
-                    rtc::Optional<size_t>(0));
+    analyzer.Update(*render_delay_buffer->GetRenderBuffer(),
+                    absl::optional<size_t>(0));
   }
 
   mask.fill(1.f);
@@ -85,13 +86,12 @@ TEST(RenderSignalAnalyzer, NoFalseDetectionOfNarrowBands) {
 
 // Verify that a sinusiod signal is detected as narrow bands.
 TEST(RenderSignalAnalyzer, NarrowBandDetection) {
-  RenderSignalAnalyzer analyzer;
+  RenderSignalAnalyzer analyzer(EchoCanceller3Config{});
   Random random_generator(42U);
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::array<float, kBlockSize> x_old;
   Aec3Fft fft;
   EchoCanceller3Config config;
-  config.delay.min_echo_path_delay_blocks = 0;
   std::unique_ptr<RenderDelayBuffer> render_delay_buffer(
       RenderDelayBuffer::Create(config, 3));
 
@@ -109,10 +109,10 @@ TEST(RenderSignalAnalyzer, NarrowBandDetection) {
       if (k == 0) {
         render_delay_buffer->Reset();
       }
-      render_delay_buffer->PrepareCaptureCall();
+      render_delay_buffer->PrepareCaptureProcessing();
 
-      analyzer.Update(render_delay_buffer->GetRenderBuffer(),
-                      known_delay ? rtc::Optional<size_t>(0) : rtc::nullopt);
+      analyzer.Update(*render_delay_buffer->GetRenderBuffer(),
+                      known_delay ? absl::optional<size_t>(0) : absl::nullopt);
     }
   };
 

@@ -12,6 +12,7 @@ package org.webrtc;
 
 import static org.junit.Assert.assertEquals;
 
+import android.support.annotation.Nullable;
 import android.support.test.filters.SmallTest;
 import android.util.Log;
 import java.util.ArrayList;
@@ -51,7 +52,7 @@ public class DefaultVideoEncoderFactoryTest {
     }
 
     @Override
-    public VideoEncoder createEncoder(VideoCodecInfo info) {
+    public @Nullable VideoEncoder createEncoder(VideoCodecInfo info) {
       return null;
     }
 
@@ -63,7 +64,7 @@ public class DefaultVideoEncoderFactoryTest {
 
   @Before
   public void setUp() {
-    NativeLibrary.initialize(new NativeLibrary.DefaultLoader());
+    NativeLibrary.initialize(new NativeLibrary.DefaultLoader(), TestConstants.NATIVE_LIBRARY);
   }
 
   @SmallTest

@@ -11,14 +11,14 @@
 #include "modules/audio_processing/transient/transient_detector.h"
 
 #include <float.h>
-#include <math.h>
 #include <string.h>
-
 #include <algorithm>
+#include <cmath>
 
 #include "modules/audio_processing/transient/common.h"
 #include "modules/audio_processing/transient/daubechies_8_wavelet_coeffs.h"
 #include "modules/audio_processing/transient/moving_moments.h"
+#include "modules/audio_processing/transient/wpd_node.h"
 #include "modules/audio_processing/transient/wpd_tree.h"
 #include "rtc_base/checks.h"
 
@@ -51,8 +51,7 @@ TransientDetector::TransientDetector(int sample_rate_hz)
   wpd_tree_.reset(new WPDTree(samples_per_chunk_,
                               kDaubechies8HighPassCoefficients,
                               kDaubechies8LowPassCoefficients,
-                              kDaubechies8CoefficientsLength,
-                              kLevels));
+                              kDaubechies8CoefficientsLength, kLevels));
   for (size_t i = 0; i < kLeaves; ++i) {
     moving_moments_[i].reset(
         new MovingMoments(samples_per_transient / kLeaves));
@@ -86,8 +85,7 @@ float TransientDetector::Detect(const float* data,
   for (size_t i = 0; i < kLeaves; ++i) {
     WPDNode* leaf = wpd_tree_->NodeAt(kLevels, i);
 
-    moving_moments_[i]->CalculateMoments(leaf->data(),
-                                         tree_leaves_data_length_,
+    moving_moments_[i]->CalculateMoments(leaf->data(), tree_leaves_data_length_,
                                          first_moments_.get(),
                                          second_moments_.get());
 
@@ -127,8 +125,9 @@ float TransientDetector::Detect(const float* data,
     const float kVerticalScaling = 0.5f;
     const float kVerticalShift = 1.f;
 
-    result = (cos(result * horizontal_scaling + kHorizontalShift)
-        + kVerticalShift) * kVerticalScaling;
+    result = (std::cos(result * horizontal_scaling + kHorizontalShift) +
+              kVerticalShift) *
+             kVerticalScaling;
     result *= result;
   }
 
@@ -162,9 +161,10 @@ float TransientDetector::ReferenceDetectionValue(const float* data,
     return 1.f;
   }
   RTC_DCHECK_NE(0, reference_energy_);
-  float result = 1.f / (1.f + exp(kReferenceNonLinearity *
-                                  (kEnergyRatioThreshold -
-                                   reference_energy / reference_energy_)));
+  float result =
+      1.f / (1.f + std::exp(kReferenceNonLinearity *
+                            (kEnergyRatioThreshold -
+                             reference_energy / reference_energy_)));
   reference_energy_ =
       kMemory * reference_energy_ + (1.f - kMemory) * reference_energy;
 

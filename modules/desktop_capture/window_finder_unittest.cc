@@ -11,25 +11,25 @@
 #include "modules/desktop_capture/window_finder.h"
 
 #include <stdint.h>
-
 #include <memory>
 
+#include "api/scoped_refptr.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/screen_drawer.h"
 #include "rtc_base/logging.h"
 #include "test/gtest.h"
 
 #if defined(USE_X11)
-#include "modules/desktop_capture/x11/shared_x_display.h"
-#include "modules/desktop_capture/x11/x_atom_cache.h"
-#include "rtc_base/ptr_util.h"
+#include "absl/memory/memory.h"
+#include "modules/desktop_capture/linux/shared_x_display.h"
+#include "modules/desktop_capture/linux/x_atom_cache.h"
 #endif
 
 #if defined(WEBRTC_WIN)
 #include <windows.h>
 
-#include "modules/desktop_capture/window_finder_win.h"
 #include "modules/desktop_capture/win/window_capture_utils.h"
+#include "modules/desktop_capture/window_finder_win.h"
 #endif
 
 namespace webrtc {
@@ -64,8 +64,8 @@ TEST(WindowFinderTest, FindConsoleWindow) {
   MoveWindow(console_window, 0, 0, kMaxSize, kMaxSize, true);
 
   // Brings console window to top.
-  SetWindowPos(
-      console_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+  SetWindowPos(console_window, HWND_TOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE);
   BringWindowToTop(console_window);
 
   WindowFinderWin finder;
@@ -87,7 +87,7 @@ TEST(WindowFinderTest, FindDrawerWindow) {
   std::unique_ptr<XAtomCache> cache;
   const auto shared_x_display = SharedXDisplay::CreateDefault();
   if (shared_x_display) {
-    cache = rtc::MakeUnique<XAtomCache>(shared_x_display->display());
+    cache = absl::make_unique<XAtomCache>(shared_x_display->display());
     options.cache = cache.get();
   }
 #endif
@@ -143,7 +143,7 @@ TEST(WindowFinderTest, ShouldReturnNullWindowIfSpotIsOutOfScreen) {
   std::unique_ptr<XAtomCache> cache;
   const auto shared_x_display = SharedXDisplay::CreateDefault();
   if (shared_x_display) {
-    cache = rtc::MakeUnique<XAtomCache>(shared_x_display->display());
+    cache = absl::make_unique<XAtomCache>(shared_x_display->display());
     options.cache = cache.get();
   }
 #endif
@@ -154,14 +154,14 @@ TEST(WindowFinderTest, ShouldReturnNullWindowIfSpotIsOutOfScreen) {
     return;
   }
 
-  ASSERT_EQ(kNullWindowId, finder->GetWindowUnderPoint(
-      DesktopVector(INT16_MAX, INT16_MAX)));
-  ASSERT_EQ(kNullWindowId, finder->GetWindowUnderPoint(
-      DesktopVector(INT16_MAX, INT16_MIN)));
-  ASSERT_EQ(kNullWindowId, finder->GetWindowUnderPoint(
-      DesktopVector(INT16_MIN, INT16_MAX)));
-  ASSERT_EQ(kNullWindowId, finder->GetWindowUnderPoint(
-      DesktopVector(INT16_MIN, INT16_MIN)));
+  ASSERT_EQ(kNullWindowId,
+            finder->GetWindowUnderPoint(DesktopVector(INT16_MAX, INT16_MAX)));
+  ASSERT_EQ(kNullWindowId,
+            finder->GetWindowUnderPoint(DesktopVector(INT16_MAX, INT16_MIN)));
+  ASSERT_EQ(kNullWindowId,
+            finder->GetWindowUnderPoint(DesktopVector(INT16_MIN, INT16_MAX)));
+  ASSERT_EQ(kNullWindowId,
+            finder->GetWindowUnderPoint(DesktopVector(INT16_MIN, INT16_MIN)));
 }
 
 }  // namespace

@@ -11,6 +11,7 @@
 package org.webrtc;
 
 import android.content.Context;
+import android.support.annotation.Nullable;
 import java.util.List;
 
 public class UnityUtility {
@@ -26,7 +27,7 @@ public class UnityUtility {
     return Camera2Enumerator.isSupported(ContextUtils.getApplicationContext());
   }
 
-  private static VideoCapturer createCameraCapturer(CameraEnumerator enumerator) {
+  private static @Nullable VideoCapturer createCameraCapturer(CameraEnumerator enumerator) {
     final String[] deviceNames = enumerator.getDeviceNames();
 
     for (String deviceName : deviceNames) {
@@ -47,11 +48,10 @@ public class UnityUtility {
     VideoCapturer capturer =
         createCameraCapturer(new Camera2Enumerator(ContextUtils.getApplicationContext()));
 
-    VideoCapturer.CapturerObserver capturerObserver =
-        new AndroidVideoTrackSourceObserver(nativeTrackSource);
+    VideoSource videoSource = new VideoSource(nativeTrackSource);
 
-    capturer.initialize(
-        surfaceTextureHelper, ContextUtils.getApplicationContext(), capturerObserver);
+    capturer.initialize(surfaceTextureHelper, ContextUtils.getApplicationContext(),
+        videoSource.getCapturerObserver());
 
     capturer.startCapture(720, 480, 30);
     return capturer;
@@ -60,5 +60,10 @@ public class UnityUtility {
   public static void StopCamera(VideoCapturer camera) throws InterruptedException {
     camera.stopCapture();
     camera.dispose();
+  }
+
+  public static void InitializePeerConncectionFactory(Context context) throws InterruptedException {
+    PeerConnectionFactory.initialize(
+        PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions());
   }
 }

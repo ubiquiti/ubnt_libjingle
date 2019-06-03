@@ -11,9 +11,12 @@
 #include "modules/audio_processing/aec3/echo_remover_metrics.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -67,7 +70,7 @@ void EchoRemoverMetrics::Update(
     aec3::UpdateDbMetric(aec_state.Erl(), &erl_);
     erl_time_domain_.UpdateInstant(aec_state.ErlTimeDomain());
     aec3::UpdateDbMetric(aec_state.Erle(), &erle_);
-    erle_time_domain_.UpdateInstant(aec_state.ErleTimeDomain());
+    erle_time_domain_.UpdateInstant(aec_state.FullBandErleLog2());
     aec3::UpdateDbMetric(comfort_noise_spectrum, &comfort_noise_);
     aec3::UpdateDbMetric(suppressor_gain, &suppressor_gain_);
     active_render_count_ += (aec_state.ActiveRender() ? 1 : 0);
@@ -236,10 +239,8 @@ void EchoRemoverMetrics::Update(
             "WebRTC.Audio.EchoCanceller.ActiveRender",
             static_cast<int>(
                 active_render_count_ > kMetricsCollectionBlocksBy2 ? 1 : 0));
-        RTC_HISTOGRAM_COUNTS_LINEAR(
-            "WebRTC.Audio.EchoCanceller.FilterDelay",
-            aec_state.FilterDelay() ? *aec_state.FilterDelay() + 1 : 0, 0, 30,
-            31);
+        RTC_HISTOGRAM_COUNTS_LINEAR("WebRTC.Audio.EchoCanceller.FilterDelay",
+                                    aec_state.FilterDelayBlocks(), 0, 30, 31);
         RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.EchoCanceller.CaptureSaturation",
                               static_cast<int>(saturated_capture_ ? 1 : 0));
         break;
@@ -314,7 +315,7 @@ int TransformDbMetricForReporting(bool negate,
                                   float offset,
                                   float scaling,
                                   float value) {
-  float new_value = 10.f * log10(value * scaling + 1e-10f) + offset;
+  float new_value = 10.f * std::log10(value * scaling + 1e-10f) + offset;
   if (negate) {
     new_value = -new_value;
   }

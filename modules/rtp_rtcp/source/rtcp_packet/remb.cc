@@ -10,6 +10,7 @@
 
 #include "modules/rtp_rtcp/source/rtcp_packet/remb.h"
 
+#include <cstdint>
 #include <utility>
 
 #include "modules/rtp_rtcp/source/byte_io.h"
@@ -19,7 +20,6 @@
 
 namespace webrtc {
 namespace rtcp {
-constexpr uint8_t Remb::kFeedbackMessageType;
 // Receiver Estimated Max Bitrate (REMB) (draft-alvestrand-rmcat-remb).
 //
 //     0                   1                   2                   3
@@ -41,11 +41,13 @@ constexpr uint8_t Remb::kFeedbackMessageType;
 
 Remb::Remb() : bitrate_bps_(0) {}
 
+Remb::Remb(const Remb& rhs) = default;
+
 Remb::~Remb() = default;
 
 bool Remb::Parse(const CommonHeader& packet) {
   RTC_DCHECK(packet.type() == kPacketType);
-  RTC_DCHECK_EQ(packet.fmt(), kFeedbackMessageType);
+  RTC_DCHECK_EQ(packet.fmt(), Psfb::kAfbMessageType);
 
   if (packet.payload_size_bytes() < 16) {
     RTC_LOG(LS_WARNING) << "Payload length " << packet.payload_size_bytes()
@@ -54,7 +56,6 @@ bool Remb::Parse(const CommonHeader& packet) {
   }
   const uint8_t* const payload = packet.payload();
   if (kUniqueIdentifier != ByteReader<uint32_t>::ReadBigEndian(&payload[8])) {
-    RTC_LOG(LS_WARNING) << "REMB identifier not found, not a REMB packet.";
     return false;
   }
   uint8_t number_of_ssrcs = payload[12];
@@ -104,13 +105,13 @@ size_t Remb::BlockLength() const {
 bool Remb::Create(uint8_t* packet,
                   size_t* index,
                   size_t max_length,
-                  RtcpPacket::PacketReadyCallback* callback) const {
+                  PacketReadyCallback callback) const {
   while (*index + BlockLength() > max_length) {
     if (!OnBufferFull(packet, index, callback))
       return false;
   }
   size_t index_end = *index + BlockLength();
-  CreateHeader(kFeedbackMessageType, kPacketType, HeaderLength(), packet,
+  CreateHeader(Psfb::kAfbMessageType, kPacketType, HeaderLength(), packet,
                index);
   RTC_DCHECK_EQ(0, Psfb::media_ssrc());
   CreateCommonFeedback(packet + *index);

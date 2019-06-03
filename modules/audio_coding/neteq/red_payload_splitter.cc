@@ -11,10 +11,15 @@
 #include "modules/audio_coding/neteq/red_payload_splitter.h"
 
 #include <assert.h>
+#include <stddef.h>
+#include <cstdint>
+#include <list>
+#include <utility>
 #include <vector>
 
 #include "modules/audio_coding/neteq/decoder_database.h"
-#include "rtc_base/checks.h"
+#include "modules/audio_coding/neteq/packet.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 
@@ -130,13 +135,16 @@ bool RedPayloadSplitter::SplitRed(PacketList* packet_list) {
   return ret;
 }
 
-int RedPayloadSplitter::CheckRedPayloads(
+void RedPayloadSplitter::CheckRedPayloads(
     PacketList* packet_list,
     const DecoderDatabase& decoder_database) {
   int main_payload_type = -1;
-  int num_deleted_packets = 0;
   for (auto it = packet_list->begin(); it != packet_list->end(); /* */) {
     uint8_t this_payload_type = it->payload_type;
+    if (decoder_database.IsRed(this_payload_type)) {
+      it = packet_list->erase(it);
+      continue;
+    }
     if (!decoder_database.IsDtmf(this_payload_type) &&
         !decoder_database.IsComfortNoise(this_payload_type)) {
       if (main_payload_type == -1) {
@@ -149,14 +157,12 @@ int RedPayloadSplitter::CheckRedPayloads(
           // moves the iterator |it| to the next packet in the list. Thus, we
           // do not have to increment it manually.
           it = packet_list->erase(it);
-          ++num_deleted_packets;
           continue;
         }
       }
     }
     ++it;
   }
-  return num_deleted_packets;
 }
 
 }  // namespace webrtc

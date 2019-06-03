@@ -10,6 +10,8 @@
 
 #include "modules/video_coding/codec_timer.h"
 
+#include <cstdint>
+
 namespace webrtc {
 
 namespace {
@@ -25,6 +27,7 @@ const int64_t kTimeLimitMs = 10000;
 
 VCMCodecTimer::VCMCodecTimer()
     : ignored_sample_count_(0), filter_(kPercentile) {}
+VCMCodecTimer::~VCMCodecTimer() = default;
 
 void VCMCodecTimer::AddTiming(int64_t decode_time_ms, int64_t now_ms) {
   // Ignore the first |kIgnoredSampleCount| samples.

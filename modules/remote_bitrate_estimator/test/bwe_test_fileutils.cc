@@ -18,7 +18,7 @@
 #include <assert.h>
 
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 namespace testing {
@@ -80,8 +80,8 @@ bool OutputFileWriter::Write(uint32_t value) {
 
 OutputFileWriter* OutputFileWriter::Create(const std::string& filename,
                                            const std::string& extension) {
-  std::string filepath = webrtc::test::OutputPath() + filename + "." +
-      extension;
+  std::string filepath =
+      webrtc::test::OutputPath() + filename + "." + extension;
   FILE* file = fopen(filepath.c_str(), "wb");
   if (file == NULL) {
     BWE_TEST_LOGGING_CONTEXT("OutputFileWriter");

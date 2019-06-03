@@ -10,35 +10,35 @@
 
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "modules/audio_processing/aec_dump/mock_aec_dump.h"
 #include "modules/audio_processing/include/audio_processing.h"
-#include "rtc_base/ptr_util.h"
 
-using testing::_;
-using testing::AtLeast;
-using testing::Exactly;
-using testing::Matcher;
-using testing::StrictMock;
+using ::testing::_;
+using ::testing::AtLeast;
+using ::testing::Exactly;
+using ::testing::Matcher;
+using ::testing::StrictMock;
 
 namespace {
 std::unique_ptr<webrtc::AudioProcessing> CreateAudioProcessing() {
   webrtc::Config config;
   std::unique_ptr<webrtc::AudioProcessing> apm(
-      webrtc::AudioProcessing::Create(config));
+      webrtc::AudioProcessingBuilder().Create(config));
   RTC_DCHECK(apm);
   return apm;
 }
 
 std::unique_ptr<webrtc::test::MockAecDump> CreateMockAecDump() {
   auto mock_aec_dump =
-      rtc::MakeUnique<testing::StrictMock<webrtc::test::MockAecDump>>();
+      absl::make_unique<testing::StrictMock<webrtc::test::MockAecDump>>();
   EXPECT_CALL(*mock_aec_dump.get(), WriteConfig(_)).Times(AtLeast(1));
-  EXPECT_CALL(*mock_aec_dump.get(), WriteInitMessage(_)).Times(AtLeast(1));
+  EXPECT_CALL(*mock_aec_dump.get(), WriteInitMessage(_, _)).Times(AtLeast(1));
   return std::unique_ptr<webrtc::test::MockAecDump>(std::move(mock_aec_dump));
 }
 
 std::unique_ptr<webrtc::AudioFrame> CreateFakeFrame() {
-  auto fake_frame = rtc::MakeUnique<webrtc::AudioFrame>();
+  auto fake_frame = absl::make_unique<webrtc::AudioFrame>();
   fake_frame->num_channels_ = 1;
   fake_frame->sample_rate_hz_ = 48000;
   fake_frame->samples_per_channel_ = 480;

@@ -10,16 +10,16 @@
 
 #include "modules/rtp_rtcp/include/flexfec_receiver.h"
 
+#include <string.h>
+
+#include "api/array_view.h"
+#include "api/scoped_refptr.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/scoped_ref_ptr.h"
 
 namespace webrtc {
 
 namespace {
-
-using Packet = ForwardErrorCorrection::Packet;
-using ReceivedPacket = ForwardErrorCorrection::ReceivedPacket;
 
 // Minimum header size (in bytes) of a well-formed non-singular FlexFEC packet.
 constexpr size_t kMinFlexfecHeaderSize = 20;
@@ -33,12 +33,22 @@ FlexfecReceiver::FlexfecReceiver(
     uint32_t ssrc,
     uint32_t protected_media_ssrc,
     RecoveredPacketReceiver* recovered_packet_receiver)
+    : FlexfecReceiver(Clock::GetRealTimeClock(),
+                      ssrc,
+                      protected_media_ssrc,
+                      recovered_packet_receiver) {}
+
+FlexfecReceiver::FlexfecReceiver(
+    Clock* clock,
+    uint32_t ssrc,
+    uint32_t protected_media_ssrc,
+    RecoveredPacketReceiver* recovered_packet_receiver)
     : ssrc_(ssrc),
       protected_media_ssrc_(protected_media_ssrc),
       erasure_code_(
           ForwardErrorCorrection::CreateFlexfec(ssrc, protected_media_ssrc)),
       recovered_packet_receiver_(recovered_packet_receiver),
-      clock_(Clock::GetRealTimeClock()),
+      clock_(clock),
       last_recovered_packet_ms_(-1) {
   // It's OK to create this object on a different thread/task queue than
   // the one used during main operation.
@@ -48,8 +58,18 @@ FlexfecReceiver::FlexfecReceiver(
 FlexfecReceiver::~FlexfecReceiver() = default;
 
 void FlexfecReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
-  std::unique_ptr<ReceivedPacket> received_packet = AddReceivedPacket(packet);
+  RTC_DCHECK_RUN_ON(&sequence_checker_);
+
+  // If this packet was recovered, it might be originating from
+  // ProcessReceivedPacket in this object. To avoid lifetime issues with
+  // |recovered_packets_|, we therefore break the cycle here.
+  // This might reduce decoding efficiency a bit, since we can't disambiguate
+  // recovered packets by RTX from recovered packets by FlexFEC.
+  if (packet.recovered())
+    return;
+
+  std::unique_ptr<ForwardErrorCorrection::ReceivedPacket> received_packet =
+      AddReceivedPacket(packet);
   if (!received_packet)
     return;
 
@@ -57,15 +77,15 @@ void FlexfecReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
 }
 
 FecPacketCounter FlexfecReceiver::GetPacketCounter() const {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
+  RTC_DCHECK_RUN_ON(&sequence_checker_);
   return packet_counter_;
 }
 
 // TODO(eladalon): Consider using packet.recovered() to avoid processing
 // recovered packets here.
-std::unique_ptr<ReceivedPacket> FlexfecReceiver::AddReceivedPacket(
-    const RtpPacketReceived& packet) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
+std::unique_ptr<ForwardErrorCorrection::ReceivedPacket>
+FlexfecReceiver::AddReceivedPacket(const RtpPacketReceived& packet) {
+  RTC_DCHECK_RUN_ON(&sequence_checker_);
 
   // RTP packets with a full base header (12 bytes), but without payload,
   // could conceivably be useful in the decoding. Therefore we check
@@ -73,7 +93,8 @@ std::unique_ptr<ReceivedPacket> FlexfecReceiver::AddReceivedPacket(
   RTC_DCHECK_GE(packet.size(), kRtpHeaderSize);
 
   // Demultiplex based on SSRC, and insert into erasure code decoder.
-  std::unique_ptr<ReceivedPacket> received_packet(new ReceivedPacket());
+  std::unique_ptr<ForwardErrorCorrection::ReceivedPacket> received_packet(
+      new ForwardErrorCorrection::ReceivedPacket());
   received_packet->seq_num = packet.SequenceNumber();
   received_packet->ssrc = packet.Ssrc();
   if (received_packet->ssrc == ssrc_) {
@@ -88,7 +109,8 @@ std::unique_ptr<ReceivedPacket> FlexfecReceiver::AddReceivedPacket(
     // Insert packet payload into erasure code.
     // TODO(brandtr): Remove this memcpy when the FEC packet classes
     // are using COW buffers internally.
-    received_packet->pkt = rtc::scoped_refptr<Packet>(new Packet());
+    received_packet->pkt = rtc::scoped_refptr<ForwardErrorCorrection::Packet>(
+        new ForwardErrorCorrection::Packet());
     auto payload = packet.payload();
     memcpy(received_packet->pkt->data, payload.data(), payload.size());
     received_packet->pkt->length = payload.size();
@@ -102,7 +124,8 @@ std::unique_ptr<ReceivedPacket> FlexfecReceiver::AddReceivedPacket(
 
     // Insert entire packet into erasure code.
     // TODO(brandtr): Remove this memcpy too.
-    received_packet->pkt = rtc::scoped_refptr<Packet>(new Packet());
+    received_packet->pkt = rtc::scoped_refptr<ForwardErrorCorrection::Packet>(
+        new ForwardErrorCorrection::Packet());
     memcpy(received_packet->pkt->data, packet.data(), packet.size());
     received_packet->pkt->length = packet.size();
   }
@@ -122,8 +145,8 @@ std::unique_ptr<ReceivedPacket> FlexfecReceiver::AddReceivedPacket(
 // FlexFEC decoder, and we therefore do not interfere with the reception
 // of non-recovered media packets.
 void FlexfecReceiver::ProcessReceivedPacket(
-    const ReceivedPacket& received_packet) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequence_checker_);
+    const ForwardErrorCorrection::ReceivedPacket& received_packet) {
+  RTC_DCHECK_RUN_ON(&sequence_checker_);
 
   // Decode.
   erasure_code_->DecodeFec(received_packet, &recovered_packets_);

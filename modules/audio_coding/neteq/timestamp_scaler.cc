@@ -10,6 +10,7 @@
 
 #include "modules/audio_coding/neteq/timestamp_scaler.h"
 
+#include "api/audio_codecs/audio_format.h"
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "rtc_base/checks.h"
 
@@ -69,7 +70,6 @@ uint32_t TimestampScaler::ToInternal(uint32_t external_timestamp,
     return external_timestamp;
   }
 }
-
 
 uint32_t TimestampScaler::ToExternal(uint32_t internal_timestamp) const {
   if (!first_packet_received_ || (numerator_ == denominator_)) {

@@ -12,17 +12,23 @@
 
 #include "modules/desktop_capture/win/scoped_gdi_object.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/win32.h"
 
 namespace webrtc {
+
+// Prefix used to match the window class for Chrome windows.
+const wchar_t kChromeWindowClassPrefix[] = L"Chrome_WidgetWin_";
+
+// The hiddgen taskbar will leave a 2 pixel margin on the screen.
+const int kHiddenTaskbarMarginOnScreen = 2;
 
 bool GetWindowRect(HWND window, DesktopRect* result) {
   RECT rect;
   if (!::GetWindowRect(window, &rect)) {
     return false;
   }
-  *result = DesktopRect::MakeLTRB(
-      rect.left, rect.top, rect.right, rect.bottom);
+  *result = DesktopRect::MakeLTRB(rect.left, rect.top, rect.right, rect.bottom);
   return true;
 }
 
@@ -93,22 +99,22 @@ bool GetWindowContentRect(HWND window, DesktopRect* result) {
 }
 
 int GetWindowRegionTypeWithBoundary(HWND window, DesktopRect* result) {
-  win::ScopedGDIObject<HRGN, win::DeleteObjectTraits<HRGN>>
-      scoped_hrgn(CreateRectRgn(0, 0, 0, 0));
+  win::ScopedGDIObject<HRGN, win::DeleteObjectTraits<HRGN>> scoped_hrgn(
+      CreateRectRgn(0, 0, 0, 0));
   const int region_type = GetWindowRgn(window, scoped_hrgn.Get());
 
   if (region_type == SIMPLEREGION) {
     RECT rect;
     GetRgnBox(scoped_hrgn.Get(), &rect);
-    *result = DesktopRect::MakeLTRB(
-        rect.left, rect.top, rect.right, rect.bottom);
+    *result =
+        DesktopRect::MakeLTRB(rect.left, rect.top, rect.right, rect.bottom);
   }
   return region_type;
 }
 
 bool GetDcSize(HDC hdc, DesktopSize* size) {
-  win::ScopedGDIObject<HGDIOBJ, win::DeleteObjectTraits<HGDIOBJ>>
-      scoped_hgdi(GetCurrentObject(hdc, OBJ_BITMAP));
+  win::ScopedGDIObject<HGDIOBJ, win::DeleteObjectTraits<HGDIOBJ>> scoped_hgdi(
+      GetCurrentObject(hdc, OBJ_BITMAP));
   BITMAP bitmap;
   memset(&bitmap, 0, sizeof(BITMAP));
   if (GetObject(scoped_hgdi.Get(), sizeof(BITMAP), &bitmap) == 0) {
@@ -130,27 +136,140 @@ bool IsWindowMaximized(HWND window, bool* result) {
   return true;
 }
 
-AeroChecker::AeroChecker() : dwmapi_library_(nullptr), func_(nullptr) {
+// WindowCaptureHelperWin implementation.
+WindowCaptureHelperWin::WindowCaptureHelperWin()
+    : dwmapi_library_(nullptr),
+      func_(nullptr),
+      virtual_desktop_manager_(nullptr) {
   // Try to load dwmapi.dll dynamically since it is not available on XP.
-  dwmapi_library_ = LoadLibrary(L"dwmapi.dll");
+  dwmapi_library_ = LoadLibraryW(L"dwmapi.dll");
   if (dwmapi_library_) {
     func_ = reinterpret_cast<DwmIsCompositionEnabledFunc>(
         GetProcAddress(dwmapi_library_, "DwmIsCompositionEnabled"));
   }
+
+  if (rtc::IsWindows10OrLater()) {
+    if (FAILED(::CoCreateInstance(__uuidof(VirtualDesktopManager), nullptr,
+                                  CLSCTX_ALL,
+                                  IID_PPV_ARGS(&virtual_desktop_manager_)))) {
+      RTC_LOG(LS_WARNING) << "Fail to create instance of VirtualDesktopManager";
+    }
+  }
 }
 
-AeroChecker::~AeroChecker() {
+WindowCaptureHelperWin::~WindowCaptureHelperWin() {
   if (dwmapi_library_) {
     FreeLibrary(dwmapi_library_);
   }
 }
 
-bool AeroChecker::IsAeroEnabled() {
+bool WindowCaptureHelperWin::IsAeroEnabled() {
   BOOL result = FALSE;
   if (func_) {
     func_(&result);
   }
   return result != FALSE;
+}
+
+// This is just a best guess of a notification window. Chrome uses the Windows
+// native framework for showing notifications. So far what we know about such a
+// window includes: no title, class name with prefix "Chrome_WidgetWin_" and
+// with certain extended styles.
+bool WindowCaptureHelperWin::IsWindowChromeNotification(HWND hwnd) {
+  const size_t kTitleLength = 32;
+  WCHAR window_title[kTitleLength];
+  GetWindowTextW(hwnd, window_title, kTitleLength);
+  if (wcsnlen_s(window_title, kTitleLength) != 0) {
+    return false;
+  }
+
+  const size_t kClassLength = 256;
+  WCHAR class_name[kClassLength];
+  const int class_name_length = GetClassNameW(hwnd, class_name, kClassLength);
+  RTC_DCHECK(class_name_length)
+      << "Error retrieving the application's class name";
+  if (wcsncmp(class_name, kChromeWindowClassPrefix,
+              wcsnlen_s(kChromeWindowClassPrefix, kClassLength)) != 0) {
+    return false;
+  }
+
+  const LONG exstyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+  if ((exstyle & WS_EX_NOACTIVATE) && (exstyle & WS_EX_TOOLWINDOW) &&
+      (exstyle & WS_EX_TOPMOST)) {
+    return true;
+  }
+
+  return false;
+}
+
+// |content_rect| is preferred because,
+// 1. WindowCapturerWin is using GDI capturer, which cannot capture DX output.
+//    So ScreenCapturer should be used as much as possible to avoid
+//    uncapturable cases. Note: lots of new applications are using DX output
+//    (hardware acceleration) to improve the performance which cannot be
+//    captured by WindowCapturerWin. See bug http://crbug.com/741770.
+// 2. WindowCapturerWin is still useful because we do not want to expose the
+//    content on other windows if the target window is covered by them.
+// 3. Shadow and borders should not be considered as "content" on other
+//    windows because they do not expose any useful information.
+//
+// So we can bear the false-negative cases (target window is covered by the
+// borders or shadow of other windows, but we have not detected it) in favor
+// of using ScreenCapturer, rather than let the false-positive cases (target
+// windows is only covered by borders or shadow of other windows, but we treat
+// it as overlapping) impact the user experience.
+bool WindowCaptureHelperWin::IsWindowIntersectWithSelectedWindow(
+    HWND hwnd,
+    HWND selected_hwnd,
+    const DesktopRect& selected_window_rect) {
+  DesktopRect content_rect;
+  if (!GetWindowContentRect(hwnd, &content_rect)) {
+    // Bail out if failed to get the window area.
+    return true;
+  }
+  content_rect.IntersectWith(selected_window_rect);
+
+  if (content_rect.is_empty()) {
+    return false;
+  }
+
+  // When the taskbar is automatically hidden, it will leave a 2 pixel margin on
+  // the screen which will overlap the maximized selected window that will use
+  // up the full screen area. Since there is no solid way to identify a hidden
+  // taskbar window, we have to make an exemption here if the overlapping is
+  // 2 x screen_width/height to a maximized window.
+  bool is_maximized = false;
+  IsWindowMaximized(selected_hwnd, &is_maximized);
+  bool overlaps_hidden_horizontal_taskbar =
+      selected_window_rect.width() == content_rect.width() &&
+      content_rect.height() == kHiddenTaskbarMarginOnScreen;
+  bool overlaps_hidden_vertical_taskbar =
+      selected_window_rect.height() == content_rect.height() &&
+      content_rect.width() == kHiddenTaskbarMarginOnScreen;
+  if (is_maximized && (overlaps_hidden_horizontal_taskbar ||
+                       overlaps_hidden_vertical_taskbar)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool WindowCaptureHelperWin::IsWindowOnCurrentDesktop(HWND hwnd) {
+  // Make sure the window is on the current virtual desktop.
+  if (virtual_desktop_manager_) {
+    BOOL on_current_desktop;
+    if (SUCCEEDED(virtual_desktop_manager_->IsWindowOnCurrentVirtualDesktop(
+            hwnd, &on_current_desktop)) &&
+        !on_current_desktop) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool WindowCaptureHelperWin::IsWindowVisibleOnCurrentDesktop(HWND hwnd) {
+  return !::IsIconic(hwnd) && ::IsWindowVisible(hwnd) &&
+         IsWindowOnCurrentDesktop(hwnd);
 }
 
 }  // namespace webrtc

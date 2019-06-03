@@ -11,7 +11,7 @@
 #include <string>
 
 #include "rtc_base/gunit.h"
-#include "rtc_base/nethelpers.h"
+#include "rtc_base/net_helpers.h"
 #include "rtc_base/win32.h"
 
 #if !defined(WEBRTC_WIN)
@@ -20,20 +20,10 @@
 
 namespace rtc {
 
-class Win32Test : public testing::Test {
+class Win32Test : public ::testing::Test {
  public:
-  Win32Test() {
-  }
+  Win32Test() {}
 };
-
-TEST_F(Win32Test, FileTimeToUInt64Test) {
-  FILETIME ft;
-  ft.dwHighDateTime = 0xBAADF00D;
-  ft.dwLowDateTime = 0xFEED3456;
-
-  uint64_t expected = 0xBAADF00DFEED3456;
-  EXPECT_EQ(expected, ToUInt64(ft));
-}
 
 TEST_F(Win32Test, IPv6AddressCompression) {
   IPAddress ipv6;

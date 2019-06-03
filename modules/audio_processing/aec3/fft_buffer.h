@@ -11,6 +11,7 @@
 #ifndef MODULES_AUDIO_PROCESSING_AEC3_FFT_BUFFER_H_
 #define MODULES_AUDIO_PROCESSING_AEC3_FFT_BUFFER_H_
 
+#include <stddef.h>
 #include <vector>
 
 #include "modules/audio_processing/aec3/fft_data.h"
@@ -24,17 +25,20 @@ struct FftBuffer {
   explicit FftBuffer(size_t size);
   ~FftBuffer();
 
-  size_t IncIndex(size_t index) {
-    return index < buffer.size() - 1 ? index + 1 : 0;
+  int IncIndex(int index) const {
+    RTC_DCHECK_EQ(buffer.size(), static_cast<size_t>(size));
+    return index < size - 1 ? index + 1 : 0;
   }
 
-  size_t DecIndex(size_t index) {
-    return index > 0 ? index - 1 : buffer.size() - 1;
+  int DecIndex(int index) const {
+    RTC_DCHECK_EQ(buffer.size(), static_cast<size_t>(size));
+    return index > 0 ? index - 1 : size - 1;
   }
 
-  size_t OffsetIndex(size_t index, int offset) {
+  int OffsetIndex(int index, int offset) const {
     RTC_DCHECK_GE(buffer.size(), offset);
-    return (buffer.size() + index + offset) % buffer.size();
+    RTC_DCHECK_EQ(buffer.size(), static_cast<size_t>(size));
+    return (size + index + offset) % size;
   }
 
   void UpdateWriteIndex(int offset) { write = OffsetIndex(write, offset); }
@@ -44,9 +48,10 @@ struct FftBuffer {
   void IncReadIndex() { read = IncIndex(read); }
   void DecReadIndex() { read = DecIndex(read); }
 
+  const int size;
   std::vector<FftData> buffer;
-  size_t write = 0;
-  size_t read = 0;
+  int write = 0;
+  int read = 0;
 };
 
 }  // namespace webrtc

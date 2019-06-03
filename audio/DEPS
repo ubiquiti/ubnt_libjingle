@@ -5,24 +5,22 @@ include_rules = [
   "+modules/audio_coding",
   "+modules/audio_device",
   "+modules/audio_mixer",
+  "+modules/audio_processing",
   "+modules/audio_processing/include",
   "+modules/bitrate_controller",
   "+modules/congestion_controller",
   "+modules/pacing",
   "+modules/remote_bitrate_estimator",
   "+modules/rtp_rtcp",
+  "+modules/utility",
   "+system_wrappers",
-  "+voice_engine",
 ]
 
 specific_include_rules = {
   "audio_send_stream.cc": [
     "+modules/audio_coding/codecs/cng/audio_encoder_cng.h",
   ],
-  # TODO(ossu): Remove this exception when builtin_audio_encoder_factory.h
-  # has moved to api/, or when the proper mocks have been made.
-  "audio_send_stream_unittest.cc": [
-    "+modules/audio_coding/codecs/builtin_audio_encoder_factory.h",
-  ],
+  "audio_transport_impl.h": [
+    "+modules/audio_processing/typing_detection.h",
+  ]
 }
-

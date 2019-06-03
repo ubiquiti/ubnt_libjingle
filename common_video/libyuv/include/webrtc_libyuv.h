@@ -15,22 +15,37 @@
 #ifndef COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
 #define COMMON_VIDEO_LIBYUV_INCLUDE_WEBRTC_LIBYUV_H_
 
+#include <stdint.h>
 #include <stdio.h>
 #include <vector>
 
+#include "api/scoped_refptr.h"
 #include "api/video/video_frame.h"
-#include "common_types.h"  // NOLINT(build/include)  // VideoTypes.
-#include "typedefs.h"  // NOLINT(build/include)
+#include "api/video/video_frame_buffer.h"
 
 namespace webrtc {
 
+enum class VideoType {
+  kUnknown,
+  kI420,
+  kIYUV,
+  kRGB24,
+  kABGR,
+  kARGB,
+  kARGB4444,
+  kRGB565,
+  kARGB1555,
+  kYUY2,
+  kYV12,
+  kUYVY,
+  kMJPEG,
+  kNV21,
+  kNV12,
+  kBGRA,
+};
 
 // This is the max PSNR value our algorithms can return.
 const double kPerfectPSNR = 48.0f;
-
-// TODO(nisse): Some downstream apps call CalcBufferSize with
-// ::webrtc::kI420 as the first argument. Delete after they are updated.
-const VideoType kI420 = VideoType::kI420;
 
 // Calculate the required buffer size.
 // Input:
@@ -76,6 +91,14 @@ int ConvertFromI420(const VideoFrame& src_frame,
                     int dst_sample_size,
                     uint8_t* dst_frame);
 
+rtc::scoped_refptr<I420BufferInterface> ScaleVideoFrameBuffer(
+    const I420BufferInterface& source,
+    int dst_width,
+    int dst_height);
+
+double I420SSE(const I420BufferInterface& ref_buffer,
+               const I420BufferInterface& test_buffer);
+
 // Compute PSNR for an I420 frame (all planes).
 // Returns the PSNR in decibel, to a maximum of kInfinitePSNR.
 double I420PSNR(const VideoFrame* ref_frame, const VideoFrame* test_frame);
@@ -93,12 +116,18 @@ double I420SSIM(const I420BufferInterface& ref_buffer,
 // |tmp_buffer| should be:
 //   (src_width/2) * (src_height/2) * 2 + (dst_width/2) * (dst_height/2) * 2
 void NV12Scale(uint8_t* tmp_buffer,
-               const uint8_t* src_y, int src_stride_y,
-               const uint8_t* src_uv, int src_stride_uv,
-               int src_width, int src_height,
-               uint8_t* dst_y, int dst_stride_y,
-               uint8_t* dst_uv, int dst_stride_uv,
-               int dst_width, int dst_height);
+               const uint8_t* src_y,
+               int src_stride_y,
+               const uint8_t* src_uv,
+               int src_stride_uv,
+               int src_width,
+               int src_height,
+               uint8_t* dst_y,
+               int dst_stride_y,
+               uint8_t* dst_uv,
+               int dst_stride_uv,
+               int dst_width,
+               int dst_height);
 
 // Helper class for directly converting and scaling NV12 to I420. The Y-plane
 // will be scaled directly to the I420 destination, which makes this faster
@@ -107,13 +136,21 @@ class NV12ToI420Scaler {
  public:
   NV12ToI420Scaler();
   ~NV12ToI420Scaler();
-  void NV12ToI420Scale(const uint8_t* src_y, int src_stride_y,
-                       const uint8_t* src_uv, int src_stride_uv,
-                       int src_width, int src_height,
-                       uint8_t* dst_y, int dst_stride_y,
-                       uint8_t* dst_u, int dst_stride_u,
-                       uint8_t* dst_v, int dst_stride_v,
-                       int dst_width, int dst_height);
+  void NV12ToI420Scale(const uint8_t* src_y,
+                       int src_stride_y,
+                       const uint8_t* src_uv,
+                       int src_stride_uv,
+                       int src_width,
+                       int src_height,
+                       uint8_t* dst_y,
+                       int dst_stride_y,
+                       uint8_t* dst_u,
+                       int dst_stride_u,
+                       uint8_t* dst_v,
+                       int dst_stride_v,
+                       int dst_width,
+                       int dst_height);
+
  private:
   std::vector<uint8_t> tmp_uv_planes_;
 };

@@ -10,12 +10,12 @@
 
 #include "modules/audio_processing/aec3/matrix_buffer.h"
 
-#include "modules/audio_processing/aec3/aec3_common.h"
+#include <algorithm>
 
 namespace webrtc {
 
 MatrixBuffer::MatrixBuffer(size_t size, size_t height, size_t width)
-    : size(size),
+    : size(static_cast<int>(size)),
       buffer(size,
              std::vector<std::vector<float>>(height,
                                              std::vector<float>(width, 0.f))) {

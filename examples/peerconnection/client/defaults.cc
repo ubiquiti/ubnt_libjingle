@@ -11,7 +11,6 @@
 #include "examples/peerconnection/client/defaults.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #ifdef WIN32
 #include <winsock2.h>
@@ -23,7 +22,7 @@
 
 const char kAudioLabel[] = "audio_label";
 const char kVideoLabel[] = "video_label";
-const char kStreamLabel[] = "stream_label";
+const char kStreamId[] = "stream_id";
 const uint16_t kDefaultServerPort = 8888;
 
 std::string GetEnvVarOrDefault(const char* env_var_name,

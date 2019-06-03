@@ -26,19 +26,20 @@ class MockAudioDeviceModule : public AudioDeviceModule {
   MOCK_CONST_METHOD0(Release, rtc::RefCountReleaseStatus());
   // AudioDeviceModule.
   MOCK_CONST_METHOD1(ActiveAudioLayer, int32_t(AudioLayer* audioLayer));
-  MOCK_CONST_METHOD0(LastError, ErrorCode());
   MOCK_METHOD1(RegisterAudioCallback, int32_t(AudioTransport* audioCallback));
   MOCK_METHOD0(Init, int32_t());
   MOCK_METHOD0(Terminate, int32_t());
   MOCK_CONST_METHOD0(Initialized, bool());
   MOCK_METHOD0(PlayoutDevices, int16_t());
   MOCK_METHOD0(RecordingDevices, int16_t());
-  MOCK_METHOD3(PlayoutDeviceName, int32_t(uint16_t index,
-                                          char name[kAdmMaxDeviceNameSize],
-                                          char guid[kAdmMaxGuidSize]));
-  MOCK_METHOD3(RecordingDeviceName, int32_t(uint16_t index,
-                                            char name[kAdmMaxDeviceNameSize],
-                                            char guid[kAdmMaxGuidSize]));
+  MOCK_METHOD3(PlayoutDeviceName,
+               int32_t(uint16_t index,
+                       char name[kAdmMaxDeviceNameSize],
+                       char guid[kAdmMaxGuidSize]));
+  MOCK_METHOD3(RecordingDeviceName,
+               int32_t(uint16_t index,
+                       char name[kAdmMaxDeviceNameSize],
+                       char guid[kAdmMaxGuidSize]));
   MOCK_METHOD1(SetPlayoutDevice, int32_t(uint16_t index));
   MOCK_METHOD1(SetPlayoutDevice, int32_t(WindowsDeviceType device));
   MOCK_METHOD1(SetRecordingDevice, int32_t(uint16_t index));

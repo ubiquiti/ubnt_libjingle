@@ -10,20 +10,33 @@
 
 #include "modules/remote_bitrate_estimator/test/packet_sender.h"
 
+#include <assert.h>
+#include <math.h>
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <list>
-#include <sstream>
+#include <vector>
 
-#include "modules/include/module_common_types.h"
+#include "modules/include/module_common_types_public.h"
 #include "modules/pacing/pacer.h"
 #include "modules/remote_bitrate_estimator/test/bbr_paced_sender.h"
 #include "modules/remote_bitrate_estimator/test/bwe.h"
+#include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "modules/remote_bitrate_estimator/test/metric_recorder.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace testing {
 namespace bwe {
+namespace {
+const float kPaceMultiplier = 2.5f;
+}
+
+uint32_t PacketSender::TargetBitrateKbps() {
+  return 0;
+}
 
 void PacketSender::Pause() {
   running_ = false;
@@ -83,8 +96,7 @@ VideoSender::VideoSender(PacketProcessorListener* listener,
   modules_.push_back(bwe_.get());
 }
 
-VideoSender::~VideoSender() {
-}
+VideoSender::~VideoSender() {}
 
 void VideoSender::Pause() {
   previous_sending_bitrate_ = TargetBitrateKbps();
@@ -100,6 +112,10 @@ void VideoSender::RunFor(int64_t time_ms, Packets* in_out) {
   std::list<FeedbackPacket*> feedbacks = GetFeedbackPackets(
       in_out, clock_.TimeInMilliseconds() + time_ms, source_->flow_id());
   ProcessFeedbackAndGeneratePackets(time_ms, &feedbacks, in_out);
+}
+
+VideoSource* VideoSender::source() const {
+  return source_;
 }
 
 void VideoSender::ProcessFeedbackAndGeneratePackets(
@@ -164,7 +180,7 @@ PacedVideoSender::PacedVideoSender(PacketProcessorListener* listener,
               ? static_cast<Pacer*>(new BbrPacedSender(&clock_, this, nullptr))
               : static_cast<Pacer*>(new PacedSender(&clock_, this, nullptr))) {
   modules_.push_back(pacer_.get());
-  pacer_->SetEstimatedBitrate(source->bits_per_second());
+  pacer_->SetPacingRates(source->bits_per_second() * kPaceMultiplier, 0);
 }
 
 PacedVideoSender::~PacedVideoSender() {
@@ -277,11 +293,12 @@ void PacedVideoSender::QueuePackets(Packets* batch,
   batch->merge(to_transfer, DereferencingComparator<Packet>);
 }
 
-bool PacedVideoSender::TimeToSendPacket(uint32_t ssrc,
-                                        uint16_t sequence_number,
-                                        int64_t capture_time_ms,
-                                        bool retransmission,
-                                        const PacedPacketInfo& pacing_info) {
+RtpPacketSendResult PacedVideoSender::TimeToSendPacket(
+    uint32_t ssrc,
+    uint16_t sequence_number,
+    int64_t capture_time_ms,
+    bool retransmission,
+    const PacedPacketInfo& pacing_info) {
   for (Packets::iterator it = pacer_queue_.begin(); it != pacer_queue_.end();
        ++it) {
     MediaPacket* media_packet = static_cast<MediaPacket*>(*it);
@@ -290,17 +307,17 @@ bool PacedVideoSender::TimeToSendPacket(uint32_t ssrc,
 
       // Make sure a packet is never paced out earlier than when it was put into
       // the pacer.
-      assert(pace_out_time_ms >= media_packet->send_time_ms());
+      RTC_CHECK_GE(pace_out_time_ms, media_packet->send_time_ms());
       media_packet->SetAbsSendTimeMs(pace_out_time_ms);
       media_packet->set_send_time_us(1000 * pace_out_time_ms);
       media_packet->set_sender_timestamp_us(1000 * pace_out_time_ms);
       queue_.push_back(media_packet);
       pacer_queue_size_in_bytes_ -= media_packet->payload_size();
       pacer_queue_.erase(it);
-      return true;
+      return RtpPacketSendResult::kSuccess;
     }
   }
-  return false;
+  return RtpPacketSendResult::kTransportUnavailable;
 }
 
 size_t PacedVideoSender::TimeToSendPadding(size_t bytes,
@@ -312,7 +329,7 @@ void PacedVideoSender::OnNetworkChanged(uint32_t target_bitrate_bps,
                                         uint8_t fraction_lost,
                                         int64_t rtt) {
   VideoSender::OnNetworkChanged(target_bitrate_bps, fraction_lost, rtt);
-  pacer_->SetEstimatedBitrate(target_bitrate_bps);
+  pacer_->SetPacingRates(target_bitrate_bps * kPaceMultiplier, 0);
 }
 
 void PacedVideoSender::OnNetworkChanged(uint32_t bitrate_for_encoder_bps,
@@ -325,6 +342,10 @@ void PacedVideoSender::OnNetworkChanged(uint32_t bitrate_for_encoder_bps,
       bitrate_for_pacer_bps, in_probe_rtt, congestion_window);
 }
 
+size_t PacedVideoSender::pacer_queue_size_in_bytes() {
+  return pacer_queue_size_in_bytes_;
+}
+
 void PacedVideoSender::OnBytesAcked(size_t bytes) {
   pacer_->OnBytesAcked(bytes);
 }
@@ -335,8 +356,7 @@ const int kPacketSizeBytes = 1200;
 TcpSender::TcpSender(PacketProcessorListener* listener,
                      int flow_id,
                      int64_t offset_ms)
-    : TcpSender(listener, flow_id, offset_ms, kNoLimit) {
-}
+    : TcpSender(listener, flow_id, offset_ms, kNoLimit) {}
 
 TcpSender::TcpSender(PacketProcessorListener* listener,
                      int flow_id,
@@ -355,8 +375,9 @@ TcpSender::TcpSender(PacketProcessorListener* listener,
       send_limit_bytes_(send_limit_bytes),
       last_generated_packets_ms_(0),
       num_recent_sent_packets_(0),
-      bitrate_kbps_(0) {
-}
+      bitrate_kbps_(0) {}
+
+TcpSender::~TcpSender() = default;
 
 void TcpSender::RunFor(int64_t time_ms, Packets* in_out) {
   if (clock_.TimeInMilliseconds() + time_ms < offset_ms_) {
@@ -398,8 +419,12 @@ void TcpSender::RunFor(int64_t time_ms, Packets* in_out) {
   SendPackets(in_out);
 }
 
+int TcpSender::GetFeedbackIntervalMs() const {
+  return 10;
+}
+
 void TcpSender::SendPackets(Packets* in_out) {
-  int cwnd = ceil(cwnd_);
+  int cwnd = std::ceil(cwnd_);
   int packets_to_send = std::max(cwnd - static_cast<int>(in_flight_.size()), 0);
   int timed_out = TriggerTimeouts();
   if (timed_out > 0) {
@@ -474,8 +499,8 @@ Packets TcpSender::GeneratePackets(size_t num_packets) {
     generated.push_back(
         new MediaPacket(*flow_ids().begin(), 1000 * clock_.TimeInMilliseconds(),
                         kPacketSizeBytes, next_sequence_number_++));
-    generated.back()->set_sender_timestamp_us(
-        1000 * clock_.TimeInMilliseconds());
+    generated.back()->set_sender_timestamp_us(1000 *
+                                              clock_.TimeInMilliseconds());
 
     total_sent_bytes_ += kPacketSizeBytes;
   }

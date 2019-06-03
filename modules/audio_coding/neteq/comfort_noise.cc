@@ -11,11 +11,18 @@
 #include "modules/audio_coding/neteq/comfort_noise.h"
 
 #include <assert.h>
+#include <cstdint>
+#include <memory>
 
-#include "api/audio_codecs/audio_decoder.h"
+#include "api/array_view.h"
+#include "modules/audio_coding/codecs/cng/webrtc_cng.h"
+#include "modules/audio_coding/neteq/audio_multi_vector.h"
+#include "modules/audio_coding/neteq/audio_vector.h"
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "modules/audio_coding/neteq/dsp_helper.h"
 #include "modules/audio_coding/neteq/sync_buffer.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -35,10 +42,9 @@ int ComfortNoise::UpdateParameters(const Packet& packet) {
   return kOK;
 }
 
-int ComfortNoise::Generate(size_t requested_length,
-                           AudioMultiVector* output) {
+int ComfortNoise::Generate(size_t requested_length, AudioMultiVector* output) {
   // TODO(hlundin): Change to an enumerator and skip assert.
-  assert(fs_hz_ == 8000 || fs_hz_ == 16000 || fs_hz_ ==  32000 ||
+  assert(fs_hz_ == 8000 || fs_hz_ == 16000 || fs_hz_ == 32000 ||
          fs_hz_ == 48000);
   // Not adapted for multi-channel yet.
   if (output->Channels() != 1) {
@@ -63,8 +69,7 @@ int ComfortNoise::Generate(size_t requested_length,
 
   std::unique_ptr<int16_t[]> temp(new int16_t[number_of_samples]);
   if (!cng_decoder->Generate(
-          rtc::ArrayView<int16_t>(temp.get(), number_of_samples),
-          new_period)) {
+          rtc::ArrayView<int16_t>(temp.get(), number_of_samples), new_period)) {
     // Error returned.
     output->Zeros(requested_length);
     RTC_LOG(LS_ERROR)
@@ -75,9 +80,9 @@ int ComfortNoise::Generate(size_t requested_length,
 
   if (first_call_) {
     // Set tapering window parameters. Values are in Q15.
-    int16_t muting_window;  // Mixing factor for overlap data.
-    int16_t muting_window_increment;  // Mixing factor increment (negative).
-    int16_t unmuting_window;  // Mixing factor for comfort noise.
+    int16_t muting_window;              // Mixing factor for overlap data.
+    int16_t muting_window_increment;    // Mixing factor increment (negative).
+    int16_t unmuting_window;            // Mixing factor for comfort noise.
     int16_t unmuting_window_increment;  // Mixing factor increment.
     if (fs_hz_ == 8000) {
       muting_window = DspHelper::kMuteFactorStart8kHz;
@@ -109,7 +114,8 @@ int ComfortNoise::Generate(size_t requested_length,
       // channel.
       (*sync_buffer_)[0][start_ix + i] =
           (((*sync_buffer_)[0][start_ix + i] * muting_window) +
-              ((*output)[0][i] * unmuting_window) + 16384) >> 15;
+           ((*output)[0][i] * unmuting_window) + 16384) >>
+          15;
       muting_window += muting_window_increment;
       unmuting_window += unmuting_window_increment;
     }

@@ -16,14 +16,15 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/optional.h"
 #include "api/array_view.h"
-#include "api/optional.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/dlrr.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/remb.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/target_bitrate.h"
 #include "modules/rtp_rtcp/source/rtcp_transceiver_config.h"
-#include "rtc_base/constructormagic.h"
-#include "rtc_base/weak_ptr.h"
+#include "rtc_base/task_utils/repeating_task.h"
 #include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
@@ -34,14 +35,28 @@ namespace webrtc {
 class RtcpTransceiverImpl {
  public:
   explicit RtcpTransceiverImpl(const RtcpTransceiverConfig& config);
+  RtcpTransceiverImpl(const RtcpTransceiverImpl&) = delete;
+  RtcpTransceiverImpl& operator=(const RtcpTransceiverImpl&) = delete;
   ~RtcpTransceiverImpl();
+
+  void StopPeriodicTask() { periodic_task_handle_.Stop(); }
+
+  void AddMediaReceiverRtcpObserver(uint32_t remote_ssrc,
+                                    MediaReceiverRtcpObserver* observer);
+  void RemoveMediaReceiverRtcpObserver(uint32_t remote_ssrc,
+                                       MediaReceiverRtcpObserver* observer);
+
+  void SetReadyToSend(bool ready);
 
   void ReceivePacket(rtc::ArrayView<const uint8_t> packet, int64_t now_us);
 
   void SendCompoundPacket();
 
-  void SetRemb(int bitrate_bps, std::vector<uint32_t> ssrcs);
+  void SetRemb(int64_t bitrate_bps, std::vector<uint32_t> ssrcs);
   void UnsetRemb();
+  // Temporary helpers to send pre-built TransportFeedback rtcp packet.
+  uint32_t sender_ssrc() const { return config_.feedback_ssrc; }
+  void SendRawPacket(rtc::ArrayView<const uint8_t> packet);
 
   void SendNack(uint32_t ssrc, std::vector<uint16_t> sequence_numbers);
 
@@ -54,10 +69,16 @@ class RtcpTransceiverImpl {
 
   void HandleReceivedPacket(const rtcp::CommonHeader& rtcp_packet_header,
                             int64_t now_us);
+  // Individual rtcp packet handlers.
+  void HandleBye(const rtcp::CommonHeader& rtcp_packet_header);
   void HandleSenderReport(const rtcp::CommonHeader& rtcp_packet_header,
                           int64_t now_us);
   void HandleExtendedReports(const rtcp::CommonHeader& rtcp_packet_header,
                              int64_t now_us);
+  // Extended Reports blocks handlers.
+  void HandleDlrr(const rtcp::Dlrr& dlrr, int64_t now_us);
+  void HandleTargetBitrate(const rtcp::TargetBitrate& target_bitrate,
+                           uint32_t remote_ssrc);
 
   void ReschedulePeriodicCompoundPackets();
   void SchedulePeriodicCompoundPackets(int64_t delay_ms);
@@ -72,11 +93,12 @@ class RtcpTransceiverImpl {
 
   const RtcpTransceiverConfig config_;
 
-  rtc::Optional<rtcp::Remb> remb_;
+  bool ready_to_send_;
+  absl::optional<rtcp::Remb> remb_;
+  // TODO(danilchap): Remove entries from remote_senders_ that are no longer
+  // needed.
   std::map<uint32_t, RemoteSenderState> remote_senders_;
-  rtc::WeakPtrFactory<RtcpTransceiverImpl> ptr_factory_;
-
-  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RtcpTransceiverImpl);
+  RepeatingTaskHandle periodic_task_handle_;
 };
 
 }  // namespace webrtc

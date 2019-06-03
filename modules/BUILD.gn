@@ -10,15 +10,13 @@ import("../webrtc.gni")
 import("audio_coding/audio_coding.gni")
 
 group("modules") {
-  public_deps = [
+  deps = [
     "audio_coding",
     "audio_device",
     "audio_mixer",
     "audio_processing",
     "bitrate_controller",
     "congestion_controller",
-    "desktop_capture",
-    "media_file",
     "pacing",
     "remote_bitrate_estimator",
     "rtp_rtcp",
@@ -26,6 +24,10 @@ group("modules") {
     "video_coding",
     "video_processing",
   ]
+
+  if (rtc_desktop_capture_supported) {
+    deps += [ "desktop_capture" ]
+  }
 }
 
 rtc_source_set("module_api_public") {
@@ -34,23 +36,34 @@ rtc_source_set("module_api_public") {
   ]
   deps = [
     "..:webrtc_common",
-    "../api:optional",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
 rtc_source_set("module_api") {
+  visibility = [ "*" ]
   sources = [
     "include/module.h",
+    "include/module_common_types.cc",
     "include/module_common_types.h",
   ]
   deps = [
     ":module_api_public",
+    ":module_fec_api",
     "..:webrtc_common",
-    "../api:optional",
-    "../api:video_frame_api",
-    "../api:video_frame_api_i420",
-    "../rtc_base:rtc_base_approved",
-    "video_coding:codec_globals_headers",
+    "../api:rtp_headers",
+    "../api/video:video_frame_type",
+    "../modules/rtp_rtcp:rtp_video_header",
+    "../rtc_base:deprecation",  # TODO(bugs.webrtc.org/10336): Remove.
+    "../rtc_base:safe_conversions",
+    "../rtc_base/system:rtc_export",
+  ]
+}
+
+rtc_source_set("module_fec_api") {
+  visibility = [ "*" ]
+  sources = [
+    "include/module_fec_types.h",
   ]
 }
 
@@ -59,7 +72,6 @@ if (rtc_include_tests) {
     "../resources/audio_coding/testfile32kHz.pcm",
     "../resources/audio_coding/teststereo32kHz.pcm",
     "../resources/foreman_cif.yuv",
-    "../resources/paris_qcif.yuv",
   ]
 
   if (is_ios) {
@@ -79,12 +91,14 @@ if (rtc_include_tests) {
       "../test:test_main",
       "../test:video_test_common",
       "audio_coding:audio_coding_modules_tests",
-      "desktop_capture:desktop_capture_modules_tests",
       "rtp_rtcp:rtp_rtcp_modules_tests",
       "video_coding:video_coding_modules_tests",
-      "//testing/gmock",
       "//testing/gtest",
     ]
+
+    if (rtc_desktop_capture_supported) {
+      deps += [ "desktop_capture:desktop_capture_modules_tests" ]
+    }
 
     data = modules_tests_resources
 
@@ -102,19 +116,6 @@ if (rtc_include_tests) {
     if (is_ios) {
       deps += [ ":modules_tests_bundle_data" ]
     }
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-    if (is_win) {
-      cflags = [
-        # TODO(phoglund): get rid of 4373 supression when
-        # http://code.google.com/p/webrtc/issues/detail?id=261 is solved.
-        # legacy warning for ignoring const / volatile in signatures.
-        "/wd4373",
-      ]
-    }
   }
 
   modules_unittests_resources = [
@@ -125,7 +126,9 @@ if (rtc_include_tests) {
     "../resources/audio_coding/neteq_universal_new.rtp",
     "../resources/audio_coding/speech_mono_16kHz.pcm",
     "../resources/audio_coding/speech_mono_32_48kHz.pcm",
+    "../resources/audio_coding/speech_4_channels_48k_one_second.wav",
     "../resources/audio_coding/testfile32kHz.pcm",
+    "../resources/audio_coding/testfile_fake_stereo_32kHz.pcm",
     "../resources/audio_coding/teststereo32kHz.pcm",
     "../resources/audio_device/audio_short16.pcm",
     "../resources/audio_device/audio_short44.pcm",
@@ -235,30 +238,29 @@ if (rtc_include_tests) {
       "module_common_types_unittest.cc",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     deps = [
       ":module_api",
+      ":module_api_public",
       "../test:test_main",
+      "../test:test_support",
       "audio_coding:audio_coding_unittests",
       "audio_device:audio_device_unittests",
       "audio_mixer:audio_mixer_unittests",
       "audio_processing:audio_processing_unittests",
+      "audio_processing/aec3:aec3_unittests",
       "bitrate_controller:bitrate_controller_unittests",
       "congestion_controller:congestion_controller_unittests",
-      "desktop_capture:desktop_capture_unittests",
-      "media_file:media_file_unittests",
       "pacing:pacing_unittests",
       "remote_bitrate_estimator:remote_bitrate_estimator_unittests",
       "rtp_rtcp:rtp_rtcp_unittests",
       "utility:utility_unittests",
-      "video_capture",
       "video_coding:video_coding_unittests",
       "video_processing:video_processing_unittests",
     ]
+
+    if (rtc_desktop_capture_supported) {
+      deps += [ "desktop_capture:desktop_capture_unittests" ]
+    }
 
     data = modules_unittests_resources
 

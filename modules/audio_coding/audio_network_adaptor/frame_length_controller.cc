@@ -11,10 +11,10 @@
 #include "modules/audio_coding/audio_network_adaptor/frame_length_controller.h"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -25,10 +25,10 @@ int OverheadRateBps(size_t overhead_bytes_per_packet, int frame_length_ms) {
   return static_cast<int>(overhead_bytes_per_packet * 8 * 1000 /
                           frame_length_ms);
 }
-}
+}  // namespace
 
 FrameLengthController::Config::Config(
-    const std::vector<int>& encoder_frame_lengths_ms,
+    const std::set<int>& encoder_frame_lengths_ms,
     int initial_frame_length_ms,
     int min_encoder_bitrate_bps,
     float fl_increasing_packet_loss_fraction,

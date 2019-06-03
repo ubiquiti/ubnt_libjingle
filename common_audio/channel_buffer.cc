@@ -10,6 +10,9 @@
 
 #include "common_audio/channel_buffer.h"
 
+#include <cstdint>
+
+#include "common_audio/include/audio_util.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -68,9 +71,7 @@ void IFChannelBuffer::RefreshI() const {
     ibuf_.set_num_channels(fbuf_.num_channels());
     const float* const* float_channels = fbuf_.channels();
     for (size_t i = 0; i < fbuf_.num_channels(); ++i) {
-      FloatS16ToS16(float_channels[i],
-                    ibuf_.num_frames(),
-                    int_channels[i]);
+      FloatS16ToS16(float_channels[i], ibuf_.num_frames(), int_channels[i]);
     }
     ivalid_ = true;
   }

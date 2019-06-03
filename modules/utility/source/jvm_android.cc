@@ -15,10 +15,8 @@
 #include "modules/utility/include/jvm_android.h"
 
 #include "rtc_base/checks.h"
-
-#define TAG "JVM"
-#define ALOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
-#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
 
 namespace webrtc {
 
@@ -29,10 +27,10 @@ struct {
   const char* name;
   jclass clazz;
 } loaded_classes[] = {
-  {"org/webrtc/voiceengine/BuildInfo", nullptr},
-  {"org/webrtc/voiceengine/WebRtcAudioManager", nullptr},
-  {"org/webrtc/voiceengine/WebRtcAudioRecord", nullptr},
-  {"org/webrtc/voiceengine/WebRtcAudioTrack", nullptr},
+    {"org/webrtc/voiceengine/BuildInfo", nullptr},
+    {"org/webrtc/voiceengine/WebRtcAudioManager", nullptr},
+    {"org/webrtc/voiceengine/WebRtcAudioRecord", nullptr},
+    {"org/webrtc/voiceengine/WebRtcAudioTrack", nullptr},
 };
 
 // Android's FindClass() is trickier than usual because the app-specific
@@ -40,10 +38,10 @@ struct {
 // stack.  Consequently, we only look up all classes once in native WebRTC.
 // http://developer.android.com/training/articles/perf-jni.html#faq_FindClass
 void LoadClasses(JNIEnv* jni) {
-  ALOGD("LoadClasses");
+  RTC_LOG(INFO) << "LoadClasses:";
   for (auto& c : loaded_classes) {
     jclass localRef = FindClass(jni, c.name);
-    ALOGD("name: %s", c.name);
+    RTC_LOG(INFO) << "name: " << c.name;
     CHECK_EXCEPTION(jni) << "Error during FindClass: " << c.name;
     RTC_CHECK(localRef) << c.name;
     jclass globalRef = reinterpret_cast<jclass>(jni->NewGlobalRef(localRef));
@@ -69,26 +67,25 @@ jclass LookUpClass(const char* name) {
   return 0;
 }
 
-// AttachCurrentThreadIfNeeded implementation.
-AttachCurrentThreadIfNeeded::AttachCurrentThreadIfNeeded()
-    : attached_(false) {
-  ALOGD("AttachCurrentThreadIfNeeded::ctor%s", GetThreadInfo().c_str());
+// JvmThreadConnector implementation.
+JvmThreadConnector::JvmThreadConnector() : attached_(false) {
+  RTC_LOG(INFO) << "JvmThreadConnector::ctor";
   JavaVM* jvm = JVM::GetInstance()->jvm();
   RTC_CHECK(jvm);
   JNIEnv* jni = GetEnv(jvm);
   if (!jni) {
-    ALOGD("Attaching thread to JVM");
+    RTC_LOG(INFO) << "Attaching thread to JVM";
     JNIEnv* env = nullptr;
     jint ret = jvm->AttachCurrentThread(&env, nullptr);
     attached_ = (ret == JNI_OK);
   }
 }
 
-AttachCurrentThreadIfNeeded::~AttachCurrentThreadIfNeeded() {
-  ALOGD("AttachCurrentThreadIfNeeded::dtor%s", GetThreadInfo().c_str());
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+JvmThreadConnector::~JvmThreadConnector() {
+  RTC_LOG(INFO) << "JvmThreadConnector::dtor";
+  RTC_DCHECK(thread_checker_.IsCurrent());
   if (attached_) {
-    ALOGD("Detaching thread from JVM");
+    RTC_LOG(INFO) << "Detaching thread from JVM";
     jint res = JVM::GetInstance()->jvm()->DetachCurrentThread();
     RTC_CHECK(res == JNI_OK) << "DetachCurrentThread failed: " << res;
   }
@@ -97,11 +94,11 @@ AttachCurrentThreadIfNeeded::~AttachCurrentThreadIfNeeded() {
 // GlobalRef implementation.
 GlobalRef::GlobalRef(JNIEnv* jni, jobject object)
     : jni_(jni), j_object_(NewGlobalRef(jni, object)) {
-  ALOGD("GlobalRef::ctor%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "GlobalRef::ctor";
 }
 
 GlobalRef::~GlobalRef() {
-  ALOGD("GlobalRef::dtor%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "GlobalRef::dtor";
   DeleteGlobalRef(jni_, j_object_);
 }
 
@@ -134,36 +131,35 @@ void GlobalRef::CallVoidMethod(jmethodID methodID, ...) {
 // NativeRegistration implementation.
 NativeRegistration::NativeRegistration(JNIEnv* jni, jclass clazz)
     : JavaClass(jni, clazz), jni_(jni) {
-  ALOGD("NativeRegistration::ctor%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "NativeRegistration::ctor";
 }
 
 NativeRegistration::~NativeRegistration() {
-  ALOGD("NativeRegistration::dtor%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "NativeRegistration::dtor";
   jni_->UnregisterNatives(j_class_);
   CHECK_EXCEPTION(jni_) << "Error during UnregisterNatives";
 }
 
-std::unique_ptr<GlobalRef> NativeRegistration::NewObject(
-    const char* name, const char* signature, ...) {
-  ALOGD("NativeRegistration::NewObject%s", GetThreadInfo().c_str());
+std::unique_ptr<GlobalRef> NativeRegistration::NewObject(const char* name,
+                                                         const char* signature,
+                                                         ...) {
+  RTC_LOG(INFO) << "NativeRegistration::NewObject";
   va_list args;
   va_start(args, signature);
-  jobject obj = jni_->NewObjectV(j_class_,
-                                 GetMethodID(jni_, j_class_, name, signature),
-                                 args);
+  jobject obj = jni_->NewObjectV(
+      j_class_, GetMethodID(jni_, j_class_, name, signature), args);
   CHECK_EXCEPTION(jni_) << "Error during NewObjectV";
   va_end(args);
   return std::unique_ptr<GlobalRef>(new GlobalRef(jni_, obj));
 }
 
 // JavaClass implementation.
-jmethodID JavaClass::GetMethodId(
-    const char* name, const char* signature) {
+jmethodID JavaClass::GetMethodId(const char* name, const char* signature) {
   return GetMethodID(jni_, j_class_, name, signature);
 }
 
-jmethodID JavaClass::GetStaticMethodId(
-    const char* name, const char* signature) {
+jmethodID JavaClass::GetStaticMethodId(const char* name,
+                                       const char* signature) {
   return GetStaticMethodID(jni_, j_class_, name, signature);
 }
 
@@ -185,18 +181,20 @@ jint JavaClass::CallStaticIntMethod(jmethodID methodID, ...) {
 
 // JNIEnvironment implementation.
 JNIEnvironment::JNIEnvironment(JNIEnv* jni) : jni_(jni) {
-  ALOGD("JNIEnvironment::ctor%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "JNIEnvironment::ctor";
 }
 
 JNIEnvironment::~JNIEnvironment() {
-  ALOGD("JNIEnvironment::dtor%s", GetThreadInfo().c_str());
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_LOG(INFO) << "JNIEnvironment::dtor";
+  RTC_DCHECK(thread_checker_.IsCurrent());
 }
 
 std::unique_ptr<NativeRegistration> JNIEnvironment::RegisterNatives(
-    const char* name, const JNINativeMethod *methods, int num_methods) {
-  ALOGD("JNIEnvironment::RegisterNatives(%s)", name);
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+    const char* name,
+    const JNINativeMethod* methods,
+    int num_methods) {
+  RTC_LOG(INFO) << "JNIEnvironment::RegisterNatives: " << name;
+  RTC_DCHECK(thread_checker_.IsCurrent());
   jclass clazz = LookUpClass(name);
   jni_->RegisterNatives(clazz, methods, num_methods);
   CHECK_EXCEPTION(jni_) << "Error during RegisterNatives";
@@ -205,7 +203,7 @@ std::unique_ptr<NativeRegistration> JNIEnvironment::RegisterNatives(
 }
 
 std::string JNIEnvironment::JavaToStdString(const jstring& j_string) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(thread_checker_.IsCurrent());
   const char* jchars = jni_->GetStringUTFChars(j_string, nullptr);
   CHECK_EXCEPTION(jni_);
   const int size = jni_->GetStringUTFLength(j_string);
@@ -218,7 +216,7 @@ std::string JNIEnvironment::JavaToStdString(const jstring& j_string) {
 
 // static
 void JVM::Initialize(JavaVM* jvm) {
-  ALOGD("JVM::Initialize%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "JVM::Initialize";
   RTC_CHECK(!g_jvm);
   g_jvm = new JVM(jvm);
 }
@@ -236,7 +234,7 @@ void JVM::Initialize(JavaVM* jvm, jobject context) {
 
 // static
 void JVM::Uninitialize() {
-  ALOGD("JVM::Uninitialize%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "JVM::Uninitialize";
   RTC_DCHECK(g_jvm);
   delete g_jvm;
   g_jvm = nullptr;
@@ -249,19 +247,20 @@ JVM* JVM::GetInstance() {
 }
 
 JVM::JVM(JavaVM* jvm) : jvm_(jvm) {
-  ALOGD("JVM::JVM%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "JVM::JVM";
   RTC_CHECK(jni()) << "AttachCurrentThread() must be called on this thread.";
   LoadClasses(jni());
 }
 
 JVM::~JVM() {
-  ALOGD("JVM::~JVM%s", GetThreadInfo().c_str());
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_LOG(INFO) << "JVM::~JVM";
+  RTC_DCHECK(thread_checker_.IsCurrent());
   FreeClassReferences(jni());
 }
 
 std::unique_ptr<JNIEnvironment> JVM::environment() {
-  ALOGD("JVM::environment%s", GetThreadInfo().c_str());
+  RTC_LOG(INFO) << "JVM::environment";
+  ;
   // The JNIEnv is used for thread-local storage. For this reason, we cannot
   // share a JNIEnv between threads. If a piece of code has no other way to get
   // its JNIEnv, we should share the JavaVM, and use GetEnv to discover the
@@ -269,15 +268,16 @@ std::unique_ptr<JNIEnvironment> JVM::environment() {
   // See // http://developer.android.com/training/articles/perf-jni.html.
   JNIEnv* jni = GetEnv(jvm_);
   if (!jni) {
-    ALOGE("AttachCurrentThread() has not been called on this thread.");
+    RTC_LOG(LS_ERROR)
+        << "AttachCurrentThread() has not been called on this thread";
     return std::unique_ptr<JNIEnvironment>();
   }
   return std::unique_ptr<JNIEnvironment>(new JNIEnvironment(jni));
 }
 
 JavaClass JVM::GetClass(const char* name) {
-  ALOGD("JVM::GetClass(%s)%s", name, GetThreadInfo().c_str());
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_LOG(INFO) << "JVM::GetClass: " << name;
+  RTC_DCHECK(thread_checker_.IsCurrent());
   return JavaClass(jni(), LookUpClass(name));
 }
 

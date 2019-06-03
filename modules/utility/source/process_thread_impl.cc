@@ -10,10 +10,11 @@
 
 #include "modules/utility/source/process_thread_impl.h"
 
+#include <string>
+
 #include "modules/include/module.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/task_queue.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 
 namespace webrtc {
@@ -32,23 +33,20 @@ int64_t GetNextCallbackTime(Module* module, int64_t time_now) {
   }
   return time_now + interval;
 }
-}
+}  // namespace
 
 ProcessThread::~ProcessThread() {}
 
 // static
-std::unique_ptr<ProcessThread> ProcessThread::Create(
-    const char* thread_name) {
+std::unique_ptr<ProcessThread> ProcessThread::Create(const char* thread_name) {
   return std::unique_ptr<ProcessThread>(new ProcessThreadImpl(thread_name));
 }
 
 ProcessThreadImpl::ProcessThreadImpl(const char* thread_name)
-    : wake_up_(EventWrapper::Create()),
-      stop_(false),
-      thread_name_(thread_name) {}
+    : stop_(false), thread_name_(thread_name) {}
 
 ProcessThreadImpl::~ProcessThreadImpl() {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(thread_checker_.IsCurrent());
   RTC_DCHECK(!thread_.get());
   RTC_DCHECK(!stop_);
 
@@ -59,7 +57,7 @@ ProcessThreadImpl::~ProcessThreadImpl() {
 }
 
 void ProcessThreadImpl::Start() {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(thread_checker_.IsCurrent());
   RTC_DCHECK(!thread_.get());
   if (thread_.get())
     return;
@@ -75,8 +73,8 @@ void ProcessThreadImpl::Start() {
 }
 
 void ProcessThreadImpl::Stop() {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  if(!thread_.get())
+  RTC_DCHECK(thread_checker_.IsCurrent());
+  if (!thread_.get())
     return;
 
   {
@@ -84,7 +82,7 @@ void ProcessThreadImpl::Stop() {
     stop_ = true;
   }
 
-  wake_up_->Set();
+  wake_up_.Set();
 
   thread_->Stop();
   stop_ = false;
@@ -103,21 +101,21 @@ void ProcessThreadImpl::WakeUp(Module* module) {
         m.next_callback = kCallProcessImmediately;
     }
   }
-  wake_up_->Set();
+  wake_up_.Set();
 }
 
-void ProcessThreadImpl::PostTask(std::unique_ptr<rtc::QueuedTask> task) {
+void ProcessThreadImpl::PostTask(std::unique_ptr<QueuedTask> task) {
   // Allowed to be called on any thread.
   {
     rtc::CritScope lock(&lock_);
     queue_.push(task.release());
   }
-  wake_up_->Set();
+  wake_up_.Set();
 }
 
 void ProcessThreadImpl::RegisterModule(Module* module,
                                        const rtc::Location& from) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(thread_checker_.IsCurrent());
   RTC_DCHECK(module) << from.ToString();
 
 #if RTC_DCHECK_IS_ON
@@ -146,18 +144,17 @@ void ProcessThreadImpl::RegisterModule(Module* module,
   // Wake the thread calling ProcessThreadImpl::Process() to update the
   // waiting time. The waiting time for the just registered module may be
   // shorter than all other registered modules.
-  wake_up_->Set();
+  wake_up_.Set();
 }
 
 void ProcessThreadImpl::DeRegisterModule(Module* module) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(thread_checker_.IsCurrent());
   RTC_DCHECK(module);
 
   {
     rtc::CritScope lock(&lock_);
-    modules_.remove_if([&module](const ModuleCallback& m) {
-        return m.module == module;
-      });
+    modules_.remove_if(
+        [&module](const ModuleCallback& m) { return m.module == module; });
   }
 
   // Notify the module that it's been detached.
@@ -165,8 +162,10 @@ void ProcessThreadImpl::DeRegisterModule(Module* module) {
 }
 
 // static
-bool ProcessThreadImpl::Run(void* obj) {
-  return static_cast<ProcessThreadImpl*>(obj)->Process();
+void ProcessThreadImpl::Run(void* obj) {
+  ProcessThreadImpl* impl = static_cast<ProcessThreadImpl*>(obj);
+  while (impl->Process()) {
+  }
 }
 
 bool ProcessThreadImpl::Process() {
@@ -206,7 +205,7 @@ bool ProcessThreadImpl::Process() {
     }
 
     while (!queue_.empty()) {
-      rtc::QueuedTask* task = queue_.front();
+      QueuedTask* task = queue_.front();
       queue_.pop();
       lock_.Leave();
       task->Run();
@@ -217,7 +216,7 @@ bool ProcessThreadImpl::Process() {
 
   int64_t time_to_wait = next_checkpoint - rtc::TimeMillis();
   if (time_to_wait > 0)
-    wake_up_->Wait(static_cast<unsigned long>(time_to_wait));
+    wake_up_.Wait(static_cast<int>(time_to_wait));
 
   return true;
 }

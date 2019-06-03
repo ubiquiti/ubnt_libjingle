@@ -14,20 +14,10 @@
 
 namespace webrtc {
 
-rtc::scoped_refptr<I420BufferInterface> VideoFrameBuffer::GetI420() {
-  RTC_CHECK(type() == Type::kI420);
-  return static_cast<I420BufferInterface*>(this);
-}
-
-rtc::scoped_refptr<const I420BufferInterface> VideoFrameBuffer::GetI420()
-    const {
-  RTC_CHECK(type() == Type::kI420);
-  return static_cast<const I420BufferInterface*>(this);
-}
-
-I420ABufferInterface* VideoFrameBuffer::GetI420A() {
-  RTC_CHECK(type() == Type::kI420A);
-  return static_cast<I420ABufferInterface*>(this);
+const I420BufferInterface* VideoFrameBuffer::GetI420() const {
+  // Overridden by subclasses that can return an I420 buffer without any
+  // conversion, in particular, I420BufferInterface.
+  return nullptr;
 }
 
 const I420ABufferInterface* VideoFrameBuffer::GetI420A() const {
@@ -35,14 +25,14 @@ const I420ABufferInterface* VideoFrameBuffer::GetI420A() const {
   return static_cast<const I420ABufferInterface*>(this);
 }
 
-I444BufferInterface* VideoFrameBuffer::GetI444() {
-  RTC_CHECK(type() == Type::kI444);
-  return static_cast<I444BufferInterface*>(this);
-}
-
 const I444BufferInterface* VideoFrameBuffer::GetI444() const {
   RTC_CHECK(type() == Type::kI444);
   return static_cast<const I444BufferInterface*>(this);
+}
+
+const I010BufferInterface* VideoFrameBuffer::GetI010() const {
+  RTC_CHECK(type() == Type::kI010);
+  return static_cast<const I010BufferInterface*>(this);
 }
 
 VideoFrameBuffer::Type I420BufferInterface::type() const {
@@ -61,6 +51,10 @@ rtc::scoped_refptr<I420BufferInterface> I420BufferInterface::ToI420() {
   return this;
 }
 
+const I420BufferInterface* I420BufferInterface::GetI420() const {
+  return this;
+}
+
 VideoFrameBuffer::Type I420ABufferInterface::type() const {
   return Type::kI420A;
 }
@@ -75,6 +69,18 @@ int I444BufferInterface::ChromaWidth() const {
 
 int I444BufferInterface::ChromaHeight() const {
   return height();
+}
+
+VideoFrameBuffer::Type I010BufferInterface::type() const {
+  return Type::kI010;
+}
+
+int I010BufferInterface::ChromaWidth() const {
+  return (width() + 1) / 2;
+}
+
+int I010BufferInterface::ChromaHeight() const {
+  return (height() + 1) / 2;
 }
 
 }  // namespace webrtc

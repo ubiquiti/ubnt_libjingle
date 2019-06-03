@@ -12,10 +12,10 @@
 
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ptr_util.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 namespace test {
@@ -32,10 +32,7 @@ SingleThreadedTaskQueueForTesting::QueuedTask::~QueuedTask() = default;
 
 SingleThreadedTaskQueueForTesting::SingleThreadedTaskQueueForTesting(
     const char* name)
-    : thread_(Run, this, name),
-      running_(true),
-      next_task_id_(0),
-      wake_up_(false, false) {
+    : thread_(Run, this, name), running_(true), next_task_id_(0) {
   thread_.Start();
 }
 
@@ -70,7 +67,8 @@ SingleThreadedTaskQueueForTesting::PostDelayedTask(Task task,
       break;
     }
   }
-  tasks_.insert(it, rtc::MakeUnique<QueuedTask>(id, earliest_exec_time, task));
+  tasks_.insert(it,
+                absl::make_unique<QueuedTask>(id, earliest_exec_time, task));
 
   // This class is optimized for simplicty, not for performance. This will wake
   // the thread up even if the next task in the queue is only scheduled for
@@ -82,7 +80,7 @@ SingleThreadedTaskQueueForTesting::PostDelayedTask(Task task,
 }
 
 void SingleThreadedTaskQueueForTesting::SendTask(Task task) {
-  rtc::Event done(true, false);
+  rtc::Event done;
   PostTask([&task, &done]() {
     task();
     done.Set();
@@ -110,7 +108,7 @@ void SingleThreadedTaskQueueForTesting::RunLoop() {
     std::unique_ptr<QueuedTask> queued_task;
 
     // An empty queue would lead to sleeping until the queue becoems non-empty.
-    // A queue where the earliest task is shceduled for later than now, will
+    // A queue where the earliest task is scheduled for later than now, will
     // lead to sleeping until the time of the next scheduled task (or until
     // more tasks are scheduled).
     int wait_time = rtc::Event::kForever;

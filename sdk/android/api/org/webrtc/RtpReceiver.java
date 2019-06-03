@@ -10,6 +10,7 @@
 
 package org.webrtc;
 
+import android.support.annotation.Nullable;
 import org.webrtc.MediaStreamTrack;
 
 /** Java wrapper for a C++ RtpReceiverInterface. */
@@ -21,65 +22,77 @@ public class RtpReceiver {
     public void onFirstPacketReceived(MediaStreamTrack.MediaType media_type);
   }
 
-  final long nativeRtpReceiver;
+  private long nativeRtpReceiver;
   private long nativeObserver;
 
-  private MediaStreamTrack cachedTrack;
+  @Nullable private MediaStreamTrack cachedTrack;
 
   @CalledByNative
   public RtpReceiver(long nativeRtpReceiver) {
     this.nativeRtpReceiver = nativeRtpReceiver;
-    long track = getNativeTrack(nativeRtpReceiver);
-    // We can assume that an RtpReceiver always has an associated track.
-    cachedTrack = new MediaStreamTrack(track);
+    long nativeTrack = nativeGetTrack(nativeRtpReceiver);
+    cachedTrack = MediaStreamTrack.createMediaStreamTrack(nativeTrack);
   }
 
+  @Nullable
   public MediaStreamTrack track() {
     return cachedTrack;
   }
 
-  public boolean setParameters(RtpParameters parameters) {
-    return parameters == null ? false : setNativeParameters(nativeRtpReceiver, parameters);
+  public boolean setParameters(@Nullable RtpParameters parameters) {
+    checkRtpReceiverExists();
+    return parameters == null ? false : nativeSetParameters(nativeRtpReceiver, parameters);
   }
 
   public RtpParameters getParameters() {
-    return getNativeParameters(nativeRtpReceiver);
+    checkRtpReceiverExists();
+    return nativeGetParameters(nativeRtpReceiver);
   }
 
   public String id() {
-    return getNativeId(nativeRtpReceiver);
+    checkRtpReceiverExists();
+    return nativeGetId(nativeRtpReceiver);
   }
 
   @CalledByNative
   public void dispose() {
+    checkRtpReceiverExists();
     cachedTrack.dispose();
     if (nativeObserver != 0) {
-      unsetNativeObserver(nativeRtpReceiver, nativeObserver);
+      nativeUnsetObserver(nativeRtpReceiver, nativeObserver);
       nativeObserver = 0;
     }
     JniCommon.nativeReleaseRef(nativeRtpReceiver);
+    nativeRtpReceiver = 0;
   }
 
   public void SetObserver(Observer observer) {
+    checkRtpReceiverExists();
     // Unset the existing one before setting a new one.
     if (nativeObserver != 0) {
-      unsetNativeObserver(nativeRtpReceiver, nativeObserver);
+      nativeUnsetObserver(nativeRtpReceiver, nativeObserver);
     }
-    nativeObserver = setNativeObserver(nativeRtpReceiver, observer);
+    nativeObserver = nativeSetObserver(nativeRtpReceiver, observer);
+  }
+
+  public void setFrameDecryptor(FrameDecryptor frameDecryptor) {
+    checkRtpReceiverExists();
+    nativeSetFrameDecryptor(nativeRtpReceiver, frameDecryptor.getNativeFrameDecryptor());
+  }
+
+  private void checkRtpReceiverExists() {
+    if (nativeRtpReceiver == 0) {
+      throw new IllegalStateException("RtpReceiver has been disposed.");
+    }
   }
 
   // This should increment the reference count of the track.
   // Will be released in dispose().
-  private static native long getNativeTrack(long nativeRtpReceiver);
-
-  private static native boolean setNativeParameters(
-      long nativeRtpReceiver, RtpParameters parameters);
-
-  private static native RtpParameters getNativeParameters(long nativeRtpReceiver);
-
-  private static native String getNativeId(long nativeRtpReceiver);
-
-  private static native long setNativeObserver(long nativeRtpReceiver, Observer observer);
-
-  private static native void unsetNativeObserver(long nativeRtpReceiver, long nativeObserver);
+  private static native long nativeGetTrack(long rtpReceiver);
+  private static native boolean nativeSetParameters(long rtpReceiver, RtpParameters parameters);
+  private static native RtpParameters nativeGetParameters(long rtpReceiver);
+  private static native String nativeGetId(long rtpReceiver);
+  private static native long nativeSetObserver(long rtpReceiver, Observer observer);
+  private static native void nativeUnsetObserver(long rtpReceiver, long nativeObserver);
+  private static native void nativeSetFrameDecryptor(long rtpReceiver, long nativeFrameDecryptor);
 };

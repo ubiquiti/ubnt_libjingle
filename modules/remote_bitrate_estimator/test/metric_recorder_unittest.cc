@@ -12,6 +12,8 @@
 
 #include <math.h>
 #include <algorithm>
+#include <cstdint>
+#include <random>
 #include <vector>
 
 #include "test/gtest.h"
@@ -70,11 +72,13 @@ TEST_F(MetricRecorderTest, VariableDelayPackets) {
   const int kNumPackets = 1000;
 
   std::vector<int64_t> delays_ms;
+  delays_ms.reserve(kNumPackets);
   for (int i = 0; i < kNumPackets; ++i) {
     delays_ms.push_back(static_cast<int64_t>(i + 1));
   }
   // Order of packets should not matter here.
-  std::random_shuffle(delays_ms.begin(), delays_ms.end());
+  std::shuffle(delays_ms.begin(), delays_ms.end(),
+               std::mt19937(std::random_device()()));
 
   int first_received_ms = delays_ms[0];
   int64_t last_received_ms = 0;

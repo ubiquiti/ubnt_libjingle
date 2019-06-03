@@ -18,16 +18,16 @@
 #include <string>
 
 #include "rtc_base/checks.h"
-#include "rtc_base/helpers.h"
 #include "rtc_base/network_constants.h"
-#include "rtc_base/socketaddress.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/system/rtc_export.h"
 
 namespace cricket {
 
 // Candidate for ICE based connection discovery.
 // TODO(phoglund): remove things in here that are not needed in the public API.
 
-class Candidate {
+class RTC_EXPORT Candidate {
  public:
   Candidate();
   // TODO(pthatcher): Match the ordering and param list as per RFC 5245
@@ -46,14 +46,14 @@ class Candidate {
   Candidate(const Candidate&);
   ~Candidate();
 
-  const std::string & id() const { return id_; }
-  void set_id(const std::string & id) { id_ = id; }
+  const std::string& id() const { return id_; }
+  void set_id(const std::string& id) { id_ = id; }
 
   int component() const { return component_; }
   void set_component(int component) { component_ = component; }
 
-  const std::string & protocol() const { return protocol_; }
-  void set_protocol(const std::string & protocol) { protocol_ = protocol; }
+  const std::string& protocol() const { return protocol_; }
+  void set_protocol(const std::string& protocol) { protocol_ = protocol; }
 
   // The protocol used to talk to relay.
   const std::string& relay_protocol() const { return relay_protocol_; }
@@ -61,10 +61,8 @@ class Candidate {
     relay_protocol_ = protocol;
   }
 
-  const rtc::SocketAddress & address() const { return address_; }
-  void set_address(const rtc::SocketAddress & address) {
-    address_ = address;
-  }
+  const rtc::SocketAddress& address() const { return address_; }
+  void set_address(const rtc::SocketAddress& address) { address_ = address; }
 
   uint32_t priority() const { return priority_; }
   void set_priority(const uint32_t priority) { priority_ = priority; }
@@ -91,17 +89,17 @@ class Candidate {
   }
 
   // TODO(honghaiz): Change to usernameFragment or ufrag.
-  const std::string & username() const { return username_; }
-  void set_username(const std::string & username) { username_ = username; }
+  const std::string& username() const { return username_; }
+  void set_username(const std::string& username) { username_ = username; }
 
-  const std::string & password() const { return password_; }
-  void set_password(const std::string & password) { password_ = password; }
+  const std::string& password() const { return password_; }
+  void set_password(const std::string& password) { password_ = password; }
 
-  const std::string & type() const { return type_; }
-  void set_type(const std::string & type) { type_ = type; }
+  const std::string& type() const { return type_; }
+  void set_type(const std::string& type) { type_ = type; }
 
-  const std::string & network_name() const { return network_name_; }
-  void set_network_name(const std::string & network_name) {
+  const std::string& network_name() const { return network_name_; }
+  void set_network_name(const std::string& network_name) {
     network_name_ = network_name;
   }
 
@@ -127,24 +125,17 @@ class Candidate {
   uint16_t network_id() const { return network_id_; }
   void set_network_id(uint16_t network_id) { network_id_ = network_id; }
 
-  const std::string& foundation() const {
-    return foundation_;
-  }
+  const std::string& foundation() const { return foundation_; }
   void set_foundation(const std::string& foundation) {
     foundation_ = foundation;
   }
 
-  const rtc::SocketAddress & related_address() const {
-    return related_address_;
-  }
-  void set_related_address(
-      const rtc::SocketAddress & related_address) {
+  const rtc::SocketAddress& related_address() const { return related_address_; }
+  void set_related_address(const rtc::SocketAddress& related_address) {
     related_address_ = related_address;
   }
   const std::string& tcptype() const { return tcptype_; }
-  void set_tcptype(const std::string& tcptype) {
-    tcptype_ = tcptype;
-  }
+  void set_tcptype(const std::string& tcptype) { tcptype_ = tcptype; }
 
   // The name of the transport channel of this candidate.
   // TODO(phoglund): remove.
@@ -164,13 +155,9 @@ class Candidate {
   // given one when looking for a matching candidate to remove.
   bool MatchesForRemoval(const Candidate& c) const;
 
-  std::string ToString() const {
-    return ToStringInternal(false);
-  }
+  std::string ToString() const { return ToStringInternal(false); }
 
-  std::string ToSensitiveString() const {
-    return ToStringInternal(true);
-  }
+  std::string ToSensitiveString() const { return ToStringInternal(true); }
 
   uint32_t GetPriority(uint32_t type_preference,
                        int network_adapter_preference,
@@ -178,6 +165,16 @@ class Candidate {
 
   bool operator==(const Candidate& o) const;
   bool operator!=(const Candidate& o) const;
+
+  // Returns a sanitized copy configured by the given booleans. If
+  // |use_host_address| is true, the returned copy has its IP removed from
+  // |address()|, which leads |address()| to be a hostname address. If
+  // |filter_related_address|, the returned copy has its related address reset
+  // to the wildcard address (i.e. 0.0.0.0 for IPv4 and :: for IPv6). Note that
+  // setting both booleans to false returns an identical copy to the original
+  // candidate.
+  Candidate ToSanitizedCopy(bool use_hostname_address,
+                            bool filter_related_address) const;
 
  private:
   std::string ToStringInternal(bool sensitive) const;

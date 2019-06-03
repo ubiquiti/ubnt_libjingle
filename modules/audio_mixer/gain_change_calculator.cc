@@ -11,7 +11,10 @@
 #include "modules/audio_mixer/gain_change_calculator.h"
 
 #include <math.h>
+#include <cstdlib>
 #include <vector>
+
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -27,6 +30,10 @@ float GainChangeCalculator::CalculateGainChange(
   std::vector<float> gain(in.size());
   CalculateGain(in, out, gain);
   return CalculateDifferences(gain);
+}
+
+float GainChangeCalculator::LatestGain() const {
+  return last_reliable_gain_;
 }
 
 void GainChangeCalculator::CalculateGain(rtc::ArrayView<const int16_t> in,

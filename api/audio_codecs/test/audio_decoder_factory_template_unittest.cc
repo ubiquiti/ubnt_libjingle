@@ -9,6 +9,7 @@
  */
 
 #include "api/audio_codecs/audio_decoder_factory_template.h"
+#include "absl/memory/memory.h"
 #include "api/audio_codecs/L16/audio_decoder_L16.h"
 #include "api/audio_codecs/g711/audio_decoder_g711.h"
 #include "api/audio_codecs/g722/audio_decoder_g722.h"
@@ -16,7 +17,6 @@
 #include "api/audio_codecs/isac/audio_decoder_isac_fix.h"
 #include "api/audio_codecs/isac/audio_decoder_isac_float.h"
 #include "api/audio_codecs/opus/audio_decoder_opus.h"
-#include "rtc_base/ptr_util.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_audio_decoder.h"
@@ -43,12 +43,13 @@ struct AudioDecoderFakeApi {
     SdpAudioFormat audio_format;
   };
 
-  static rtc::Optional<Config> SdpToConfig(const SdpAudioFormat& audio_format) {
+  static absl::optional<Config> SdpToConfig(
+      const SdpAudioFormat& audio_format) {
     if (Params::AudioFormat() == audio_format) {
       Config config = {audio_format};
       return config;
     } else {
-      return rtc::nullopt;
+      return absl::nullopt;
     }
   }
 
@@ -60,10 +61,12 @@ struct AudioDecoderFakeApi {
     return Params::CodecInfo();
   }
 
-  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(const Config&) {
-    auto dec = rtc::MakeUnique<testing::StrictMock<MockAudioDecoder>>();
+  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(
+      const Config&,
+      absl::optional<AudioCodecPairId> /*codec_pair_id*/ = absl::nullopt) {
+    auto dec = absl::make_unique<testing::StrictMock<MockAudioDecoder>>();
     EXPECT_CALL(*dec, SampleRateHz())
-        .WillOnce(testing::Return(Params::CodecInfo().sample_rate_hz));
+        .WillOnce(::testing::Return(Params::CodecInfo().sample_rate_hz));
     EXPECT_CALL(*dec, Die());
     return std::move(dec);
   }
@@ -75,20 +78,22 @@ TEST(AudioDecoderFactoryTemplateTest, NoDecoderTypes) {
   rtc::scoped_refptr<AudioDecoderFactory> factory(
       new rtc::RefCountedObject<
           audio_decoder_factory_template_impl::AudioDecoderFactoryT<>>());
-  EXPECT_THAT(factory->GetSupportedDecoders(), testing::IsEmpty());
+  EXPECT_THAT(factory->GetSupportedDecoders(), ::testing::IsEmpty());
   EXPECT_FALSE(factory->IsSupportedDecoder({"foo", 8000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"bar", 16000, 1}));
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"bar", 16000, 1}, absl::nullopt));
 }
 
 TEST(AudioDecoderFactoryTemplateTest, OneDecoderType) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderFakeApi<BogusParams>>();
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(
+              ::testing::ElementsAre(
                   AudioCodecSpec{{"bogus", 8000, 1}, {8000, 1, 12345}}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"foo", 8000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"bogus", 8000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"bar", 16000, 1}));
-  auto dec = factory->MakeAudioDecoder({"bogus", 8000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"bar", 16000, 1}, absl::nullopt));
+  auto dec = factory->MakeAudioDecoder({"bogus", 8000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec);
   EXPECT_EQ(8000, dec->SampleRateHz());
 }
@@ -97,7 +102,7 @@ TEST(AudioDecoderFactoryTemplateTest, TwoDecoderTypes) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderFakeApi<BogusParams>,
                                            AudioDecoderFakeApi<ShamParams>>();
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(
+              ::testing::ElementsAre(
                   AudioCodecSpec{{"bogus", 8000, 1}, {8000, 1, 12345}},
                   AudioCodecSpec{{"sham", 16000, 2, {{"param", "value"}}},
                                  {16000, 2, 23456}}));
@@ -105,13 +110,15 @@ TEST(AudioDecoderFactoryTemplateTest, TwoDecoderTypes) {
   EXPECT_TRUE(factory->IsSupportedDecoder({"bogus", 8000, 1}));
   EXPECT_TRUE(
       factory->IsSupportedDecoder({"sham", 16000, 2, {{"param", "value"}}}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"bar", 16000, 1}));
-  auto dec1 = factory->MakeAudioDecoder({"bogus", 8000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"bar", 16000, 1}, absl::nullopt));
+  auto dec1 = factory->MakeAudioDecoder({"bogus", 8000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec1);
   EXPECT_EQ(8000, dec1->SampleRateHz());
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"sham", 16000, 2}));
-  auto dec2 =
-      factory->MakeAudioDecoder({"sham", 16000, 2, {{"param", "value"}}});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"sham", 16000, 2}, absl::nullopt));
+  auto dec2 = factory->MakeAudioDecoder(
+      {"sham", 16000, 2, {{"param", "value"}}}, absl::nullopt);
   ASSERT_NE(nullptr, dec2);
   EXPECT_EQ(16000, dec2->SampleRateHz());
 }
@@ -119,17 +126,18 @@ TEST(AudioDecoderFactoryTemplateTest, TwoDecoderTypes) {
 TEST(AudioDecoderFactoryTemplateTest, G711) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderG711>();
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(
+              ::testing::ElementsAre(
                   AudioCodecSpec{{"PCMU", 8000, 1}, {8000, 1, 64000}},
                   AudioCodecSpec{{"PCMA", 8000, 1}, {8000, 1, 64000}}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"G711", 8000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"PCMU", 8000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"pcma", 8000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"pcmu", 16000, 1}));
-  auto dec1 = factory->MakeAudioDecoder({"pcmu", 8000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"pcmu", 16000, 1}, absl::nullopt));
+  auto dec1 = factory->MakeAudioDecoder({"pcmu", 8000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec1);
   EXPECT_EQ(8000, dec1->SampleRateHz());
-  auto dec2 = factory->MakeAudioDecoder({"PCMA", 8000, 1});
+  auto dec2 = factory->MakeAudioDecoder({"PCMA", 8000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec2);
   EXPECT_EQ(8000, dec2->SampleRateHz());
 }
@@ -137,32 +145,34 @@ TEST(AudioDecoderFactoryTemplateTest, G711) {
 TEST(AudioDecoderFactoryTemplateTest, G722) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderG722>();
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(
+              ::testing::ElementsAre(
                   AudioCodecSpec{{"G722", 8000, 1}, {16000, 1, 64000}}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"foo", 8000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"G722", 8000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"bar", 16000, 1}));
-  auto dec1 = factory->MakeAudioDecoder({"G722", 8000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"bar", 16000, 1}, absl::nullopt));
+  auto dec1 = factory->MakeAudioDecoder({"G722", 8000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec1);
   EXPECT_EQ(16000, dec1->SampleRateHz());
   EXPECT_EQ(1u, dec1->Channels());
-  auto dec2 = factory->MakeAudioDecoder({"G722", 8000, 2});
+  auto dec2 = factory->MakeAudioDecoder({"G722", 8000, 2}, absl::nullopt);
   ASSERT_NE(nullptr, dec2);
   EXPECT_EQ(16000, dec2->SampleRateHz());
   EXPECT_EQ(2u, dec2->Channels());
-  auto dec3 = factory->MakeAudioDecoder({"G722", 8000, 3});
+  auto dec3 = factory->MakeAudioDecoder({"G722", 8000, 3}, absl::nullopt);
   ASSERT_EQ(nullptr, dec3);
 }
 
 TEST(AudioDecoderFactoryTemplateTest, Ilbc) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderIlbc>();
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(
+              ::testing::ElementsAre(
                   AudioCodecSpec{{"ILBC", 8000, 1}, {8000, 1, 13300}}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"foo", 8000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"ilbc", 8000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"bar", 8000, 1}));
-  auto dec = factory->MakeAudioDecoder({"ilbc", 8000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"bar", 8000, 1}, absl::nullopt));
+  auto dec = factory->MakeAudioDecoder({"ilbc", 8000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec);
   EXPECT_EQ(8000, dec->SampleRateHz());
 }
@@ -170,13 +180,14 @@ TEST(AudioDecoderFactoryTemplateTest, Ilbc) {
 TEST(AudioDecoderFactoryTemplateTest, IsacFix) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderIsacFix>();
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(AudioCodecSpec{
+              ::testing::ElementsAre(AudioCodecSpec{
                   {"ISAC", 16000, 1}, {16000, 1, 32000, 10000, 32000}}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"isac", 16000, 2}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"isac", 16000, 1}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"isac", 32000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"isac", 8000, 1}));
-  auto dec = factory->MakeAudioDecoder({"isac", 16000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"isac", 8000, 1}, absl::nullopt));
+  auto dec = factory->MakeAudioDecoder({"isac", 16000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec);
   EXPECT_EQ(16000, dec->SampleRateHz());
 }
@@ -185,17 +196,18 @@ TEST(AudioDecoderFactoryTemplateTest, IsacFloat) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderIsacFloat>();
   EXPECT_THAT(
       factory->GetSupportedDecoders(),
-      testing::ElementsAre(
+      ::testing::ElementsAre(
           AudioCodecSpec{{"ISAC", 16000, 1}, {16000, 1, 32000, 10000, 32000}},
           AudioCodecSpec{{"ISAC", 32000, 1}, {32000, 1, 56000, 10000, 56000}}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"isac", 16000, 2}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"isac", 16000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"isac", 32000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"isac", 8000, 1}));
-  auto dec1 = factory->MakeAudioDecoder({"isac", 16000, 1});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"isac", 8000, 1}, absl::nullopt));
+  auto dec1 = factory->MakeAudioDecoder({"isac", 16000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec1);
   EXPECT_EQ(16000, dec1->SampleRateHz());
-  auto dec2 = factory->MakeAudioDecoder({"isac", 32000, 1});
+  auto dec2 = factory->MakeAudioDecoder({"isac", 32000, 1}, absl::nullopt);
   ASSERT_NE(nullptr, dec2);
   EXPECT_EQ(32000, dec2->SampleRateHz());
 }
@@ -204,7 +216,7 @@ TEST(AudioDecoderFactoryTemplateTest, L16) {
   auto factory = CreateAudioDecoderFactory<AudioDecoderL16>();
   EXPECT_THAT(
       factory->GetSupportedDecoders(),
-      testing::ElementsAre(
+      ::testing::ElementsAre(
           AudioCodecSpec{{"L16", 8000, 1}, {8000, 1, 8000 * 16}},
           AudioCodecSpec{{"L16", 16000, 1}, {16000, 1, 16000 * 16}},
           AudioCodecSpec{{"L16", 32000, 1}, {32000, 1, 32000 * 16}},
@@ -214,8 +226,9 @@ TEST(AudioDecoderFactoryTemplateTest, L16) {
   EXPECT_FALSE(factory->IsSupportedDecoder({"foo", 8000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"L16", 48000, 1}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"L16", 96000, 1}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"L16", 8000, 0}));
-  auto dec = factory->MakeAudioDecoder({"L16", 48000, 2});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"L16", 8000, 0}, absl::nullopt));
+  auto dec = factory->MakeAudioDecoder({"L16", 48000, 2}, absl::nullopt);
   ASSERT_NE(nullptr, dec);
   EXPECT_EQ(48000, dec->SampleRateHz());
 }
@@ -228,11 +241,12 @@ TEST(AudioDecoderFactoryTemplateTest, Opus) {
   const SdpAudioFormat opus_format(
       {"opus", 48000, 2, {{"minptime", "10"}, {"useinbandfec", "1"}}});
   EXPECT_THAT(factory->GetSupportedDecoders(),
-              testing::ElementsAre(AudioCodecSpec{opus_format, opus_info}));
+              ::testing::ElementsAre(AudioCodecSpec{opus_format, opus_info}));
   EXPECT_FALSE(factory->IsSupportedDecoder({"opus", 48000, 1}));
   EXPECT_TRUE(factory->IsSupportedDecoder({"opus", 48000, 2}));
-  EXPECT_EQ(nullptr, factory->MakeAudioDecoder({"bar", 16000, 1}));
-  auto dec = factory->MakeAudioDecoder({"opus", 48000, 2});
+  EXPECT_EQ(nullptr,
+            factory->MakeAudioDecoder({"bar", 16000, 1}, absl::nullopt));
+  auto dec = factory->MakeAudioDecoder({"opus", 48000, 2}, absl::nullopt);
   ASSERT_NE(nullptr, dec);
   EXPECT_EQ(48000, dec->SampleRateHz());
 }

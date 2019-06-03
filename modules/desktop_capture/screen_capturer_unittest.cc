@@ -15,7 +15,7 @@
 #include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/mock_desktop_capturer_callback.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/logging.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -30,7 +30,7 @@ const int kTestSharedMemoryId = 123;
 
 namespace webrtc {
 
-class ScreenCapturerTest : public testing::Test {
+class ScreenCapturerTest : public ::testing::Test {
  public:
   void SetUp() override {
     capturer_ = DesktopCapturer::CreateScreenCapturer(
@@ -73,12 +73,9 @@ class ScreenCapturerTest : public testing::Test {
 class FakeSharedMemory : public SharedMemory {
  public:
   FakeSharedMemory(char* buffer, size_t size)
-    : SharedMemory(buffer, size, 0, kTestSharedMemoryId),
-      buffer_(buffer) {
-  }
-  virtual ~FakeSharedMemory() {
-    delete[] buffer_;
-  }
+      : SharedMemory(buffer, size, 0, kTestSharedMemoryId), buffer_(buffer) {}
+  ~FakeSharedMemory() override { delete[] buffer_; }
+
  private:
   char* buffer_;
   RTC_DISALLOW_COPY_AND_ASSIGN(FakeSharedMemory);

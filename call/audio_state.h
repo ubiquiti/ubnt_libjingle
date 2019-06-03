@@ -11,29 +11,22 @@
 #define CALL_AUDIO_STATE_H_
 
 #include "api/audio/audio_mixer.h"
-#include "rtc_base/refcount.h"
-#include "rtc_base/scoped_ref_ptr.h"
+#include "api/scoped_refptr.h"
+#include "modules/audio_device/include/audio_device.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "rtc_base/ref_count.h"
 
 namespace webrtc {
 
-class AudioProcessing;
 class AudioTransport;
-class VoiceEngine;
-
-// WORK IN PROGRESS
-// This class is under development and is not yet intended for for use outside
-// of WebRtc/Libjingle. Please use the VoiceEngine API instead.
-// See: https://bugs.chromium.org/p/webrtc/issues/detail?id=4690
 
 // AudioState holds the state which must be shared between multiple instances of
 // webrtc::Call for audio processing purposes.
 class AudioState : public rtc::RefCountInterface {
  public:
   struct Config {
-    // VoiceEngine used for audio streams and audio/video synchronization.
-    // AudioState will tickle the VoE refcount to keep it alive for as long as
-    // the AudioState itself.
-    VoiceEngine* voice_engine = nullptr;
+    Config();
+    ~Config();
 
     // The audio mixer connected to active receive streams. One per
     // AudioState.
@@ -41,6 +34,18 @@ class AudioState : public rtc::RefCountInterface {
 
     // The audio processing module.
     rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing;
+
+    // TODO(solenberg): Temporary: audio device module.
+    rtc::scoped_refptr<webrtc::AudioDeviceModule> audio_device_module;
+  };
+
+  struct Stats {
+    // Audio peak level (max(abs())), linearly on the interval [0,32767].
+    int32_t audio_level = -1;
+    // See:
+    // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
+    double total_energy = 0.0f;
+    double total_duration = 0.0f;
   };
 
   virtual AudioProcessing* audio_processing() = 0;
@@ -57,11 +62,13 @@ class AudioState : public rtc::RefCountInterface {
   // packets will be encoded or transmitted.
   virtual void SetRecording(bool enabled) = 0;
 
-  // TODO(solenberg): Replace scoped_refptr with shared_ptr once we can use it.
+  virtual Stats GetAudioInputStats() const = 0;
+  virtual void SetStereoChannelSwapping(bool enable) = 0;
+
   static rtc::scoped_refptr<AudioState> Create(
       const AudioState::Config& config);
 
-  virtual ~AudioState() {}
+  ~AudioState() override {}
 };
 }  // namespace webrtc
 

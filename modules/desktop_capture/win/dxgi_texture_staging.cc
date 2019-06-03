@@ -11,9 +11,9 @@
 #include "modules/desktop_capture/win/dxgi_texture_staging.h"
 
 #include <comdef.h>
+#include <dxgi.h>
+#include <dxgi1_2.h>
 #include <unknwn.h>
-#include <DXGI.h>
-#include <DXGI1_2.h>
 
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -45,8 +45,8 @@ bool DxgiTextureStaging::InitializeStage(ID3D11Texture2D* texture) {
     AssertStageAndSurfaceAreSameObject();
     D3D11_TEXTURE2D_DESC current_desc;
     stage_->GetDesc(&current_desc);
-    const bool recreate_needed = (
-        memcmp(&desc, &current_desc, sizeof(D3D11_TEXTURE2D_DESC)) != 0);
+    const bool recreate_needed =
+        (memcmp(&desc, &current_desc, sizeof(D3D11_TEXTURE2D_DESC)) != 0);
     RTC_HISTOGRAM_BOOLEAN("WebRTC.DesktopCapture.StagingTextureRecreate",
                           recreate_needed);
     if (!recreate_needed) {

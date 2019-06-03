@@ -9,8 +9,8 @@
  */
 
 #include "modules/audio_mixer/audio_frame_manipulator.h"
+
 #include "audio/utility/audio_frame_operations.h"
-#include "modules/include/module_common_types.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -22,7 +22,8 @@ uint32_t AudioMixerCalculateEnergy(const AudioFrame& audio_frame) {
 
   uint32_t energy = 0;
   const int16_t* frame_data = audio_frame.data();
-  for (size_t position = 0; position < audio_frame.samples_per_channel_;
+  for (size_t position = 0;
+       position < audio_frame.samples_per_channel_ * audio_frame.num_channels_;
        position++) {
     // TODO(aleloi): This can overflow. Convert to floats.
     energy += frame_data[position] * frame_data[position];
@@ -55,11 +56,16 @@ void Ramp(float start_gain, float target_gain, AudioFrame* audio_frame) {
 
 void RemixFrame(size_t target_number_of_channels, AudioFrame* frame) {
   RTC_DCHECK_GE(target_number_of_channels, 1);
-  RTC_DCHECK_LE(target_number_of_channels, 2);
-  if (frame->num_channels_ == 1 && target_number_of_channels == 2) {
-    AudioFrameOperations::MonoToStereo(frame);
-  } else if (frame->num_channels_ == 2 && target_number_of_channels == 1) {
-    AudioFrameOperations::StereoToMono(frame);
+  if (frame->num_channels_ == target_number_of_channels) {
+    return;
   }
+  if (frame->num_channels_ > target_number_of_channels) {
+    AudioFrameOperations::DownmixChannels(target_number_of_channels, frame);
+  } else if (frame->num_channels_ < target_number_of_channels) {
+    AudioFrameOperations::UpmixChannels(target_number_of_channels, frame);
+  }
+  RTC_DCHECK_EQ(frame->num_channels_, target_number_of_channels)
+      << "Wrong number of channels, " << frame->num_channels_ << " vs "
+      << target_number_of_channels;
 }
 }  // namespace webrtc

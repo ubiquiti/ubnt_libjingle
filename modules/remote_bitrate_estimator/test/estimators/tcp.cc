@@ -8,27 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <algorithm>
+#include <cstdint>
 
+#include "api/rtp_headers.h"
 #include "modules/remote_bitrate_estimator/test/estimators/tcp.h"
-
-#include "modules/bitrate_controller/include/bitrate_controller.h"
-#include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
-#include "modules/rtp_rtcp/include/receive_statistics.h"
-#include "test/gtest.h"
 
 namespace webrtc {
 namespace testing {
 namespace bwe {
 
 TcpBweReceiver::TcpBweReceiver(int flow_id)
-    : BweReceiver(flow_id),
-      last_feedback_ms_(0),
-      latest_owd_ms_(0) {
-}
+    : BweReceiver(flow_id), last_feedback_ms_(0), latest_owd_ms_(0) {}
 
-TcpBweReceiver::~TcpBweReceiver() {
-}
+TcpBweReceiver::~TcpBweReceiver() {}
 
 void TcpBweReceiver::ReceivePacket(int64_t arrival_time_ms,
                                    const MediaPacket& media_packet) {

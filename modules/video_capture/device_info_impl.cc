@@ -11,8 +11,9 @@
 #include <assert.h>
 #include <stdlib.h>
 
+#include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
 #include "modules/video_capture/device_info_impl.h"
-#include "modules/video_capture/video_capture_config.h"
 #include "rtc_base/logging.h"
 
 #ifndef abs
@@ -21,6 +22,7 @@
 
 namespace webrtc {
 namespace videocapturemodule {
+
 DeviceInfoImpl::DeviceInfoImpl()
     : _apiLock(*RWLockWrapper::CreateRWLock()),
       _lastUsedDeviceName(NULL),
@@ -33,26 +35,19 @@ DeviceInfoImpl::~DeviceInfoImpl(void) {
 
   delete &_apiLock;
 }
+
 int32_t DeviceInfoImpl::NumberOfCapabilities(const char* deviceUniqueIdUTF8) {
   if (!deviceUniqueIdUTF8)
     return -1;
 
   _apiLock.AcquireLockShared();
 
-  if (_lastUsedDeviceNameLength == strlen((char*)deviceUniqueIdUTF8)) {
-// Is it the same device that is asked for again.
-#if defined(WEBRTC_MAC) || defined(WEBRTC_LINUX)
-    if (strncasecmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
-                    _lastUsedDeviceNameLength) == 0)
-#else
-    if (_strnicmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
-                  _lastUsedDeviceNameLength) == 0)
-#endif
-    {
-      // yes
-      _apiLock.ReleaseLockShared();
-      return static_cast<int32_t>(_captureCapabilities.size());
-    }
+  // Is it the same device that is asked for again.
+  if (absl::EqualsIgnoreCase(
+          deviceUniqueIdUTF8,
+          absl::string_view(_lastUsedDeviceName, _lastUsedDeviceNameLength))) {
+    _apiLock.ReleaseLockShared();
+    return static_cast<int32_t>(_captureCapabilities.size());
   }
   // Need to get exclusive rights to create the new capability map.
   _apiLock.ReleaseLockShared();
@@ -69,16 +64,9 @@ int32_t DeviceInfoImpl::GetCapability(const char* deviceUniqueIdUTF8,
 
   ReadLockScoped cs(_apiLock);
 
-  if ((_lastUsedDeviceNameLength != strlen((char*)deviceUniqueIdUTF8))
-#if defined(WEBRTC_MAC) || defined(WEBRTC_LINUX)
-      || (strncasecmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
-                      _lastUsedDeviceNameLength) != 0))
-#else
-      || (_strnicmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
-                    _lastUsedDeviceNameLength) != 0))
-#endif
-
-  {
+  if (!absl::EqualsIgnoreCase(
+          deviceUniqueIdUTF8,
+          absl::string_view(_lastUsedDeviceName, _lastUsedDeviceNameLength))) {
     _apiLock.ReleaseLockShared();
     _apiLock.AcquireLockExclusive();
     if (-1 == CreateCapabilityMap(deviceUniqueIdUTF8)) {
@@ -110,15 +98,9 @@ int32_t DeviceInfoImpl::GetBestMatchedCapability(
     return -1;
 
   ReadLockScoped cs(_apiLock);
-  if ((_lastUsedDeviceNameLength != strlen((char*)deviceUniqueIdUTF8))
-#if defined(WEBRTC_MAC) || defined(WEBRTC_LINUX)
-      || (strncasecmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
-                      _lastUsedDeviceNameLength) != 0))
-#else
-      || (_strnicmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
-                    _lastUsedDeviceNameLength) != 0))
-#endif
-  {
+  if (!absl::EqualsIgnoreCase(
+          deviceUniqueIdUTF8,
+          absl::string_view(_lastUsedDeviceName, _lastUsedDeviceNameLength))) {
     _apiLock.ReleaseLockShared();
     _apiLock.AcquireLockExclusive();
     if (-1 == CreateCapabilityMap(deviceUniqueIdUTF8)) {

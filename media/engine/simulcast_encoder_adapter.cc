@@ -10,18 +10,27 @@
 
 #include "media/engine/simulcast_encoder_adapter.h"
 
+#include <stdio.h>
+#include <string.h>
 #include <algorithm>
+#include <cstdint>
+#include <string>
+#include <utility>
 
-// NOTE(ajm): Path provided by gyp.
-#include "libyuv/scale.h"  // NOLINT
-
+#include "api/scoped_refptr.h"
 #include "api/video/i420_buffer.h"
+#include "api/video/video_codec_constants.h"
+#include "api/video/video_frame_buffer.h"
+#include "api/video/video_rotation.h"
 #include "api/video_codecs/video_encoder_factory.h"
-#include "media/engine/scopedvideoencoder.h"
-#include "modules/video_coding/codecs/vp8/screenshare_layers.h"
-#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
+#include "modules/video_coding/include/video_error_codes.h"
+#include "modules/video_coding/utility/simulcast_rate_allocator.h"
+#include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
-#include "system_wrappers/include/clock.h"
+#include "rtc_base/experiments/rate_control_settings.h"
+#include "rtc_base/logging.h"
+#include "system_wrappers/include/field_trial.h"
+#include "third_party/libyuv/include/libyuv/scale.h"
 
 namespace {
 
@@ -29,6 +38,17 @@ const unsigned int kDefaultMinQp = 2;
 const unsigned int kDefaultMaxQp = 56;
 // Max qp for lowest spatial resolution when doing simulcast.
 const unsigned int kLowestResMaxQp = 45;
+
+absl::optional<unsigned int> GetScreenshareBoostedQpValue() {
+  std::string experiment_group =
+      webrtc::field_trial::FindFullName("WebRTC-BoostedScreenshareQp");
+  unsigned int qp;
+  if (sscanf(experiment_group.c_str(), "%u", &qp) != 1)
+    return absl::nullopt;
+  qp = std::min(qp, 63u);
+  qp = std::max(qp, 1u);
+  return qp;
+}
 
 uint32_t SumStreamMaxBitrate(int streams, const webrtc::VideoCodec& codec) {
   uint32_t bitrate_sum = 0;
@@ -48,21 +68,6 @@ int NumberOfStreams(const webrtc::VideoCodec& codec) {
   return streams;
 }
 
-bool ValidSimulcastResolutions(const webrtc::VideoCodec& codec,
-                               int num_streams) {
-  if (codec.width != codec.simulcastStream[num_streams - 1].width ||
-      codec.height != codec.simulcastStream[num_streams - 1].height) {
-    return false;
-  }
-  for (int i = 0; i < num_streams; ++i) {
-    if (codec.width * codec.simulcastStream[i].height !=
-        codec.height * codec.simulcastStream[i].width) {
-      return false;
-    }
-  }
-  return true;
-}
-
 int VerifyCodec(const webrtc::VideoCodec* inst) {
   if (inst == nullptr) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
@@ -77,10 +82,17 @@ int VerifyCodec(const webrtc::VideoCodec* inst) {
   if (inst->width <= 1 || inst->height <= 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
-  if (inst->VP8().automaticResizeOn && inst->numberOfSimulcastStreams > 1) {
+  if (inst->codecType == webrtc::kVideoCodecVP8 &&
+      inst->VP8().automaticResizeOn && inst->numberOfSimulcastStreams > 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   return WEBRTC_VIDEO_CODEC_OK;
+}
+
+bool StreamResolutionCompare(const webrtc::SimulcastStream& a,
+                             const webrtc::SimulcastStream& b) {
+  return std::tie(a.height, a.width, a.maxBitrate, a.maxFramerate) <
+         std::tie(b.height, b.width, b.maxBitrate, b.maxFramerate);
 }
 
 // An EncodedImageCallback implementation that forwards on calls to a
@@ -104,57 +116,22 @@ class AdapterEncodedImageCallback : public webrtc::EncodedImageCallback {
   webrtc::SimulcastEncoderAdapter* const adapter_;
   const size_t stream_idx_;
 };
-
-// Utility class used to adapt the simulcast id as reported by the temporal
-// layers factory, since each sub-encoder will report stream 0.
-class TemporalLayersFactoryAdapter : public webrtc::TemporalLayersFactory {
- public:
-  TemporalLayersFactoryAdapter(int adapted_simulcast_id,
-                               const TemporalLayersFactory& tl_factory)
-      : adapted_simulcast_id_(adapted_simulcast_id), tl_factory_(tl_factory) {}
-  ~TemporalLayersFactoryAdapter() override {}
-  webrtc::TemporalLayers* Create(int simulcast_id,
-                                 int temporal_layers,
-                                 uint8_t initial_tl0_pic_idx) const override {
-    return tl_factory_.Create(adapted_simulcast_id_, temporal_layers,
-                              initial_tl0_pic_idx);
-  }
-  std::unique_ptr<webrtc::TemporalLayersChecker> CreateChecker(
-      int simulcast_id,
-      int temporal_layers,
-      uint8_t initial_tl0_pic_idx) const override {
-    return tl_factory_.CreateChecker(adapted_simulcast_id_, temporal_layers,
-                                     initial_tl0_pic_idx);
-  }
-
-  const int adapted_simulcast_id_;
-  const TemporalLayersFactory& tl_factory_;
-};
-
 }  // namespace
 
 namespace webrtc {
 
-SimulcastEncoderAdapter::SimulcastEncoderAdapter(VideoEncoderFactory* factory)
+SimulcastEncoderAdapter::SimulcastEncoderAdapter(VideoEncoderFactory* factory,
+                                                 const SdpVideoFormat& format)
     : inited_(0),
       factory_(factory),
-      cricket_factory_(nullptr),
+      video_format_(format),
       encoded_complete_callback_(nullptr),
-      implementation_name_("SimulcastEncoderAdapter") {
-  // The adapter is typically created on the worker thread, but operated on
-  // the encoder task queue.
-  encoder_queue_.Detach();
+      experimental_boosted_screenshare_qp_(GetScreenshareBoostedQpValue()),
+      boost_base_layer_quality_(RateControlSettings::ParseFromFieldTrials()
+                                    .Vp8BoostBaseLayerQuality()) {
+  RTC_DCHECK(factory_);
+  encoder_info_.implementation_name = "SimulcastEncoderAdapter";
 
-  memset(&codec_, 0, sizeof(webrtc::VideoCodec));
-}
-
-SimulcastEncoderAdapter::SimulcastEncoderAdapter(
-    cricket::WebRtcVideoEncoderFactory* factory)
-    : inited_(0),
-      factory_(nullptr),
-      cricket_factory_(factory),
-      encoded_complete_callback_(nullptr),
-      implementation_name_("SimulcastEncoderAdapter") {
   // The adapter is typically created on the worker thread, but operated on
   // the encoder task queue.
   encoder_queue_.Detach();
@@ -168,7 +145,7 @@ SimulcastEncoderAdapter::~SimulcastEncoderAdapter() {
 }
 
 int SimulcastEncoderAdapter::Release() {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
 
   while (!streaminfos_.empty()) {
     std::unique_ptr<VideoEncoder> encoder =
@@ -193,7 +170,7 @@ int SimulcastEncoderAdapter::Release() {
 int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
                                         int number_of_cores,
                                         size_t max_payload_size) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
 
   if (number_of_cores < 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
@@ -213,13 +190,9 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
   RTC_DCHECK_LE(number_of_streams, kMaxSimulcastStreams);
   const bool doing_simulcast = (number_of_streams > 1);
 
-  if (doing_simulcast && !ValidSimulcastResolutions(*inst, number_of_streams)) {
-    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
-  }
-
   codec_ = *inst;
-  SimulcastRateAllocator rate_allocator(codec_, nullptr);
-  BitrateAllocation allocation = rate_allocator.GetAllocation(
+  SimulcastRateAllocator rate_allocator(codec_);
+  VideoBitrateAllocation allocation = rate_allocator.GetAllocation(
       codec_.startBitrate * 1000, codec_.maxFramerate);
   std::vector<uint32_t> start_bitrates;
   for (int i = 0; i < kMaxSimulcastStreams; ++i) {
@@ -227,28 +200,46 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
     start_bitrates.push_back(stream_bitrate);
   }
 
-  std::string implementation_name;
+  encoder_info_.supports_native_handle = true;
+  encoder_info_.scaling_settings.thresholds = absl::nullopt;
   // Create |number_of_streams| of encoder instances and init them.
+
+  const auto minmax = std::minmax_element(
+      std::begin(codec_.simulcastStream),
+      std::begin(codec_.simulcastStream) + number_of_streams,
+      StreamResolutionCompare);
+  const auto lowest_resolution_stream_index =
+      std::distance(std::begin(codec_.simulcastStream), minmax.first);
+  const auto highest_resolution_stream_index =
+      std::distance(std::begin(codec_.simulcastStream), minmax.second);
+
+  RTC_DCHECK_LT(lowest_resolution_stream_index, number_of_streams);
+  RTC_DCHECK_LT(highest_resolution_stream_index, number_of_streams);
+
   for (int i = 0; i < number_of_streams; ++i) {
     VideoCodec stream_codec;
     uint32_t start_bitrate_kbps = start_bitrates[i];
+    const bool send_stream = start_bitrate_kbps > 0;
     if (!doing_simulcast) {
       stream_codec = codec_;
       stream_codec.numberOfSimulcastStreams = 1;
+
     } else {
       // Cap start bitrate to the min bitrate in order to avoid strange codec
-      // behavior. Since sending sending will be false, this should not matter.
+      // behavior. Since sending will be false, this should not matter.
+      StreamResolution stream_resolution =
+          i == highest_resolution_stream_index
+              ? StreamResolution::HIGHEST
+              : i == lowest_resolution_stream_index ? StreamResolution::LOWEST
+                                                    : StreamResolution::OTHER;
+
       start_bitrate_kbps =
           std::max(codec_.simulcastStream[i].minBitrate, start_bitrate_kbps);
-      bool highest_resolution_stream = (i == (number_of_streams - 1));
-      PopulateStreamCodec(codec_, i, start_bitrate_kbps,
-                          highest_resolution_stream, &stream_codec);
+      PopulateStreamCodec(codec_, i, start_bitrate_kbps, stream_resolution,
+                          &stream_codec);
     }
-    TemporalLayersFactoryAdapter tl_factory_adapter(i,
-                                                    *codec_.VP8()->tl_factory);
-    stream_codec.VP8()->tl_factory = &tl_factory_adapter;
 
-    // TODO(ronghuawu): Remove once this is handled in VP8EncoderImpl.
+    // TODO(ronghuawu): Remove once this is handled in LibvpxVp8Encoder.
     if (stream_codec.qpMax < kDefaultMinQp) {
       stream_codec.qpMax = kDefaultMaxQp;
     }
@@ -261,9 +252,8 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
       encoder = std::move(stored_encoders_.top());
       stored_encoders_.pop();
     } else {
-      encoder = factory_ ? factory_->CreateVideoEncoder(SdpVideoFormat("VP8"))
-                         : CreateScopedVideoEncoder(cricket_factory_,
-                                                    cricket::VideoCodec("VP8"));
+      encoder = factory_->CreateVideoEncoder(SdpVideoFormat(
+          codec_.codecType == webrtc::kVideoCodecVP8 ? "VP8" : "H264"));
     }
 
     ret = encoder->InitEncode(&stream_codec, number_of_cores, max_payload_size);
@@ -274,24 +264,69 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
       Release();
       return ret;
     }
+
     std::unique_ptr<EncodedImageCallback> callback(
         new AdapterEncodedImageCallback(this, i));
     encoder->RegisterEncodeCompleteCallback(callback.get());
     streaminfos_.emplace_back(std::move(encoder), std::move(callback),
                               stream_codec.width, stream_codec.height,
-                              start_bitrate_kbps > 0);
+                              send_stream);
 
-    if (i != 0) {
-      implementation_name += ", ";
+    if (!doing_simulcast) {
+      // Without simulcast, just pass through the encoder info from the one
+      // active encoder.
+      encoder_info_ = streaminfos_[0].encoder->GetEncoderInfo();
+    } else {
+      const EncoderInfo encoder_impl_info =
+          streaminfos_[i].encoder->GetEncoderInfo();
+
+      if (i == 0) {
+        // Quality scaling not enabled for simulcast.
+        encoder_info_.scaling_settings = VideoEncoder::ScalingSettings::kOff;
+
+        // Encoder name indicates names of all sub-encoders.
+        encoder_info_.implementation_name = "SimulcastEncoderAdapter (";
+        encoder_info_.implementation_name +=
+            encoder_impl_info.implementation_name;
+
+        encoder_info_.supports_native_handle =
+            encoder_impl_info.supports_native_handle;
+        encoder_info_.has_trusted_rate_controller =
+            encoder_impl_info.has_trusted_rate_controller;
+        encoder_info_.is_hardware_accelerated =
+            encoder_impl_info.is_hardware_accelerated;
+        encoder_info_.has_internal_source =
+            encoder_impl_info.has_internal_source;
+      } else {
+        encoder_info_.implementation_name += ", ";
+        encoder_info_.implementation_name +=
+            encoder_impl_info.implementation_name;
+
+        // Native handle supported only if all encoders supports it.
+        encoder_info_.supports_native_handle &=
+            encoder_impl_info.supports_native_handle;
+
+        // Trusted rate controller only if all encoders have it.
+        encoder_info_.has_trusted_rate_controller &=
+            encoder_impl_info.has_trusted_rate_controller;
+
+        // Uses hardware support if any of the encoders uses it.
+        // For example, if we are having issues with down-scaling due to
+        // pipelining delay in HW encoders we need higher encoder usage
+        // thresholds in CPU adaptation.
+        encoder_info_.is_hardware_accelerated |=
+            encoder_impl_info.is_hardware_accelerated;
+
+        // Has internal source only if all encoders have it.
+        encoder_info_.has_internal_source &=
+            encoder_impl_info.has_internal_source;
+      }
+      encoder_info_.fps_allocation[i] = encoder_impl_info.fps_allocation[0];
     }
-    implementation_name += streaminfos_[i].encoder->ImplementationName();
   }
 
   if (doing_simulcast) {
-    implementation_name_ =
-        "SimulcastEncoderAdapter (" + implementation_name + ")";
-  } else {
-    implementation_name_ = implementation_name;
+    encoder_info_.implementation_name += ")";
   }
 
   // To save memory, don't store encoders that we don't use.
@@ -304,9 +339,8 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
 
 int SimulcastEncoderAdapter::Encode(
     const VideoFrame& input_image,
-    const CodecSpecificInfo* codec_specific_info,
-    const std::vector<FrameType>* frame_types) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
+    const std::vector<VideoFrameType>* frame_types) {
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
 
   if (!Initialized()) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
@@ -320,7 +354,7 @@ int SimulcastEncoderAdapter::Encode(
   bool send_key_frame = false;
   if (frame_types) {
     for (size_t i = 0; i < frame_types->size(); ++i) {
-      if (frame_types->at(i) == kVideoFrameKey) {
+      if (frame_types->at(i) == VideoFrameType::kVideoFrameKey) {
         send_key_frame = true;
         break;
       }
@@ -342,12 +376,12 @@ int SimulcastEncoderAdapter::Encode(
       continue;
     }
 
-    std::vector<FrameType> stream_frame_types;
+    std::vector<VideoFrameType> stream_frame_types;
     if (send_key_frame) {
-      stream_frame_types.push_back(kVideoFrameKey);
+      stream_frame_types.push_back(VideoFrameType::kVideoFrameKey);
       streaminfos_[stream_idx].key_frame_request = false;
     } else {
-      stream_frame_types.push_back(kVideoFrameDelta);
+      stream_frame_types.push_back(VideoFrameType::kVideoFrameDelta);
     }
 
     int dst_width = streaminfos_[stream_idx].width;
@@ -365,8 +399,8 @@ int SimulcastEncoderAdapter::Encode(
     if ((dst_width == src_width && dst_height == src_height) ||
         input_image.video_frame_buffer()->type() ==
             VideoFrameBuffer::Type::kNative) {
-      int ret = streaminfos_[stream_idx].encoder->Encode(
-          input_image, codec_specific_info, &stream_frame_types);
+      int ret = streaminfos_[stream_idx].encoder->Encode(input_image,
+                                                         &stream_frame_types);
       if (ret != WEBRTC_VIDEO_CODEC_OK) {
         return ret;
       }
@@ -384,10 +418,16 @@ int SimulcastEncoderAdapter::Encode(
                         dst_buffer->StrideV(), dst_width, dst_height,
                         libyuv::kFilterBilinear);
 
-      int ret = streaminfos_[stream_idx].encoder->Encode(
-          VideoFrame(dst_buffer, input_image.timestamp(),
-                     input_image.render_time_ms(), webrtc::kVideoRotation_0),
-          codec_specific_info, &stream_frame_types);
+      // UpdateRect is not propagated to lower simulcast layers currently.
+      // TODO(ilnik): Consider scaling UpdateRect together with the buffer.
+      VideoFrame frame = VideoFrame::Builder()
+                             .set_video_frame_buffer(dst_buffer)
+                             .set_timestamp_rtp(input_image.timestamp())
+                             .set_rotation(webrtc::kVideoRotation_0)
+                             .set_timestamp_ms(input_image.render_time_ms())
+                             .build();
+      int ret =
+          streaminfos_[stream_idx].encoder->Encode(frame, &stream_frame_types);
       if (ret != WEBRTC_VIDEO_CODEC_OK) {
         return ret;
       }
@@ -399,54 +439,59 @@ int SimulcastEncoderAdapter::Encode(
 
 int SimulcastEncoderAdapter::RegisterEncodeCompleteCallback(
     EncodedImageCallback* callback) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
   encoded_complete_callback_ = callback;
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int SimulcastEncoderAdapter::SetChannelParameters(uint32_t packet_loss,
-                                                  int64_t rtt) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
-  for (size_t stream_idx = 0; stream_idx < streaminfos_.size(); ++stream_idx) {
-    streaminfos_[stream_idx].encoder->SetChannelParameters(packet_loss, rtt);
-  }
-  return WEBRTC_VIDEO_CODEC_OK;
-}
-
-int SimulcastEncoderAdapter::SetRateAllocation(const BitrateAllocation& bitrate,
-                                               uint32_t new_framerate) {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
+void SimulcastEncoderAdapter::SetRates(
+    const RateControlParameters& parameters) {
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
 
   if (!Initialized()) {
-    return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
+    RTC_LOG(LS_WARNING) << "SetRates while not initialized";
+    return;
   }
 
-  if (new_framerate < 1) {
-    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
+  if (parameters.framerate_fps < 1.0) {
+    RTC_LOG(LS_WARNING) << "Invalid framerate: " << parameters.framerate_fps;
+    return;
   }
 
-  if (codec_.maxBitrate > 0 && bitrate.get_sum_kbps() > codec_.maxBitrate) {
-    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
+  if (codec_.maxBitrate > 0 &&
+      parameters.bitrate.get_sum_kbps() > codec_.maxBitrate) {
+    RTC_LOG(LS_WARNING) << "Total bitrate " << parameters.bitrate.get_sum_kbps()
+                        << " exceeds max bitrate: " << codec_.maxBitrate;
+    return;
   }
 
-  if (bitrate.get_sum_bps() > 0) {
+  if (parameters.bitrate.get_sum_bps() > 0) {
     // Make sure the bitrate fits the configured min bitrates. 0 is a special
     // value that means paused, though, so leave it alone.
-    if (bitrate.get_sum_kbps() < codec_.minBitrate) {
-      return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
+    if (parameters.bitrate.get_sum_kbps() < codec_.minBitrate) {
+      RTC_LOG(LS_WARNING) << "Total bitrate "
+                          << parameters.bitrate.get_sum_kbps()
+                          << " is lower than minimum bitrate: "
+                          << codec_.minBitrate;
+      return;
     }
 
     if (codec_.numberOfSimulcastStreams > 0 &&
-        bitrate.get_sum_kbps() < codec_.simulcastStream[0].minBitrate) {
-      return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
+        parameters.bitrate.get_sum_kbps() <
+            codec_.simulcastStream[0].minBitrate) {
+      RTC_LOG(LS_WARNING) << "Total bitrate "
+                          << parameters.bitrate.get_sum_kbps()
+                          << " is lower than minimum bitrate of base layer: "
+                          << codec_.simulcastStream[0].minBitrate;
+      return;
     }
   }
 
-  codec_.maxFramerate = new_framerate;
+  codec_.maxFramerate = static_cast<uint32_t>(parameters.framerate_fps + 0.5);
 
   for (size_t stream_idx = 0; stream_idx < streaminfos_.size(); ++stream_idx) {
     uint32_t stream_bitrate_kbps =
-        bitrate.GetSpatialLayerSum(stream_idx) / 1000;
+        parameters.bitrate.GetSpatialLayerSum(stream_idx) / 1000;
 
     // Need a key frame if we have not sent this stream before.
     if (stream_bitrate_kbps > 0 && !streaminfos_[stream_idx].send_stream) {
@@ -456,17 +501,31 @@ int SimulcastEncoderAdapter::SetRateAllocation(const BitrateAllocation& bitrate,
 
     // Slice the temporal layers out of the full allocation and pass it on to
     // the encoder handling the current simulcast stream.
-    BitrateAllocation stream_allocation;
+    RateControlParameters stream_parameters = parameters;
+    stream_parameters.bitrate = VideoBitrateAllocation();
     for (int i = 0; i < kMaxTemporalStreams; ++i) {
-      if (bitrate.HasBitrate(stream_idx, i)) {
-        stream_allocation.SetBitrate(0, i, bitrate.GetBitrate(stream_idx, i));
+      if (parameters.bitrate.HasBitrate(stream_idx, i)) {
+        stream_parameters.bitrate.SetBitrate(
+            0, i, parameters.bitrate.GetBitrate(stream_idx, i));
       }
     }
-    streaminfos_[stream_idx].encoder->SetRateAllocation(stream_allocation,
-                                                        new_framerate);
-  }
 
-  return WEBRTC_VIDEO_CODEC_OK;
+    // Assign link allocation proportionally to spatial layer allocation.
+    if (parameters.bandwidth_allocation != DataRate::Zero()) {
+      stream_parameters.bandwidth_allocation =
+          DataRate::bps((parameters.bandwidth_allocation.bps() *
+                         stream_parameters.bitrate.get_sum_bps()) /
+                        parameters.bitrate.get_sum_bps());
+      // Make sure we don't allocate bandwidth lower than target bitrate.
+      if (stream_parameters.bandwidth_allocation.bps() <
+          stream_parameters.bitrate.get_sum_bps()) {
+        stream_parameters.bandwidth_allocation =
+            DataRate::bps(stream_parameters.bitrate.get_sum_bps());
+      }
+    }
+
+    streaminfos_[stream_idx].encoder->SetRates(stream_parameters);
+  }
 }
 
 // TODO(brandtr): Add task checker to this member function, when all encoder
@@ -476,26 +535,24 @@ EncodedImageCallback::Result SimulcastEncoderAdapter::OnEncodedImage(
     const EncodedImage& encodedImage,
     const CodecSpecificInfo* codecSpecificInfo,
     const RTPFragmentationHeader* fragmentation) {
+  EncodedImage stream_image(encodedImage);
   CodecSpecificInfo stream_codec_specific = *codecSpecificInfo;
-  stream_codec_specific.codec_name = implementation_name_.c_str();
-  CodecSpecificInfoVP8* vp8Info = &(stream_codec_specific.codecSpecific.VP8);
-  vp8Info->simulcastIdx = stream_idx;
+
+  stream_image.SetSpatialIndex(stream_idx);
 
   return encoded_complete_callback_->OnEncodedImage(
-      encodedImage, &stream_codec_specific, fragmentation);
+      stream_image, &stream_codec_specific, fragmentation);
 }
 
 void SimulcastEncoderAdapter::PopulateStreamCodec(
     const webrtc::VideoCodec& inst,
     int stream_index,
     uint32_t start_bitrate_kbps,
-    bool highest_resolution_stream,
+    StreamResolution stream_resolution,
     webrtc::VideoCodec* stream_codec) {
   *stream_codec = inst;
 
   // Stream specific settings.
-  stream_codec->VP8()->numberOfTemporalLayers =
-      inst.simulcastStream[stream_index].numberOfTemporalLayers;
   stream_codec->numberOfSimulcastStreams = 0;
   stream_codec->width = inst.simulcastStream[stream_index].width;
   stream_codec->height = inst.simulcastStream[stream_index].height;
@@ -503,20 +560,30 @@ void SimulcastEncoderAdapter::PopulateStreamCodec(
   stream_codec->minBitrate = inst.simulcastStream[stream_index].minBitrate;
   stream_codec->qpMax = inst.simulcastStream[stream_index].qpMax;
   // Settings that are based on stream/resolution.
-  const bool lowest_resolution_stream = (stream_index == 0);
-  if (lowest_resolution_stream) {
+  if (stream_resolution == StreamResolution::LOWEST) {
     // Settings for lowest spatial resolutions.
-    stream_codec->qpMax = kLowestResMaxQp;
-  }
-  if (!highest_resolution_stream) {
-    // For resolutions below CIF, set the codec |complexity| parameter to
-    // kComplexityHigher, which maps to cpu_used = -4.
-    int pixels_per_frame = stream_codec->width * stream_codec->height;
-    if (pixels_per_frame < 352 * 288) {
-      stream_codec->VP8()->complexity = webrtc::kComplexityHigher;
+    if (inst.mode == VideoCodecMode::kScreensharing) {
+      if (experimental_boosted_screenshare_qp_) {
+        stream_codec->qpMax = *experimental_boosted_screenshare_qp_;
+      }
+    } else if (boost_base_layer_quality_) {
+      stream_codec->qpMax = kLowestResMaxQp;
     }
-    // Turn off denoising for all streams but the highest resolution.
-    stream_codec->VP8()->denoisingOn = false;
+  }
+  if (inst.codecType == webrtc::kVideoCodecVP8) {
+    stream_codec->VP8()->numberOfTemporalLayers =
+        inst.simulcastStream[stream_index].numberOfTemporalLayers;
+    if (stream_resolution != StreamResolution::HIGHEST) {
+      // For resolutions below CIF, set the codec |complexity| parameter to
+      // kComplexityHigher, which maps to cpu_used = -4.
+      int pixels_per_frame = stream_codec->width * stream_codec->height;
+      if (pixels_per_frame < 352 * 288) {
+        stream_codec->VP8()->complexity =
+            webrtc::VideoCodecComplexity::kComplexityHigher;
+      }
+      // Turn off denoising for all streams but the highest resolution.
+      stream_codec->VP8()->denoisingOn = false;
+    }
   }
   // TODO(ronghuawu): what to do with targetBitrate.
 
@@ -533,32 +600,8 @@ void SimulcastEncoderAdapter::DestroyStoredEncoders() {
   }
 }
 
-bool SimulcastEncoderAdapter::SupportsNativeHandle() const {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
-  // We should not be calling this method before streaminfos_ are configured.
-  RTC_DCHECK(!streaminfos_.empty());
-  for (const auto& streaminfo : streaminfos_) {
-    if (!streaminfo.encoder->SupportsNativeHandle()) {
-      return false;
-    }
-  }
-  return true;
-}
-
-VideoEncoder::ScalingSettings SimulcastEncoderAdapter::GetScalingSettings()
-    const {
-  // TODO(brandtr): Investigate why the sequence checker below fails on mac.
-  // RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
-  // Turn off quality scaling for simulcast.
-  if (!Initialized() || NumberOfStreams(codec_) != 1) {
-    return VideoEncoder::ScalingSettings(false);
-  }
-  return streaminfos_[0].encoder->GetScalingSettings();
-}
-
-const char* SimulcastEncoderAdapter::ImplementationName() const {
-  RTC_DCHECK_CALLED_SEQUENTIALLY(&encoder_queue_);
-  return implementation_name_.c_str();
+VideoEncoder::EncoderInfo SimulcastEncoderAdapter::GetEncoderInfo() const {
+  return encoder_info_;
 }
 
 }  // namespace webrtc

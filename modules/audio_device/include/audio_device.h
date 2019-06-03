@@ -11,30 +11,29 @@
 #ifndef MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_H_
 #define MODULES_AUDIO_DEVICE_INCLUDE_AUDIO_DEVICE_H_
 
+#include "api/scoped_refptr.h"
+#include "api/task_queue/task_queue_factory.h"
 #include "modules/audio_device/include/audio_device_defines.h"
-#include "rtc_base/scoped_ref_ptr.h"
-#include "rtc_base/refcount.h"
+#include "rtc_base/ref_count.h"
 
 namespace webrtc {
 
+class AudioDeviceModuleForTest;
+
 class AudioDeviceModule : public rtc::RefCountInterface {
  public:
-  // Deprecated.
-  // TODO(henrika): to be removed.
-  enum ErrorCode {
-    kAdmErrNone = 0,
-    kAdmErrArgument = 1
-  };
-
   enum AudioLayer {
     kPlatformDefaultAudio = 0,
-    kWindowsCoreAudio = 2,
-    kLinuxAlsaAudio = 3,
-    kLinuxPulseAudio = 4,
-    kAndroidJavaAudio = 5,
-    kAndroidOpenSLESAudio = 6,
-    kAndroidJavaInputAndOpenSLESOutputAudio = 7,
-    kDummyAudio = 8
+    kWindowsCoreAudio,
+    kWindowsCoreAudio2,  // experimental
+    kLinuxAlsaAudio,
+    kLinuxPulseAudio,
+    kAndroidJavaAudio,
+    kAndroidOpenSLESAudio,
+    kAndroidJavaInputAndOpenSLESOutputAudio,
+    kAndroidAAudioAudio,
+    kAndroidJavaInputAndAAudioOutputAudio,
+    kDummyAudio,
   };
 
   enum WindowsDeviceType {
@@ -42,21 +41,16 @@ class AudioDeviceModule : public rtc::RefCountInterface {
     kDefaultDevice = -2
   };
 
-  // TODO(bugs.webrtc.org/7306): deprecated.
-  enum ChannelType {
-    kChannelLeft = 0,
-    kChannelRight = 1,
-    kChannelBoth = 2
-  };
-
  public:
-  // Creates an ADM.
+  // Creates a default ADM for usage in production code.
   static rtc::scoped_refptr<AudioDeviceModule> Create(
-      const AudioLayer audio_layer);
-  // TODO(bugs.webrtc.org/7306): deprecated (to be removed).
-  static rtc::scoped_refptr<AudioDeviceModule> Create(
-      const int32_t id,
-      const AudioLayer audio_layer);
+      AudioLayer audio_layer,
+      TaskQueueFactory* task_queue_factory);
+  // Creates an ADM with support for extra test methods. Don't use this factory
+  // in production code.
+  static rtc::scoped_refptr<AudioDeviceModuleForTest> CreateForTest(
+      AudioLayer audio_layer,
+      TaskQueueFactory* task_queue_factory);
 
   // Retrieve the currently utilized audio layer
   virtual int32_t ActiveAudioLayer(AudioLayer* audioLayer) const = 0;
@@ -101,10 +95,6 @@ class AudioDeviceModule : public rtc::RefCountInterface {
   virtual int32_t StopRecording() = 0;
   virtual bool Recording() const = 0;
 
-  // Microphone Automatic Gain Control (AGC)
-  virtual int32_t SetAGC(bool enable) = 0;
-  virtual bool AGC() const = 0;
-
   // Audio mixer initialization
   virtual int32_t InitSpeaker() = 0;
   virtual bool SpeakerIsInitialized() const = 0;
@@ -142,30 +132,9 @@ class AudioDeviceModule : public rtc::RefCountInterface {
   virtual int32_t StereoRecordingIsAvailable(bool* available) const = 0;
   virtual int32_t SetStereoRecording(bool enable) = 0;
   virtual int32_t StereoRecording(bool* enabled) const = 0;
-  // TODO(bugs.webrtc.org/7306): deprecated.
-  virtual int32_t SetRecordingChannel(const ChannelType channel) { return -1; }
-  virtual int32_t RecordingChannel(ChannelType* channel) const { return -1; }
 
   // Playout delay
   virtual int32_t PlayoutDelay(uint16_t* delayMS) const = 0;
-
-  // TODO(bugs.webrtc.org/7306): deprecated (to be removed).
-  virtual int32_t SetRecordingSampleRate(const uint32_t samplesPerSec) {
-    return -1;
-  }
-  virtual int32_t RecordingSampleRate(uint32_t* samplesPerSec) const {
-    return -1;
-  }
-  virtual int32_t SetPlayoutSampleRate(const uint32_t samplesPerSec) {
-    return -1;
-  }
-  virtual int32_t PlayoutSampleRate(uint32_t* samplesPerSec) const {
-    return -1;
-  }
-
-  // TODO(bugs.webrtc.org/7306): deprecated (to be removed).
-  virtual int32_t SetLoudspeakerStatus(bool enable) { return -1; }
-  virtual int32_t GetLoudspeakerStatus(bool* enabled) const { return -1; }
 
   // Only supported on Android.
   virtual bool BuiltInAECIsAvailable() const = 0;
@@ -185,6 +154,20 @@ class AudioDeviceModule : public rtc::RefCountInterface {
 
  protected:
   ~AudioDeviceModule() override {}
+};
+
+// Extends the default ADM interface with some extra test methods.
+// Intended for usage in tests only and requires a unique factory method.
+class AudioDeviceModuleForTest : public AudioDeviceModule {
+ public:
+  // Triggers internal restart sequences of audio streaming. Can be used by
+  // tests to emulate events corresponding to e.g. removal of an active audio
+  // device or other actions which causes the stream to be disconnected.
+  virtual int RestartPlayoutInternally() = 0;
+  virtual int RestartRecordingInternally() = 0;
+
+  virtual int SetPlayoutSampleRate(uint32_t sample_rate) = 0;
+  virtual int SetRecordingSampleRate(uint32_t sample_rate) = 0;
 };
 
 }  // namespace webrtc

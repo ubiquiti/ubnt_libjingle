@@ -11,9 +11,8 @@
 
 #include "modules/remote_bitrate_estimator/test/estimators/congestion_window.h"
 
-#include <algorithm>
-
 #include "modules/remote_bitrate_estimator/test/estimators/bbr.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace testing {
@@ -33,7 +32,7 @@ CongestionWindow::~CongestionWindow() {}
 
 int CongestionWindow::GetCongestionWindow(BbrBweSender::Mode mode,
                                           int64_t bandwidth_estimate_bps,
-                                          rtc::Optional<int64_t> min_rtt_ms,
+                                          absl::optional<int64_t> min_rtt_ms,
                                           float gain) {
   return GetTargetCongestionWindow(bandwidth_estimate_bps, min_rtt_ms, gain);
 }
@@ -49,7 +48,7 @@ void CongestionWindow::AckReceived(size_t received_packet_size_bytes) {
 
 int CongestionWindow::GetTargetCongestionWindow(
     int64_t bandwidth_estimate_bps,
-    rtc::Optional<int64_t> min_rtt_ms,
+    absl::optional<int64_t> min_rtt_ms,
     float gain) {
   // If we have no rtt sample yet, return the starting congestion window size.
   if (!min_rtt_ms)

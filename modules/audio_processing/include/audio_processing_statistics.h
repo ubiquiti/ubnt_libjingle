@@ -11,24 +11,41 @@
 #ifndef MODULES_AUDIO_PROCESSING_INCLUDE_AUDIO_PROCESSING_STATISTICS_H_
 #define MODULES_AUDIO_PROCESSING_INCLUDE_AUDIO_PROCESSING_STATISTICS_H_
 
-#include "api/optional.h"
+#include <stdint.h>
+
+#include "absl/types/optional.h"
+#include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
 // This version of the stats uses Optionals, it will replace the regular
 // AudioProcessingStatistics struct.
-struct AudioProcessingStats {
+struct RTC_EXPORT AudioProcessingStats {
   AudioProcessingStats();
   AudioProcessingStats(const AudioProcessingStats& other);
   ~AudioProcessingStats();
 
+  // The root mean square (RMS) level in dBFS (decibels from digital
+  // full-scale) of the last capture frame, after processing. It is
+  // constrained to [-127, 0].
+  // The computation follows: https://tools.ietf.org/html/rfc6465
+  // with the intent that it can provide the RTP audio level indication.
+  // Only reported if level estimation is enabled in AudioProcessing::Config.
+  absl::optional<int> output_rms_dbfs;
+
+  // True if voice is detected in the last capture frame, after processing.
+  // It is conservative in flagging audio as speech, with low likelihood of
+  // incorrectly flagging a frame as voice.
+  // Only reported if voice detection is enabled in AudioProcessing::Config.
+  absl::optional<bool> voice_detected;
+
   // AEC Statistics.
   // ERL = 10log_10(P_far / P_echo)
-  rtc::Optional<double> echo_return_loss;
+  absl::optional<double> echo_return_loss;
   // ERLE = 10log_10(P_echo / P_out)
-  rtc::Optional<double> echo_return_loss_enhancement;
+  absl::optional<double> echo_return_loss_enhancement;
   // Fraction of time that the AEC linear filter is divergent, in a 1-second
   // non-overlapped aggregation window.
-  rtc::Optional<double> divergent_filter_fraction;
+  absl::optional<double> divergent_filter_fraction;
 
   // The delay metrics consists of the delay median and standard deviation. It
   // also consists of the fraction of delay estimates that can make the echo
@@ -37,18 +54,18 @@ struct AudioProcessingStats {
   // second. Note that if there are several clients pulling metrics from
   // |GetStatistics()| during a session the first call from any of them will
   // change to one second aggregation window for all.
-  rtc::Optional<int32_t> delay_median_ms;
-  rtc::Optional<int32_t> delay_standard_deviation_ms;
+  absl::optional<int32_t> delay_median_ms;
+  absl::optional<int32_t> delay_standard_deviation_ms;
 
   // Residual echo detector likelihood.
-  rtc::Optional<double> residual_echo_likelihood;
+  absl::optional<double> residual_echo_likelihood;
   // Maximum residual echo likelihood from the last time period.
-  rtc::Optional<double> residual_echo_likelihood_recent_max;
+  absl::optional<double> residual_echo_likelihood_recent_max;
 
   // The instantaneous delay estimate produced in the AEC. The unit is in
   // milliseconds and the value is the instantaneous value at the time of the
   // call to |GetStatistics()|.
-  int delay_ms;
+  absl::optional<int32_t> delay_ms;
 };
 
 }  // namespace webrtc

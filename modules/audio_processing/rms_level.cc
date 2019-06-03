@@ -10,8 +10,8 @@
 
 #include "modules/audio_processing/rms_level.h"
 
-#include <math.h>
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
 #include "rtc_base/checks.h"
@@ -36,7 +36,7 @@ int ComputeRms(float mean_square) {
   const float mean_square_norm = mean_square / kMaxSquaredLevel;
   RTC_DCHECK_GT(mean_square_norm, kMinLevel);
   // 20log_10(x^0.5) = 10log_10(x)
-  const float rms = 10.f * log10(mean_square_norm);
+  const float rms = 10.f * std::log10(mean_square_norm);
   RTC_DCHECK_LE(rms, 0.f);
   RTC_DCHECK_GT(rms, -RmsLevel::kMinLevelDb);
   // Return the negated value.
@@ -54,7 +54,7 @@ void RmsLevel::Reset() {
   sum_square_ = 0.f;
   sample_count_ = 0;
   max_sum_square_ = 0.f;
-  block_size_ = rtc::nullopt;
+  block_size_ = absl::nullopt;
 }
 
 void RmsLevel::Analyze(rtc::ArrayView<const int16_t> data) {
@@ -88,7 +88,7 @@ int RmsLevel::Average() {
 
 RmsLevel::Levels RmsLevel::AverageAndPeak() {
   // Note that block_size_ should by design always be non-empty when
-  // sample_count_ != 0. Also, the * operator of rtc::Optional enforces this
+  // sample_count_ != 0. Also, the * operator of absl::optional enforces this
   // with a DCHECK.
   Levels levels = (sample_count_ == 0)
                       ? Levels{RmsLevel::kMinLevelDb, RmsLevel::kMinLevelDb}

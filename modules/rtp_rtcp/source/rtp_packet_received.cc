@@ -10,6 +10,8 @@
 
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 
+#include <stddef.h>
+#include <cstdint>
 #include <vector>
 
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
@@ -20,6 +22,13 @@ namespace webrtc {
 RtpPacketReceived::RtpPacketReceived() = default;
 RtpPacketReceived::RtpPacketReceived(const ExtensionManager* extensions)
     : RtpPacket(extensions) {}
+RtpPacketReceived::RtpPacketReceived(const RtpPacketReceived& packet) = default;
+RtpPacketReceived::RtpPacketReceived(RtpPacketReceived&& packet) = default;
+
+RtpPacketReceived& RtpPacketReceived::operator=(
+    const RtpPacketReceived& packet) = default;
+RtpPacketReceived& RtpPacketReceived::operator=(RtpPacketReceived&& packet) =
+    default;
 
 RtpPacketReceived::~RtpPacketReceived() {}
 
@@ -43,6 +52,9 @@ void RtpPacketReceived::GetHeader(RTPHeader* header) const {
   header->extension.hasAbsoluteSendTime =
       GetExtension<AbsoluteSendTime>(&header->extension.absoluteSendTime);
   header->extension.hasTransportSequenceNumber =
+      GetExtension<TransportSequenceNumberV2>(
+          &header->extension.transportSequenceNumber,
+          &header->extension.feedback_request) ||
       GetExtension<TransportSequenceNumber>(
           &header->extension.transportSequenceNumber);
   header->extension.hasAudioLevel = GetExtension<AudioLevel>(
@@ -54,10 +66,13 @@ void RtpPacketReceived::GetHeader(RTPHeader* header) const {
           &header->extension.videoContentType);
   header->extension.has_video_timing =
       GetExtension<VideoTimingExtension>(&header->extension.video_timing);
+  header->extension.has_frame_marking =
+      GetExtension<FrameMarkingExtension>(&header->extension.frame_marking);
   GetExtension<RtpStreamId>(&header->extension.stream_id);
   GetExtension<RepairedRtpStreamId>(&header->extension.repaired_stream_id);
   GetExtension<RtpMid>(&header->extension.mid);
   GetExtension<PlayoutDelayLimits>(&header->extension.playout_delay);
+  header->extension.color_space = GetExtension<ColorSpaceExtension>();
 }
 
 }  // namespace webrtc

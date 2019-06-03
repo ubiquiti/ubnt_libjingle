@@ -14,9 +14,8 @@
 
 #include <memory>
 
-#include "modules/include/module_common_types.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 

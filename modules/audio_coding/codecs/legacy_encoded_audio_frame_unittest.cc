@@ -10,11 +10,27 @@
 
 #include "modules/audio_coding/codecs/legacy_encoded_audio_frame.h"
 
-#include "modules/audio_coding/acm2/rent_a_codec.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "test/gtest.h"
 
 namespace webrtc {
+
+enum class NetEqDecoder {
+  kDecoderPCMu,
+  kDecoderPCMa,
+  kDecoderPCMu_2ch,
+  kDecoderPCMa_2ch,
+  kDecoderPCM16B,
+  kDecoderPCM16Bwb,
+  kDecoderPCM16Bswb32kHz,
+  kDecoderPCM16Bswb48kHz,
+  kDecoderPCM16B_2ch,
+  kDecoderPCM16Bwb_2ch,
+  kDecoderPCM16Bswb32kHz_2ch,
+  kDecoderPCM16Bswb48kHz_2ch,
+  kDecoderPCM16B_5ch,
+  kDecoderG722,
+};
 
 class SplitBySamplesTest : public ::testing::TestWithParam<NetEqDecoder> {
  protected:
@@ -97,20 +113,15 @@ TEST_P(SplitBySamplesTest, PayloadSizes) {
   // 40 ms -> 20 + 20 ms
   // 50 ms -> 25 + 25 ms
   // 60 ms -> 30 + 30 ms
-  ExpectedSplit expected_splits[] = {
-    {10, 1, {10}},
-    {20, 1, {20}},
-    {30, 1, {30}},
-    {40, 2, {20, 20}},
-    {50, 2, {25, 25}},
-    {60, 2, {30, 30}}
-  };
+  ExpectedSplit expected_splits[] = {{10, 1, {10}},     {20, 1, {20}},
+                                     {30, 1, {30}},     {40, 2, {20, 20}},
+                                     {50, 2, {25, 25}}, {60, 2, {30, 30}}};
 
   for (const auto& expected_split : expected_splits) {
     // The payload values are set to steadily increase (modulo 256), so that the
     // resulting frames can be checked and we can be reasonably certain no
     // sample was missed or repeated.
-    const auto generate_payload = [] (size_t num_bytes) {
+    const auto generate_payload = [](size_t num_bytes) {
       rtc::Buffer payload(num_bytes);
       uint8_t value = 0;
       // Allow wrap-around of value in counter below.
@@ -149,7 +160,7 @@ TEST_P(SplitBySamplesTest, PayloadSizes) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     LegacyEncodedAudioFrame,
     SplitBySamplesTest,
     ::testing::Values(NetEqDecoder::kDecoderPCMu,

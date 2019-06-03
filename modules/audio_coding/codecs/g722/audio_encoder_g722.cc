@@ -10,10 +10,8 @@
 
 #include "modules/audio_coding/codecs/g722/audio_encoder_g722.h"
 
-#include <algorithm>
+#include <cstdint>
 
-#include <limits>
-#include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/codecs/g722/g722_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -23,13 +21,6 @@ namespace webrtc {
 namespace {
 
 const size_t kSampleRateHz = 16000;
-
-AudioEncoderG722Config CreateConfig(const CodecInst& codec_inst) {
-  AudioEncoderG722Config config;
-  config.num_channels = rtc::dchecked_cast<int>(codec_inst.channels);
-  config.frame_size_ms = codec_inst.pacsize / 16;
-  return config;
-}
 
 }  // namespace
 
@@ -52,9 +43,6 @@ AudioEncoderG722Impl::AudioEncoderG722Impl(const AudioEncoderG722Config& config,
   }
   Reset();
 }
-
-AudioEncoderG722Impl::AudioEncoderG722Impl(const CodecInst& codec_inst)
-    : AudioEncoderG722Impl(CreateConfig(codec_inst), codec_inst.pltype) {}
 
 AudioEncoderG722Impl::~AudioEncoderG722Impl() = default;
 
@@ -123,7 +111,7 @@ AudioEncoder::EncodedInfo AudioEncoderG722Impl::EncodeImpl(
   const size_t bytes_to_encode = samples_per_channel / 2 * num_channels_;
   EncodedInfo info;
   info.encoded_bytes = encoded->AppendData(
-      bytes_to_encode, [&] (rtc::ArrayView<uint8_t> encoded) {
+      bytes_to_encode, [&](rtc::ArrayView<uint8_t> encoded) {
         // Interleave the encoded bytes of the different channels. Each separate
         // channel and the interleaved stream encodes two samples per byte, most
         // significant half first.

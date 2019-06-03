@@ -1,17 +1,15 @@
 /*
-*  Copyright (c) 2014 The WebRTC project authors. All Rights Reserved.
-*
-*  Use of this source code is governed by a BSD-style license
-*  that can be found in the LICENSE file in the root of the source
-*  tree. An additional intellectual property rights grant can be found
-*  in the file PATENTS.  All contributing project authors may
-*  be found in the AUTHORS file in the root of the source tree.
-*/
+ *  Copyright (c) 2014 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree. An additional intellectual property rights grant can be found
+ *  in the file PATENTS.  All contributing project authors may
+ *  be found in the AUTHORS file in the root of the source tree.
+ */
 
 #include "modules/rtp_rtcp/include/remote_ntp_time_estimator.h"
-#include "common_types.h"  // NOLINT(build/include)
 #include "system_wrappers/include/clock.h"
-#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -33,7 +31,7 @@ class RemoteNtpTimeEstimatorTest : public ::testing::Test {
       : local_clock_(kLocalClockInitialTimeMs * 1000),
         remote_clock_(kRemoteClockInitialTimeMs * 1000),
         estimator_(new RemoteNtpTimeEstimator(&local_clock_)) {}
-  ~RemoteNtpTimeEstimatorTest() {}
+  ~RemoteNtpTimeEstimatorTest() override = default;
 
   void AdvanceTimeMilliseconds(int64_t ms) {
     local_clock_.AdvanceTimeMilliseconds(ms);
@@ -57,15 +55,19 @@ class RemoteNtpTimeEstimatorTest : public ::testing::Test {
                               int64_t networking_delay_ms) {
     uint32_t rtcp_timestamp = GetRemoteTimestamp();
     int64_t ntp_error_fractions =
-        ntp_error_ms * NtpTime::kFractionsPerSecond / 1000;
+        ntp_error_ms * static_cast<int64_t>(NtpTime::kFractionsPerSecond) /
+        1000;
     NtpTime ntp(static_cast<uint64_t>(remote_clock_.CurrentNtpTime()) +
                 ntp_error_fractions);
     AdvanceTimeMilliseconds(kTestRtt / 2 + networking_delay_ms);
     ReceiveRtcpSr(kTestRtt, rtcp_timestamp, ntp.seconds(), ntp.fractions());
   }
 
-  void UpdateRtcpTimestamp(int64_t rtt, uint32_t ntp_secs, uint32_t ntp_frac,
-                           uint32_t rtp_timestamp, bool expected_result) {
+  void UpdateRtcpTimestamp(int64_t rtt,
+                           uint32_t ntp_secs,
+                           uint32_t ntp_frac,
+                           uint32_t rtp_timestamp,
+                           bool expected_result) {
     EXPECT_EQ(expected_result, estimator_->UpdateRtcpTimestamp(
                                    rtt, ntp_secs, ntp_frac, rtp_timestamp));
   }
@@ -108,12 +110,17 @@ TEST_F(RemoteNtpTimeEstimatorTest, Estimate) {
 }
 
 TEST_F(RemoteNtpTimeEstimatorTest, AveragesErrorsOut) {
-  test::ScopedFieldTrials override_field_trials(
-      "WebRTC-ClockEstimation/Enabled/");
-  // Reset estimator_ because it checks experiment status during construction.
-  estimator_.reset(new RemoteNtpTimeEstimator(&local_clock_));
-
-  // Remote peer sends first 5 RTCP SR without errors.
+  // Remote peer sends first 10 RTCP SR without errors.
+  AdvanceTimeMilliseconds(1000);
+  SendRtcpSr();
+  AdvanceTimeMilliseconds(1000);
+  SendRtcpSr();
+  AdvanceTimeMilliseconds(1000);
+  SendRtcpSr();
+  AdvanceTimeMilliseconds(1000);
+  SendRtcpSr();
+  AdvanceTimeMilliseconds(1000);
+  SendRtcpSr();
   AdvanceTimeMilliseconds(1000);
   SendRtcpSr();
   AdvanceTimeMilliseconds(1000);
@@ -125,18 +132,17 @@ TEST_F(RemoteNtpTimeEstimatorTest, AveragesErrorsOut) {
   AdvanceTimeMilliseconds(1000);
   SendRtcpSr();
 
-  AdvanceTimeMilliseconds(15);
+  AdvanceTimeMilliseconds(150);
   uint32_t rtp_timestamp = GetRemoteTimestamp();
   int64_t capture_ntp_time_ms = local_clock_.CurrentNtpInMilliseconds();
-
   // Local peer gets enough RTCP SR to calculate the capture time.
   EXPECT_EQ(capture_ntp_time_ms, estimator_->Estimate(rtp_timestamp));
 
   // Remote sends corrupted RTCP SRs
   AdvanceTimeMilliseconds(1000);
-  SendRtcpSrInaccurately(10, 10);
+  SendRtcpSrInaccurately(/*ntp_error_ms=*/2, /*networking_delay_ms=*/-1);
   AdvanceTimeMilliseconds(1000);
-  SendRtcpSrInaccurately(-20, 5);
+  SendRtcpSrInaccurately(/*ntp_error_ms=*/-2, /*networking_delay_ms=*/1);
 
   // New RTP packet to estimate timestamp.
   AdvanceTimeMilliseconds(150);

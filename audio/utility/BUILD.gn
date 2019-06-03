@@ -8,21 +8,23 @@
 import("../../webrtc.gni")
 
 group("utility") {
-  public_deps = [
+  deps = [
     ":audio_frame_operations",
   ]
 }
 
 rtc_static_library("audio_frame_operations") {
+  visibility = [ "*" ]
   sources = [
     "audio_frame_operations.cc",
     "audio_frame_operations.h",
   ]
 
   deps = [
-    "../..:webrtc_common",
-    "../../modules:module_api",
-    "../../modules/audio_coding:audio_format_conversion",
+    "../../api/audio:audio_frame_api",
+    "../../common_audio",
+    "../../rtc_base:checks",
+    "../../rtc_base:deprecation",
     "../../rtc_base:rtc_base_approved",
   ]
 }
@@ -35,14 +37,10 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":audio_frame_operations",
-      "../../modules:module_api",
+      "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
       "../../test:test_support",
       "//testing/gtest",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }

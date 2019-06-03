@@ -21,13 +21,13 @@
 
 namespace webrtc {
 
-rtc::Optional<uint32_t> ParseRtcpPacketSenderSsrc(
+absl::optional<uint32_t> ParseRtcpPacketSenderSsrc(
     rtc::ArrayView<const uint8_t> packet) {
   rtcp::CommonHeader header;
   for (const uint8_t* next_packet = packet.begin(); next_packet < packet.end();
        next_packet = header.NextPacket()) {
     if (!header.Parse(next_packet, packet.end() - next_packet)) {
-      return rtc::Optional<uint32_t>();
+      return absl::nullopt;
     }
 
     switch (header.type()) {
@@ -41,15 +41,15 @@ rtc::Optional<uint32_t> ParseRtcpPacketSenderSsrc(
         if (header.payload_size_bytes() >= sizeof(uint32_t)) {
           const uint32_t ssrc_sender =
               ByteReader<uint32_t>::ReadBigEndian(header.payload());
-          return rtc::Optional<uint32_t>(ssrc_sender);
+          return ssrc_sender;
         } else {
-          return rtc::Optional<uint32_t>();
+          return absl::nullopt;
         }
       }
     }
   }
 
-  return rtc::Optional<uint32_t>();
+  return absl::nullopt;
 }
 
 }  // namespace webrtc

@@ -55,7 +55,7 @@ class AudioDeviceTemplate : public AudioDeviceGeneric {
 
   InitStatus Init() override {
     RTC_LOG(INFO) << __FUNCTION__;
-    RTC_DCHECK(thread_checker_.CalledOnValidThread());
+    RTC_DCHECK(thread_checker_.IsCurrent());
     RTC_DCHECK(!initialized_);
     if (!audio_manager_->Init()) {
       return InitStatus::OTHER_ERROR;
@@ -75,7 +75,7 @@ class AudioDeviceTemplate : public AudioDeviceGeneric {
 
   int32_t Terminate() override {
     RTC_LOG(INFO) << __FUNCTION__;
-    RTC_DCHECK(thread_checker_.CalledOnValidThread());
+    RTC_DCHECK(thread_checker_.IsCurrent());
     int32_t err = input_.Terminate();
     err |= output_.Terminate();
     err |= !audio_manager_->Close();
@@ -86,7 +86,7 @@ class AudioDeviceTemplate : public AudioDeviceGeneric {
 
   bool Initialized() const override {
     RTC_LOG(INFO) << __FUNCTION__;
-    RTC_DCHECK(thread_checker_.CalledOnValidThread());
+    RTC_DCHECK(thread_checker_.IsCurrent());
     return initialized_;
   }
 
@@ -214,18 +214,6 @@ class AudioDeviceTemplate : public AudioDeviceGeneric {
   }
 
   bool Recording() const override { return input_.Recording(); }
-
-  int32_t SetAGC(bool enable) override {
-    if (enable) {
-      FATAL() << "Should never be called";
-    }
-    return -1;
-  }
-
-  bool AGC() const override {
-    RTC_LOG(INFO) << __FUNCTION__;
-    return false;
-  }
 
   int32_t InitSpeaker() override {
     RTC_LOG(INFO) << __FUNCTION__;

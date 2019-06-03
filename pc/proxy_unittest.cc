@@ -14,7 +14,7 @@
 #include <string>
 
 #include "rtc_base/gunit.h"
-#include "rtc_base/refcount.h"
+#include "rtc_base/ref_count.h"
 #include "test/gmock.h"
 
 using ::testing::_;
@@ -64,30 +64,30 @@ class Fake : public FakeInterface {
 
 // Proxies for the test interface.
 BEGIN_PROXY_MAP(Fake)
-  PROXY_WORKER_THREAD_DESTRUCTOR()
-  PROXY_METHOD0(void, VoidMethod0)
-  PROXY_METHOD0(std::string, Method0)
-  PROXY_CONSTMETHOD0(std::string, ConstMethod0)
-  PROXY_WORKER_METHOD1(std::string, Method1, std::string)
-  PROXY_CONSTMETHOD1(std::string, ConstMethod1, std::string)
-  PROXY_WORKER_METHOD2(std::string, Method2, std::string, std::string)
+PROXY_WORKER_THREAD_DESTRUCTOR()
+PROXY_METHOD0(void, VoidMethod0)
+PROXY_METHOD0(std::string, Method0)
+PROXY_CONSTMETHOD0(std::string, ConstMethod0)
+PROXY_WORKER_METHOD1(std::string, Method1, std::string)
+PROXY_CONSTMETHOD1(std::string, ConstMethod1, std::string)
+PROXY_WORKER_METHOD2(std::string, Method2, std::string, std::string)
 END_PROXY_MAP()
 
 // Preprocessor hack to get a proxy class a name different than FakeProxy.
 #define FakeProxy FakeSignalingProxy
 #define FakeProxyWithInternal FakeSignalingProxyWithInternal
 BEGIN_SIGNALING_PROXY_MAP(Fake)
-  PROXY_SIGNALING_THREAD_DESTRUCTOR()
-  PROXY_METHOD0(void, VoidMethod0)
-  PROXY_METHOD0(std::string, Method0)
-  PROXY_CONSTMETHOD0(std::string, ConstMethod0)
-  PROXY_METHOD1(std::string, Method1, std::string)
-  PROXY_CONSTMETHOD1(std::string, ConstMethod1, std::string)
-  PROXY_METHOD2(std::string, Method2, std::string, std::string)
+PROXY_SIGNALING_THREAD_DESTRUCTOR()
+PROXY_METHOD0(void, VoidMethod0)
+PROXY_METHOD0(std::string, Method0)
+PROXY_CONSTMETHOD0(std::string, ConstMethod0)
+PROXY_METHOD1(std::string, Method1, std::string)
+PROXY_CONSTMETHOD1(std::string, ConstMethod1, std::string)
+PROXY_METHOD2(std::string, Method2, std::string, std::string)
 END_PROXY_MAP()
 #undef FakeProxy
 
-class SignalingProxyTest : public testing::Test {
+class SignalingProxyTest : public ::testing::Test {
  public:
   // Checks that the functions are called on the right thread.
   void CheckSignalingThread() { EXPECT_TRUE(signaling_thread_->IsCurrent()); }
@@ -173,7 +173,7 @@ TEST_F(SignalingProxyTest, Method2) {
   EXPECT_EQ("Method2", fake_signaling_proxy_->Method2(arg1, arg2));
 }
 
-class ProxyTest : public testing::Test {
+class ProxyTest : public ::testing::Test {
  public:
   // Checks that the functions are called on the right thread.
   void CheckSignalingThread() { EXPECT_TRUE(signaling_thread_->IsCurrent()); }
@@ -215,21 +215,17 @@ TEST_F(ProxyTest, VoidMethod0) {
 TEST_F(ProxyTest, Method0) {
   EXPECT_CALL(*fake_, Method0())
       .Times(Exactly(1))
-      .WillOnce(
-          DoAll(InvokeWithoutArgs(this, &ProxyTest::CheckSignalingThread),
-                Return("Method0")));
-  EXPECT_EQ("Method0",
-            fake_proxy_->Method0());
+      .WillOnce(DoAll(InvokeWithoutArgs(this, &ProxyTest::CheckSignalingThread),
+                      Return("Method0")));
+  EXPECT_EQ("Method0", fake_proxy_->Method0());
 }
 
 TEST_F(ProxyTest, ConstMethod0) {
   EXPECT_CALL(*fake_, ConstMethod0())
       .Times(Exactly(1))
-      .WillOnce(
-          DoAll(InvokeWithoutArgs(this, &ProxyTest::CheckSignalingThread),
-                Return("ConstMethod0")));
-  EXPECT_EQ("ConstMethod0",
-            fake_proxy_->ConstMethod0());
+      .WillOnce(DoAll(InvokeWithoutArgs(this, &ProxyTest::CheckSignalingThread),
+                      Return("ConstMethod0")));
+  EXPECT_EQ("ConstMethod0", fake_proxy_->ConstMethod0());
 }
 
 TEST_F(ProxyTest, WorkerMethod1) {
@@ -245,9 +241,8 @@ TEST_F(ProxyTest, ConstMethod1) {
   const std::string arg1 = "arg1";
   EXPECT_CALL(*fake_, ConstMethod1(arg1))
       .Times(Exactly(1))
-      .WillOnce(
-          DoAll(InvokeWithoutArgs(this, &ProxyTest::CheckSignalingThread),
-                Return("ConstMethod1")));
+      .WillOnce(DoAll(InvokeWithoutArgs(this, &ProxyTest::CheckSignalingThread),
+                      Return("ConstMethod1")));
   EXPECT_EQ("ConstMethod1", fake_proxy_->ConstMethod1(arg1));
 }
 
@@ -275,11 +270,11 @@ class Foo : public FooInterface {
 };
 
 BEGIN_OWNED_PROXY_MAP(Foo)
-  PROXY_SIGNALING_THREAD_DESTRUCTOR()
-  PROXY_METHOD0(void, Bar)
+PROXY_SIGNALING_THREAD_DESTRUCTOR()
+PROXY_METHOD0(void, Bar)
 END_PROXY_MAP()
 
-class OwnedProxyTest : public testing::Test {
+class OwnedProxyTest : public ::testing::Test {
  public:
   OwnedProxyTest()
       : signaling_thread_(rtc::Thread::Create()),

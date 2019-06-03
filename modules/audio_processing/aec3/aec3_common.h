@@ -12,7 +12,6 @@
 #define MODULES_AUDIO_PROCESSING_AEC3_AEC3_COMMON_H_
 
 #include <stddef.h>
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -37,24 +36,21 @@ constexpr size_t kFftLengthBy2 = 64;
 constexpr size_t kFftLengthBy2Plus1 = kFftLengthBy2 + 1;
 constexpr size_t kFftLengthBy2Minus1 = kFftLengthBy2 - 1;
 constexpr size_t kFftLength = 2 * kFftLengthBy2;
+constexpr size_t kFftLengthBy2Log2 = 6;
 
-constexpr int kAdaptiveFilterLength = 12;
-constexpr int kUnknownDelayRenderWindowSize = 30;
-constexpr int kAdaptiveFilterTimeDomainLength =
-    kAdaptiveFilterLength * kFftLengthBy2;
+constexpr int kMaxAdaptiveFilterLength = 50;
 constexpr int kRenderTransferQueueSizeFrames = 100;
 
 constexpr size_t kMaxNumBands = 3;
 constexpr size_t kSubFrameLength = 80;
 
 constexpr size_t kBlockSize = kFftLengthBy2;
+constexpr size_t kBlockSizeLog2 = kFftLengthBy2Log2;
+
 constexpr size_t kExtendedBlockSize = 2 * kFftLengthBy2;
 constexpr size_t kMatchedFilterWindowSizeSubBlocks = 32;
 constexpr size_t kMatchedFilterAlignmentShiftSizeSubBlocks =
     kMatchedFilterWindowSizeSubBlocks * 3 / 4;
-
-
-constexpr size_t kEchoPathChangeConvergenceBlocks = 2 * kNumBlocksPerSecond;
 
 // TODO(peah): Integrate this with how it is done inside audio_processing_impl.
 constexpr size_t NumBandsForRate(int sample_rate_hz) {
@@ -70,6 +66,10 @@ constexpr bool ValidFullBandRate(int sample_rate_hz) {
          sample_rate_hz == 32000 || sample_rate_hz == 48000;
 }
 
+constexpr int GetTimeDomainLength(int filter_length_blocks) {
+  return filter_length_blocks * kFftLengthBy2;
+}
+
 constexpr size_t GetDownSampledBufferSize(size_t down_sampling_factor,
                                           size_t num_matched_filters) {
   return kBlockSize / down_sampling_factor *
@@ -78,13 +78,27 @@ constexpr size_t GetDownSampledBufferSize(size_t down_sampling_factor,
 }
 
 constexpr size_t GetRenderDelayBufferSize(size_t down_sampling_factor,
-                                          size_t num_matched_filters) {
+                                          size_t num_matched_filters,
+                                          size_t filter_length_blocks) {
   return GetDownSampledBufferSize(down_sampling_factor, num_matched_filters) /
-         (kBlockSize / down_sampling_factor);
+             (kBlockSize / down_sampling_factor) +
+         filter_length_blocks + 1;
 }
 
 // Detects what kind of optimizations to use for the code.
 Aec3Optimization DetectOptimization();
+
+// Computes the log2 of the input in a fast an approximate manner.
+float FastApproxLog2f(const float in);
+
+// Returns dB from a power quantity expressed in log2.
+float Log2TodB(const float in_log2);
+
+static_assert(1 << kBlockSizeLog2 == kBlockSize,
+              "Proper number of shifts for blocksize");
+
+static_assert(1 << kFftLengthBy2Log2 == kFftLengthBy2,
+              "Proper number of shifts for the fft length");
 
 static_assert(1 == NumBandsForRate(8000), "Number of bands for 8 kHz");
 static_assert(1 == NumBandsForRate(16000), "Number of bands for 16 kHz");

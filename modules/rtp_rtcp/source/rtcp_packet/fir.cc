@@ -46,6 +46,8 @@ constexpr uint8_t Fir::kFeedbackMessageType;
 
 Fir::Fir() = default;
 
+Fir::Fir(const Fir& fir) = default;
+
 Fir::~Fir() = default;
 
 bool Fir::Parse(const CommonHeader& packet) {
@@ -84,7 +86,7 @@ size_t Fir::BlockLength() const {
 bool Fir::Create(uint8_t* packet,
                  size_t* index,
                  size_t max_length,
-                 RtcpPacket::PacketReadyCallback* callback) const {
+                 PacketReadyCallback callback) const {
   RTC_DCHECK(!items_.empty());
   while (*index + BlockLength() > max_length) {
     if (!OnBufferFull(packet, index, callback))

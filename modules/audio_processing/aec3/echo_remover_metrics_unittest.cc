@@ -11,9 +11,10 @@
 #include "modules/audio_processing/aec3/echo_remover_metrics.h"
 
 #include <math.h>
+#include <cmath>
 
-#include "modules/audio_processing/aec3/aec_state.h"
 #include "modules/audio_processing/aec3/aec3_fft.h"
+#include "modules/audio_processing/aec3/aec_state.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -64,10 +65,10 @@ TEST(TransformDbMetricForReporting, DbFsScaling) {
   std::array<float, kFftLengthBy2Plus1> X2;
   Aec3Fft fft;
   x.fill(1000.f);
-  fft.ZeroPaddedFft(x, &X);
+  fft.ZeroPaddedFft(x, Aec3Fft::Window::kRectangular, &X);
   X.Spectrum(Aec3Optimization::kNone, X2);
 
-  float offset = -10.f * log10(32768.f * 32768.f);
+  float offset = -10.f * std::log10(32768.f * 32768.f);
   EXPECT_NEAR(offset, -90.3f, 0.1f);
   EXPECT_EQ(
       static_cast<int>(30.3f),
@@ -78,23 +79,19 @@ TEST(TransformDbMetricForReporting, DbFsScaling) {
 // Verifies that the TransformDbMetricForReporting method is able to properly
 // limit the output.
 TEST(TransformDbMetricForReporting, Limits) {
-  EXPECT_EQ(
-      0,
-      aec3::TransformDbMetricForReporting(false, 0.f, 10.f, 0.f, 1.f, 0.001f));
-  EXPECT_EQ(
-      10,
-      aec3::TransformDbMetricForReporting(false, 0.f, 10.f, 0.f, 1.f, 100.f));
+  EXPECT_EQ(0, aec3::TransformDbMetricForReporting(false, 0.f, 10.f, 0.f, 1.f,
+                                                   0.001f));
+  EXPECT_EQ(10, aec3::TransformDbMetricForReporting(false, 0.f, 10.f, 0.f, 1.f,
+                                                    100.f));
 }
 
 // Verifies that the TransformDbMetricForReporting method is able to properly
 // negate output.
 TEST(TransformDbMetricForReporting, Negate) {
-  EXPECT_EQ(
-      10,
-      aec3::TransformDbMetricForReporting(true, -20.f, 20.f, 0.f, 1.f, 0.1f));
-  EXPECT_EQ(
-      -10,
-      aec3::TransformDbMetricForReporting(true, -20.f, 20.f, 0.f, 1.f, 10.f));
+  EXPECT_EQ(10, aec3::TransformDbMetricForReporting(true, -20.f, 20.f, 0.f, 1.f,
+                                                    0.1f));
+  EXPECT_EQ(-10, aec3::TransformDbMetricForReporting(true, -20.f, 20.f, 0.f,
+                                                     1.f, 10.f));
 }
 
 // Verify the Update functionality of DbMetric.

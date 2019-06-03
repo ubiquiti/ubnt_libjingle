@@ -11,14 +11,16 @@
 #include "modules/pacing/packet_router.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 
+#include "absl/types/optional.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "rtc_base/atomicops.h"
+#include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 namespace {
@@ -28,7 +30,8 @@ constexpr int kRembSendIntervalMs = 200;
 }  // namespace
 
 PacketRouter::PacketRouter()
-    : last_remb_time_ms_(rtc::TimeMillis()),
+    : last_send_module_(nullptr),
+      last_remb_time_ms_(rtc::TimeMillis()),
       last_send_bitrate_bps_(0),
       bitrate_bps_(0),
       max_bitrate_bps_(std::numeric_limits<decltype(max_bitrate_bps_)>::max()),
@@ -37,7 +40,7 @@ PacketRouter::PacketRouter()
 
 PacketRouter::~PacketRouter() {
   RTC_DCHECK(rtp_send_modules_.empty());
-  RTC_DCHECK(rtp_receive_modules_.empty());
+  RTC_DCHECK(rtcp_feedback_senders_.empty());
   RTC_DCHECK(sender_remb_candidates_.empty());
   RTC_DCHECK(receiver_remb_candidates_.empty());
   RTC_DCHECK(active_remb_module_ == nullptr);
@@ -56,65 +59,93 @@ void PacketRouter::AddSendRtpModule(RtpRtcp* rtp_module, bool remb_candidate) {
   }
 
   if (remb_candidate) {
-    AddRembModuleCandidate(rtp_module, true);
+    AddRembModuleCandidate(rtp_module, /* media_sender = */ true);
   }
 }
 
 void PacketRouter::RemoveSendRtpModule(RtpRtcp* rtp_module) {
   rtc::CritScope cs(&modules_crit_);
-  MaybeRemoveRembModuleCandidate(rtp_module, /* sender = */ true);
+  MaybeRemoveRembModuleCandidate(rtp_module, /* media_sender = */ true);
   auto it =
       std::find(rtp_send_modules_.begin(), rtp_send_modules_.end(), rtp_module);
   RTC_DCHECK(it != rtp_send_modules_.end());
   rtp_send_modules_.erase(it);
-}
-
-void PacketRouter::AddReceiveRtpModule(RtpRtcp* rtp_module,
-                                       bool remb_candidate) {
-  rtc::CritScope cs(&modules_crit_);
-  RTC_DCHECK(std::find(rtp_receive_modules_.begin(), rtp_receive_modules_.end(),
-                       rtp_module) == rtp_receive_modules_.end());
-
-  rtp_receive_modules_.push_back(rtp_module);
-
-  if (remb_candidate) {
-    AddRembModuleCandidate(rtp_module, false);
+  if (last_send_module_ == rtp_module) {
+    last_send_module_ = nullptr;
   }
 }
 
-void PacketRouter::RemoveReceiveRtpModule(RtpRtcp* rtp_module) {
+void PacketRouter::AddReceiveRtpModule(RtcpFeedbackSenderInterface* rtcp_sender,
+                                       bool remb_candidate) {
   rtc::CritScope cs(&modules_crit_);
-  MaybeRemoveRembModuleCandidate(rtp_module, /* sender = */ false);
-  const auto& it = std::find(rtp_receive_modules_.begin(),
-                             rtp_receive_modules_.end(), rtp_module);
-  RTC_DCHECK(it != rtp_receive_modules_.end());
-  rtp_receive_modules_.erase(it);
+  RTC_DCHECK(std::find(rtcp_feedback_senders_.begin(),
+                       rtcp_feedback_senders_.end(),
+                       rtcp_sender) == rtcp_feedback_senders_.end());
+
+  rtcp_feedback_senders_.push_back(rtcp_sender);
+
+  if (remb_candidate) {
+    AddRembModuleCandidate(rtcp_sender, /* media_sender = */ false);
+  }
 }
 
-bool PacketRouter::TimeToSendPacket(uint32_t ssrc,
-                                    uint16_t sequence_number,
-                                    int64_t capture_timestamp,
-                                    bool retransmission,
-                                    const PacedPacketInfo& pacing_info) {
-  RTC_DCHECK_RUNS_SERIALIZED(&pacer_race_);
+void PacketRouter::RemoveReceiveRtpModule(
+    RtcpFeedbackSenderInterface* rtcp_sender) {
+  rtc::CritScope cs(&modules_crit_);
+  MaybeRemoveRembModuleCandidate(rtcp_sender, /* media_sender = */ false);
+  auto it = std::find(rtcp_feedback_senders_.begin(),
+                      rtcp_feedback_senders_.end(), rtcp_sender);
+  RTC_DCHECK(it != rtcp_feedback_senders_.end());
+  rtcp_feedback_senders_.erase(it);
+}
+
+RtpPacketSendResult PacketRouter::TimeToSendPacket(
+    uint32_t ssrc,
+    uint16_t sequence_number,
+    int64_t capture_timestamp,
+    bool retransmission,
+    const PacedPacketInfo& pacing_info) {
   rtc::CritScope cs(&modules_crit_);
   for (auto* rtp_module : rtp_send_modules_) {
-    if (!rtp_module->SendingMedia())
+    if (!rtp_module->SendingMedia()) {
       continue;
+    }
     if (ssrc == rtp_module->SSRC() || ssrc == rtp_module->FlexfecSsrc()) {
+      if ((rtp_module->RtxSendStatus() & kRtxRedundantPayloads) &&
+          rtp_module->HasBweExtensions()) {
+        // This is now the last module to send media, and has the desired
+        // properties needed for payload based padding. Cache it for later use.
+        last_send_module_ = rtp_module;
+      }
       return rtp_module->TimeToSendPacket(ssrc, sequence_number,
                                           capture_timestamp, retransmission,
                                           pacing_info);
     }
   }
-  return true;
+  return RtpPacketSendResult::kPacketNotFound;
 }
 
 size_t PacketRouter::TimeToSendPadding(size_t bytes_to_send,
                                        const PacedPacketInfo& pacing_info) {
-  RTC_DCHECK_RUNS_SERIALIZED(&pacer_race_);
   size_t total_bytes_sent = 0;
   rtc::CritScope cs(&modules_crit_);
+  // First try on the last rtp module to have sent media. This increases the
+  // the chance that any payload based padding will be useful as it will be
+  // somewhat distributed over modules according the packet rate, even if it
+  // will be more skewed towards the highest bitrate stream. At the very least
+  // this prevents sending payload padding on a disabled stream where it's
+  // guaranteed not to be useful.
+  if (last_send_module_ != nullptr) {
+    RTC_DCHECK(std::find(rtp_send_modules_.begin(), rtp_send_modules_.end(),
+                         last_send_module_) != rtp_send_modules_.end());
+    RTC_DCHECK(last_send_module_->HasBweExtensions());
+    total_bytes_sent += last_send_module_->TimeToSendPadding(
+        bytes_to_send - total_bytes_sent, pacing_info);
+    if (total_bytes_sent >= bytes_to_send) {
+      return total_bytes_sent;
+    }
+  }
+
   // Rtp modules are ordered by which stream can most benefit from padding.
   for (RtpRtcp* module : rtp_send_modules_) {
     if (module->SendingMedia() && module->HasBweExtensions()) {
@@ -153,7 +184,10 @@ uint16_t PacketRouter::AllocateSequenceNumber() {
 void PacketRouter::OnReceiveBitrateChanged(const std::vector<uint32_t>& ssrcs,
                                            uint32_t bitrate_bps) {
   // % threshold for if we should send a new REMB asap.
-  const uint32_t kSendThresholdPercent = 97;
+  const int64_t kSendThresholdPercent = 97;
+  // TODO(danilchap): Remove receive_bitrate_bps variable and the cast
+  // when OnReceiveBitrateChanged takes bitrate as int64_t.
+  int64_t receive_bitrate_bps = static_cast<int64_t>(bitrate_bps);
 
   int64_t now_ms = rtc::TimeMillis();
   {
@@ -162,8 +196,8 @@ void PacketRouter::OnReceiveBitrateChanged(const std::vector<uint32_t>& ssrcs,
     // If we already have an estimate, check if the new total estimate is below
     // kSendThresholdPercent of the previous estimate.
     if (last_send_bitrate_bps_ > 0) {
-      uint32_t new_remb_bitrate_bps =
-          last_send_bitrate_bps_ - bitrate_bps_ + bitrate_bps;
+      int64_t new_remb_bitrate_bps =
+          last_send_bitrate_bps_ - bitrate_bps_ + receive_bitrate_bps;
 
       if (new_remb_bitrate_bps <
           kSendThresholdPercent * last_send_bitrate_bps_ / 100) {
@@ -172,7 +206,7 @@ void PacketRouter::OnReceiveBitrateChanged(const std::vector<uint32_t>& ssrcs,
         last_remb_time_ms_ = now_ms - kRembSendIntervalMs;
       }
     }
-    bitrate_bps_ = bitrate_bps;
+    bitrate_bps_ = receive_bitrate_bps;
 
     if (now_ms - last_remb_time_ms_ < kRembSendIntervalMs) {
       return;
@@ -180,14 +214,15 @@ void PacketRouter::OnReceiveBitrateChanged(const std::vector<uint32_t>& ssrcs,
     // NOTE: Updated if we intend to send the data; we might not have
     // a module to actually send it.
     last_remb_time_ms_ = now_ms;
-    last_send_bitrate_bps_ = bitrate_bps;
+    last_send_bitrate_bps_ = receive_bitrate_bps;
     // Cap the value to send in remb with configured value.
-    bitrate_bps = std::min(bitrate_bps, max_bitrate_bps_);
+    receive_bitrate_bps = std::min(receive_bitrate_bps, max_bitrate_bps_);
   }
-  SendRemb(bitrate_bps, ssrcs);
+  SendRemb(receive_bitrate_bps, ssrcs);
 }
 
-void PacketRouter::SetMaxDesiredReceiveBitrate(uint32_t bitrate_bps) {
+void PacketRouter::SetMaxDesiredReceiveBitrate(int64_t bitrate_bps) {
+  RTC_DCHECK_GE(bitrate_bps, 0);
   {
     rtc::CritScope lock(&remb_crit_);
     max_bitrate_bps_ = bitrate_bps;
@@ -201,7 +236,7 @@ void PacketRouter::SetMaxDesiredReceiveBitrate(uint32_t bitrate_bps) {
   SendRemb(bitrate_bps, /*ssrcs=*/{});
 }
 
-bool PacketRouter::SendRemb(uint32_t bitrate_bps,
+bool PacketRouter::SendRemb(int64_t bitrate_bps,
                             const std::vector<uint32_t>& ssrcs) {
   rtc::CritScope lock(&modules_crit_);
 
@@ -217,38 +252,41 @@ bool PacketRouter::SendRemb(uint32_t bitrate_bps,
 }
 
 bool PacketRouter::SendTransportFeedback(rtcp::TransportFeedback* packet) {
-  RTC_DCHECK_RUNS_SERIALIZED(&pacer_race_);
   rtc::CritScope cs(&modules_crit_);
   // Prefer send modules.
   for (auto* rtp_module : rtp_send_modules_) {
     packet->SetSenderSsrc(rtp_module->SSRC());
-    if (rtp_module->SendFeedbackPacket(*packet))
+    if (rtp_module->SendFeedbackPacket(*packet)) {
       return true;
+    }
   }
-  for (auto* rtp_module : rtp_receive_modules_) {
-    packet->SetSenderSsrc(rtp_module->SSRC());
-    if (rtp_module->SendFeedbackPacket(*packet))
+  for (auto* rtcp_sender : rtcp_feedback_senders_) {
+    packet->SetSenderSsrc(rtcp_sender->SSRC());
+    if (rtcp_sender->SendFeedbackPacket(*packet)) {
       return true;
+    }
   }
   return false;
 }
 
-void PacketRouter::AddRembModuleCandidate(RtpRtcp* candidate_module,
-                                          bool sender) {
+void PacketRouter::AddRembModuleCandidate(
+    RtcpFeedbackSenderInterface* candidate_module,
+    bool media_sender) {
   RTC_DCHECK(candidate_module);
-  std::vector<RtpRtcp*>& candidates =
-      sender ? sender_remb_candidates_ : receiver_remb_candidates_;
+  std::vector<RtcpFeedbackSenderInterface*>& candidates =
+      media_sender ? sender_remb_candidates_ : receiver_remb_candidates_;
   RTC_DCHECK(std::find(candidates.cbegin(), candidates.cend(),
                        candidate_module) == candidates.cend());
   candidates.push_back(candidate_module);
   DetermineActiveRembModule();
 }
 
-void PacketRouter::MaybeRemoveRembModuleCandidate(RtpRtcp* candidate_module,
-                                                  bool sender) {
+void PacketRouter::MaybeRemoveRembModuleCandidate(
+    RtcpFeedbackSenderInterface* candidate_module,
+    bool media_sender) {
   RTC_DCHECK(candidate_module);
-  std::vector<RtpRtcp*>& candidates =
-      sender ? sender_remb_candidates_ : receiver_remb_candidates_;
+  std::vector<RtcpFeedbackSenderInterface*>& candidates =
+      media_sender ? sender_remb_candidates_ : receiver_remb_candidates_;
   auto it = std::find(candidates.begin(), candidates.end(), candidate_module);
 
   if (it == candidates.end()) {
@@ -274,7 +312,7 @@ void PacketRouter::DetermineActiveRembModule() {
   // When adding the first sender module, we should change the active REMB
   // module to be that. Otherwise, we remain with the current active module.
 
-  RtpRtcp* new_active_remb_module;
+  RtcpFeedbackSenderInterface* new_active_remb_module;
 
   if (!sender_remb_candidates_.empty()) {
     new_active_remb_module = sender_remb_candidates_.front();

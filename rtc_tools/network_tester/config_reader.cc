@@ -9,8 +9,11 @@
  */
 #include "rtc_tools/network_tester/config_reader.h"
 
+#include <fstream>
+#include <iterator>
 #include <string>
-#include <vector>
+
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -29,10 +32,10 @@ ConfigReader::ConfigReader(const std::string& config_file_path)
 
 ConfigReader::~ConfigReader() = default;
 
-rtc::Optional<ConfigReader::Config> ConfigReader::GetNextConfig() {
+absl::optional<ConfigReader::Config> ConfigReader::GetNextConfig() {
 #ifdef WEBRTC_NETWORK_TESTER_PROTO
   if (proto_config_index_ >= proto_all_configs_.configs_size())
-    return rtc::nullopt;
+    return absl::nullopt;
   auto proto_config = proto_all_configs_.configs(proto_config_index_++);
   RTC_DCHECK(proto_config.has_packet_send_interval_ms());
   RTC_DCHECK(proto_config.has_packet_size());
@@ -43,7 +46,7 @@ rtc::Optional<ConfigReader::Config> ConfigReader::GetNextConfig() {
   config.execution_time_ms = proto_config.execution_time_ms();
   return config;
 #else
-  return rtc::nullopt;
+  return absl::nullopt;
 #endif  //  WEBRTC_NETWORK_TESTER_PROTO
 }
 

@@ -9,12 +9,13 @@
  */
 
 #include "modules/audio_device/mac/audio_device_mac.h"
+#include "absl/memory/memory.h"
 #include "modules/audio_device/audio_device_config.h"
-#include "modules/audio_device/mac/portaudio/pa_ringbuffer.h"
+#include "modules/third_party/portaudio/pa_ringbuffer.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/platform_thread.h"
-#include "system_wrappers/include/event_wrapper.h"
+#include "rtc_base/system/arch.h"
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <libkern/OSAtomic.h>  // OSAtomicCompareAndSwap()
@@ -113,8 +114,6 @@ void AudioDeviceMac::logCAMsg(const rtc::LoggingSeverity sev,
 
 AudioDeviceMac::AudioDeviceMac()
     : _ptrAudioBuffer(NULL),
-      _stopEventRec(*EventWrapper::Create()),
-      _stopEvent(*EventWrapper::Create()),
       _mixerManager(),
       _inputDeviceIndex(0),
       _outputDeviceIndex(0),
@@ -132,7 +131,6 @@ AudioDeviceMac::AudioDeviceMac()
       _playing(false),
       _recIsInitialized(false),
       _playIsInitialized(false),
-      _AGC(false),
       _renderDeviceIsAlive(1),
       _captureDeviceIsAlive(1),
       _twoDevices(true),
@@ -149,12 +147,8 @@ AudioDeviceMac::AudioDeviceMac()
       _paRenderBuffer(NULL),
       _captureBufSizeSamples(0),
       _renderBufSizeSamples(0),
-      prev_key_state_(),
-      get_mic_volume_counter_ms_(0) {
+      prev_key_state_() {
   RTC_LOG(LS_INFO) << __FUNCTION__ << " created";
-
-  RTC_DCHECK(&_stopEvent != NULL);
-  RTC_DCHECK(&_stopEventRec != NULL);
 
   memset(_renderConvertData, 0, sizeof(_renderConvertData));
   memset(&_outStreamFormat, 0, sizeof(AudioStreamBasicDescription));
@@ -204,8 +198,6 @@ AudioDeviceMac::~AudioDeviceMac() {
     RTC_LOG(LS_ERROR) << "semaphore_destroy() error: " << kernErr;
   }
 
-  delete &_stopEvent;
-  delete &_stopEventRec;
 }
 
 // ============================================================================
@@ -336,8 +328,6 @@ AudioDeviceGeneric::InitStatus AudioDeviceMac::Init() {
       _macBookPro = true;
     }
   }
-
-  get_mic_volume_counter_ms_ = 0;
 
   _initialized = true;
 
@@ -731,16 +721,6 @@ int32_t AudioDeviceMac::StereoPlayout(bool& enabled) const {
     enabled = false;
 
   return 0;
-}
-
-int32_t AudioDeviceMac::SetAGC(bool enable) {
-  _AGC = enable;
-
-  return 0;
-}
-
-bool AudioDeviceMac::AGC() const {
-  return _AGC;
 }
 
 int32_t AudioDeviceMac::MicrophoneVolumeIsAvailable(bool& available) {
@@ -1315,11 +1295,10 @@ int32_t AudioDeviceMac::StartRecording() {
   }
 
   RTC_DCHECK(!capture_worker_thread_.get());
-  capture_worker_thread_.reset(
-      new rtc::PlatformThread(RunCapture, this, "CaptureWorkerThread"));
+  capture_worker_thread_.reset(new rtc::PlatformThread(
+      RunCapture, this, "CaptureWorkerThread", rtc::kRealtimePriority));
   RTC_DCHECK(capture_worker_thread_.get());
   capture_worker_thread_->Start();
-  capture_worker_thread_->SetPriority(rtc::kRealtimePriority);
 
   OSStatus err = noErr;
   if (_twoDevices) {
@@ -1350,7 +1329,7 @@ int32_t AudioDeviceMac::StopRecording() {
       _recording = false;
       _doStopRec = true;  // Signal to io proc to stop audio device
       _critSect.Leave();  // Cannot be under lock, risk of deadlock
-      if (kEventTimeout == _stopEventRec.Wait(2000)) {
+      if (!_stopEventRec.Wait(2000)) {
         rtc::CritScope critScoped(&_critSect);
         RTC_LOG(LS_WARNING) << "Timed out stopping the capture IOProc."
                             << "We may have failed to detect a device removal.";
@@ -1378,7 +1357,7 @@ int32_t AudioDeviceMac::StopRecording() {
       _recording = false;
       _doStop = true;     // Signal to io proc to stop audio device
       _critSect.Leave();  // Cannot be under lock, risk of deadlock
-      if (kEventTimeout == _stopEvent.Wait(2000)) {
+      if (!_stopEvent.Wait(2000)) {
         rtc::CritScope critScoped(&_critSect);
         RTC_LOG(LS_WARNING) << "Timed out stopping the shared IOProc."
                             << "We may have failed to detect a device removal.";
@@ -1451,10 +1430,9 @@ int32_t AudioDeviceMac::StartPlayout() {
   }
 
   RTC_DCHECK(!render_worker_thread_.get());
-  render_worker_thread_.reset(
-      new rtc::PlatformThread(RunRender, this, "RenderWorkerThread"));
+  render_worker_thread_.reset(new rtc::PlatformThread(
+      RunRender, this, "RenderWorkerThread", rtc::kRealtimePriority));
   render_worker_thread_->Start();
-  render_worker_thread_->SetPriority(rtc::kRealtimePriority);
 
   if (_twoDevices || !_recording) {
     OSStatus err = noErr;
@@ -1486,7 +1464,7 @@ int32_t AudioDeviceMac::StopPlayout() {
     _playing = false;
     _doStop = true;     // Signal to io proc to stop audio device
     _critSect.Leave();  // Cannot be under lock, risk of deadlock
-    if (kEventTimeout == _stopEvent.Wait(2000)) {
+    if (!_stopEvent.Wait(2000)) {
       rtc::CritScope critScoped(&_critSect);
       RTC_LOG(LS_WARNING) << "Timed out stopping the render IOProc."
                           << "We may have failed to detect a device removal.";
@@ -1578,8 +1556,8 @@ int32_t AudioDeviceMac::GetNumberDevices(const AudioObjectPropertyScope scope,
     return 0;
   }
 
-  AudioDeviceID* deviceIds = (AudioDeviceID*)malloc(size);
   UInt32 numberDevices = size / sizeof(AudioDeviceID);
+  const auto deviceIds = absl::make_unique<AudioDeviceID[]>(numberDevices);
   AudioBufferList* bufferList = NULL;
   UInt32 numberScopedDevices = 0;
 
@@ -1610,8 +1588,9 @@ int32_t AudioDeviceMac::GetNumberDevices(const AudioObjectPropertyScope scope,
   // Then list the rest of the devices
   bool listOK = true;
 
-  WEBRTC_CA_LOG_ERR(AudioObjectGetPropertyData(
-      kAudioObjectSystemObject, &propertyAddress, 0, NULL, &size, deviceIds));
+  WEBRTC_CA_LOG_ERR(AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                               &propertyAddress, 0, NULL, &size,
+                                               deviceIds.get()));
   if (err != noErr) {
     listOK = false;
   } else {
@@ -1655,23 +1634,11 @@ int32_t AudioDeviceMac::GetNumberDevices(const AudioObjectPropertyScope scope,
   }
 
   if (!listOK) {
-    if (deviceIds) {
-      free(deviceIds);
-      deviceIds = NULL;
-    }
-
     if (bufferList) {
       free(bufferList);
       bufferList = NULL;
     }
-
     return -1;
-  }
-
-  // Happy ending
-  if (deviceIds) {
-    free(deviceIds);
-    deviceIds = NULL;
   }
 
   return numberScopedDevices;
@@ -2392,8 +2359,10 @@ OSStatus AudioDeviceMac::implInConverterProc(UInt32* numberDataPackets,
   return 0;
 }
 
-bool AudioDeviceMac::RunRender(void* ptrThis) {
-  return static_cast<AudioDeviceMac*>(ptrThis)->RenderWorkerThread();
+void AudioDeviceMac::RunRender(void* ptrThis) {
+  AudioDeviceMac* device = static_cast<AudioDeviceMac*>(ptrThis);
+  while (device->RenderWorkerThread()) {
+  }
 }
 
 bool AudioDeviceMac::RenderWorkerThread() {
@@ -2461,8 +2430,10 @@ bool AudioDeviceMac::RenderWorkerThread() {
   return true;
 }
 
-bool AudioDeviceMac::RunCapture(void* ptrThis) {
-  return static_cast<AudioDeviceMac*>(ptrThis)->CaptureWorkerThread();
+void AudioDeviceMac::RunCapture(void* ptrThis) {
+  AudioDeviceMac* device = static_cast<AudioDeviceMac*>(ptrThis);
+  while (device->CaptureWorkerThread()) {
+  }
 }
 
 bool AudioDeviceMac::CaptureWorkerThread() {
@@ -2494,8 +2465,6 @@ bool AudioDeviceMac::CaptureWorkerThread() {
 
   // TODO(xians): what if the returned size is incorrect?
   if (size == ENGINE_REC_BUF_SIZE_IN_SAMPLES) {
-    uint32_t currentMicLevel(0);
-    uint32_t newMicLevel(0);
     int32_t msecOnPlaySide;
     int32_t msecOnRecordSide;
 
@@ -2515,43 +2484,12 @@ bool AudioDeviceMac::CaptureWorkerThread() {
     // store the recorded buffer (no action will be taken if the
     // #recorded samples is not a full buffer)
     _ptrAudioBuffer->SetRecordedBuffer((int8_t*)&recordBuffer, (uint32_t)size);
-
-    if (AGC()) {
-      // Use mod to ensure we check the volume on the first pass.
-      if (get_mic_volume_counter_ms_ % kGetMicVolumeIntervalMs == 0) {
-        get_mic_volume_counter_ms_ = 0;
-        // store current mic level in the audio buffer if AGC is enabled
-        if (MicrophoneVolume(currentMicLevel) == 0) {
-          // this call does not affect the actual microphone volume
-          _ptrAudioBuffer->SetCurrentMicLevel(currentMicLevel);
-        }
-      }
-      get_mic_volume_counter_ms_ += kBufferSizeMs;
-    }
-
-    _ptrAudioBuffer->SetVQEData(msecOnPlaySide, msecOnRecordSide, 0);
-
+    _ptrAudioBuffer->SetVQEData(msecOnPlaySide, msecOnRecordSide);
     _ptrAudioBuffer->SetTypingStatus(KeyPressed());
 
     // deliver recorded samples at specified sample rate, mic level etc.
     // to the observer using callback
     _ptrAudioBuffer->DeliverRecordedData();
-
-    if (AGC()) {
-      newMicLevel = _ptrAudioBuffer->NewMicLevel();
-      if (newMicLevel != 0) {
-        // The VQE will only deliver non-zero microphone levels when
-        // a change is needed.
-        // Set this new mic level (received from the observer as return
-        // value in the callback).
-        RTC_LOG(LS_VERBOSE) << "AGC change of volume: old=" << currentMicLevel
-                            << " => new=" << newMicLevel;
-        if (SetMicrophoneVolume(newMicLevel) == -1) {
-          RTC_LOG(LS_WARNING)
-              << "the required modification of the microphone volume failed";
-        }
-      }
-    }
   }
 
   return true;

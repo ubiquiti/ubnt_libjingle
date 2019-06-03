@@ -11,10 +11,13 @@
 #ifndef MODULES_RTP_RTCP_SOURCE_ULPFEC_GENERATOR_H_
 #define MODULES_RTP_RTCP_SOURCE_ULPFEC_GENERATOR_H_
 
+#include <stddef.h>
+#include <stdint.h>
 #include <list>
 #include <memory>
 #include <vector>
 
+#include "modules/include/module_fec_types.h"
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
 
 namespace webrtc {
@@ -24,6 +27,7 @@ class FlexfecSender;
 class RedPacket {
  public:
   explicit RedPacket(size_t length);
+  ~RedPacket();
 
   void CreateHeader(const uint8_t* rtp_header,
                     size_t header_length,
@@ -69,8 +73,7 @@ class UlpfecGenerator {
   std::vector<std::unique_ptr<RedPacket>> GetUlpfecPacketsAsRed(
       int red_payload_type,
       int ulpfec_payload_type,
-      uint16_t first_seq_num,
-      size_t rtp_header_length);
+      uint16_t first_seq_num);
 
  private:
   explicit UlpfecGenerator(std::unique_ptr<ForwardErrorCorrection> fec);
@@ -98,6 +101,7 @@ class UlpfecGenerator {
 
   std::unique_ptr<ForwardErrorCorrection> fec_;
   ForwardErrorCorrection::PacketList media_packets_;
+  size_t last_media_packet_rtp_header_length_;
   std::list<ForwardErrorCorrection::Packet*> generated_fec_packets_;
   int num_protected_frames_;
   int min_num_media_packets_;
