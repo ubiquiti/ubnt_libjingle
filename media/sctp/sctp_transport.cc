@@ -185,6 +185,7 @@ class SctpTransport::UsrSctpWrapper {
     //The receiving space will also dictate the CC's via Advertised Receiver
     //Window Credit (ARWND) field which is received from the other side as
     //part of SACK chunks
+    fprintf(stderr,"Setup send/recv space to 8MB/8MB and switch to SCTP_CC_HTCP\n");
     usrsctp_sysctl_set_sctp_recvspace(8*1024*1024);
     usrsctp_sysctl_set_sctp_sendspace(8*1024*1024);
 
