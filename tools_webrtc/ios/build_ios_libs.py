@@ -157,10 +157,13 @@ def main():
     return 0
 
   gn_target_name = 'framework_objc'
-  if not args.bitcode:
-    gn_args.append('enable_dsyms=true')
-  gn_args.append('enable_stripping=true')
 
+  if args.build_config == 'release':
+    gn_args.append('enable_stripping=true')
+    gn_args.append('enable_dsyms=false')
+  else:
+    gn_args.append('enable_stripping=false')
+    gn_args.append('enable_dsyms=true')
 
   # Build all architectures.
   for arch in architectures:
