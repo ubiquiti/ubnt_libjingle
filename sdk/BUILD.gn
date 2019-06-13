@@ -170,7 +170,7 @@ if (is_ios || is_mac) {
 
     public_configs = [ ":common_config_objc" ]
 
-    if (is_ios) {
+    if (is_ios && (ios_device_name == "iphone")) {
       sources += [
         "objc/helpers/RTCCameraPreviewView.h",
         "objc/helpers/RTCCameraPreviewView.m",
@@ -900,7 +900,6 @@ if (is_ios || is_mac) {
         ":mediasource_objc",
         ":native_api",
         ":native_video",
-        ":video_objc",
         ":videoframebuffer_objc",
         ":videorendereradapter_objc",
         ":videosource_objc",
@@ -933,7 +932,12 @@ if (is_ios || is_mac) {
       ]
 
       if (is_ios) {
+        if(ios_device_name == "iphone"){
+          deps += [ ":video_objc" ]
+        }
         deps += [ ":native_api_audio_device_module" ]
+      } else {
+        deps += [ ":video_objc" ]
       }
     }
 
@@ -1315,18 +1319,24 @@ if (is_ios || is_mac) {
         ]
 
         deps = [
-          ":audio_objc",
           ":base_objc",
           ":default_codec_factory_objc",
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
-          ":ui_objc",
-          ":videocapture_objc",
           ":videocodec_objc",
           ":videotoolbox_objc",
           "../rtc_base:rtc_base_approved",
         ]
+
+        if(ios_device_name == "iphone") {
+          deps += [
+            ":audio_objc",
+            ":ui_objc",
+            ":videocapture_objc"
+          ]
+        }
+
         if (rtc_use_metal_rendering) {
           deps += [ ":metal_objc" ]
         }
