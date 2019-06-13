@@ -73,7 +73,7 @@ static RTCAudioSessionConfiguration *gWebRTCConfiguration = nil;
     _category = AVAudioSessionCategoryPlayAndRecord;
 #if !TARGET_OS_TV
     _categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth;
-#endif /* TARGET_OS_IPHONE */
+#endif /* !TARGET_OS_TV */
 
     // Specify mode for two-way voice communication (e.g. VoIP).
     _mode = AVAudioSessionModeVoiceChat;
