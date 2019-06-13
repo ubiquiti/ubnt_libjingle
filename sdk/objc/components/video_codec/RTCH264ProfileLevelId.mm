@@ -9,6 +9,7 @@
  *
  */
 
+#import "TargetConditionals.h"
 #import "RTCH264ProfileLevelId.h"
 
 #import "helpers/NSString+StdString.h"
@@ -54,6 +55,9 @@ NSString *MaxSupportedLevelForProfile(Profile profile) {
 #endif
 
 NSString *MaxSupportedProfileLevelConstrainedBaseline() {
+#ifdef TARGET_OS_TV
+  return kRTCLevel31ConstrainedBaseline;
+#endif /* TARGET_OS_TV */
 #if defined(WEBRTC_IOS)
   NSString *profile = MaxSupportedLevelForProfile(webrtc::H264::kProfileConstrainedBaseline);
   if (profile != nil) {
@@ -64,6 +68,9 @@ NSString *MaxSupportedProfileLevelConstrainedBaseline() {
 }
 
 NSString *MaxSupportedProfileLevelConstrainedHigh() {
+#ifdef TARGET_OS_TV
+  return kRTCLevel31ConstrainedHigh;
+#endif /* TARGET_OS_TV */
 #if defined(WEBRTC_IOS)
   NSString *profile = MaxSupportedLevelForProfile(webrtc::H264::kProfileConstrainedHigh);
   if (profile != nil) {
