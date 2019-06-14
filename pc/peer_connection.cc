@@ -858,6 +858,8 @@ void ExtractSharedMediaSessionOptions(
     cricket::MediaSessionOptions* session_options) {
   session_options->vad_enabled = rtc_options.voice_activity_detection;
   session_options->bundle_enabled = rtc_options.use_rtp_mux;
+  session_options->raw_packetization_for_video =
+      rtc_options.raw_packetization_for_video;
 }
 
 PeerConnection::PeerConnection(PeerConnectionFactory* factory,
@@ -1073,6 +1075,8 @@ bool PeerConnection::Initialize(
       this, &PeerConnection::OnTransportControllerGatheringState);
   transport_controller_->SignalIceCandidatesGathered.connect(
       this, &PeerConnection::OnTransportControllerCandidatesGathered);
+  transport_controller_->SignalIceCandidateError.connect(
+      this, &PeerConnection::OnTransportControllerCandidateError);
   transport_controller_->SignalIceCandidatesRemoved.connect(
       this, &PeerConnection::OnTransportControllerCandidatesRemoved);
   transport_controller_->SignalDtlsHandshakeError.connect(
@@ -4167,6 +4171,16 @@ void PeerConnection::OnIceCandidate(
   Observer()->OnIceCandidate(candidate.get());
 }
 
+void PeerConnection::OnIceCandidateError(const std::string& host_candidate,
+                                         const std::string& url,
+                                         int error_code,
+                                         const std::string& error_text) {
+  if (IsClosed()) {
+    return;
+  }
+  Observer()->OnIceCandidateError(host_candidate, url, error_code, error_text);
+}
+
 void PeerConnection::OnIceCandidatesRemoved(
     const std::vector<cricket::Candidate>& candidates) {
   if (IsClosed()) {
@@ -4300,11 +4314,20 @@ void PeerConnection::GetOptionsForOffer(
   session_options->offer_extmap_allow_mixed =
       configuration_.offer_extmap_allow_mixed;
 
-  if (configuration_.enable_dtls_srtp &&
-      !configuration_.enable_dtls_srtp.value()) {
+  if (configuration_.use_media_transport ||
+      configuration_.use_media_transport_for_data_channels) {
     session_options->media_transport_settings =
         transport_controller_->GenerateOrGetLastMediaTransportOffer();
   }
+
+  // If datagram transport is in use, add opaque transport parameters.
+  if (configuration_.use_datagram_transport) {
+    for (auto& options : session_options->media_description_options) {
+      options.transport_options.opaque_parameters =
+          transport_controller_->GetTransportParameters(options.mid);
+    }
+  }
+
   // Allow fallback for using obsolete SCTP syntax.
   // Note that the default in |session_options| is true, while
   // the default in |options| is false.
@@ -4602,6 +4625,14 @@ void PeerConnection::GetOptionsForAnswer(
           RTC_FROM_HERE,
           rtc::Bind(&cricket::PortAllocator::GetPooledIceCredentials,
                     port_allocator_.get()));
+
+  // If datagram transport is in use, add opaque transport parameters.
+  if (configuration_.use_datagram_transport) {
+    for (auto& options : session_options->media_description_options) {
+      options.transport_options.opaque_parameters =
+          transport_controller_->GetTransportParameters(options.mid);
+    }
+  }
 }
 
 void PeerConnection::GetOptionsForPlanBAnswer(
@@ -6103,6 +6134,12 @@ void PeerConnection::OnTransportControllerCandidatesGathered(
     }
     OnIceCandidate(std::move(candidate));
   }
+}
+
+void PeerConnection::OnTransportControllerCandidateError(
+    const cricket::IceCandidateErrorEvent& event) {
+  OnIceCandidateError(event.host_candidate, event.url, event.error_code,
+                      event.error_text);
 }
 
 void PeerConnection::OnTransportControllerCandidatesRemoved(

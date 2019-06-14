@@ -67,6 +67,8 @@
 #ifndef API_PEER_CONNECTION_INTERFACE_H_
 #define API_PEER_CONNECTION_INTERFACE_H_
 
+#include <stdio.h>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -682,6 +684,10 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
     // confused with RTCP mux (multiplexing RTP and RTCP together).
     bool use_rtp_mux = true;
 
+    // If true, "a=packetization:<payload_type> raw" attribute will be offered
+    // in the SDP for all video payload and accepted in the answer if offered.
+    bool raw_packetization_for_video = false;
+
     // This will apply to all video tracks with a Plan B SDP offer/answer.
     int num_simulcast_layers = 1;
 
@@ -1168,6 +1174,14 @@ class PeerConnectionObserver {
   // A new ICE candidate has been gathered.
   virtual void OnIceCandidate(const IceCandidateInterface* candidate) = 0;
 
+  // Gathering of an ICE candidate failed.
+  // See https://w3c.github.io/webrtc-pc/#event-icecandidateerror
+  // |host_candidate| is a stringified socket address.
+  virtual void OnIceCandidateError(const std::string& host_candidate,
+                                   const std::string& url,
+                                   int error_code,
+                                   const std::string& error_text) {}
+
   // Ice candidates have been removed.
   // TODO(honghaiz): Make this a pure virtual method when all its subclasses
   // implement it.
@@ -1393,6 +1407,12 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // reached, logging is stopped automatically. If max_size_bytes is set to a
   // value <= 0, no limit will be used, and logging will continue until the
   // StopAecDump function is called.
+  // TODO(webrtc:6463): Delete default implementation when downstream mocks
+  // classes are updated.
+  virtual bool StartAecDump(FILE* file, int64_t max_size_bytes) {
+    return false;
+  }
+  // TODO(webrtc:6463): Deprecated; PlatformFile will soon be deleted.
   virtual bool StartAecDump(rtc::PlatformFile file, int64_t max_size_bytes) = 0;
 
   // Stops logging the AEC dump.

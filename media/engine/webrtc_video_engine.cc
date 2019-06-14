@@ -1877,6 +1877,8 @@ void WebRtcVideoChannel::WebRtcVideoSendStream::SetCodec(
 
   parameters_.config.rtp.payload_name = codec_settings.codec.name;
   parameters_.config.rtp.payload_type = codec_settings.codec.id;
+  parameters_.config.rtp.raw_payload =
+      codec_settings.codec.packetization == kPacketizationParamRaw;
   parameters_.config.rtp.ulpfec = codec_settings.ulpfec;
   parameters_.config.rtp.flexfec.payload_type =
       codec_settings.flexfec_payload_type;
@@ -1893,7 +1895,9 @@ void WebRtcVideoChannel::WebRtcVideoSendStream::SetCodec(
     }
   }
 
-  parameters_.config.rtp.lntf.enabled = HasLntf(codec_settings.codec);
+  const bool has_lntf = HasLntf(codec_settings.codec);
+  parameters_.config.rtp.lntf.enabled = has_lntf;
+  parameters_.config.encoder_settings.capabilities.loss_notification = has_lntf;
 
   parameters_.config.rtp.nack.rtp_history_ms =
       HasNack(codec_settings.codec) ? kNackHistoryMs : 0;
@@ -2463,6 +2467,7 @@ void WebRtcVideoChannel::WebRtcVideoReceiveStream::ConfigureCodecs(
   RTC_DCHECK(!recv_codecs.empty());
   config_.decoders.clear();
   config_.rtp.rtx_associated_payload_types.clear();
+  config_.rtp.raw_payload_types.clear();
   for (const auto& recv_codec : recv_codecs) {
     webrtc::SdpVideoFormat video_format(recv_codec.codec.name,
                                         recv_codec.codec.params);
@@ -2476,6 +2481,9 @@ void WebRtcVideoChannel::WebRtcVideoReceiveStream::ConfigureCodecs(
     config_.decoders.push_back(decoder);
     config_.rtp.rtx_associated_payload_types[recv_codec.rtx_payload_type] =
         recv_codec.codec.id;
+    if (recv_codec.codec.packetization == kPacketizationParamRaw) {
+      config_.rtp.raw_payload_types.insert(recv_codec.codec.id);
+    }
   }
 
   const auto& codec = recv_codecs.front();

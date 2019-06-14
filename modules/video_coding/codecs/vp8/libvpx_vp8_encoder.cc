@@ -450,9 +450,10 @@ void LibvpxVp8Encoder::SetStreamState(bool send_stream, int stream_idx) {
   send_stream_[stream_idx] = send_stream;
 }
 
+// TODO(eladalon): s/inst/codec_settings/g.
+// TODO(bugs.webrtc.org/10720): Pass |capabilities| to frame buffer controller.
 int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
-                                 int number_of_cores,
-                                 size_t /*maxPayloadSize */) {
+                                 const VideoEncoder::Settings& settings) {
   if (inst == NULL) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
@@ -466,7 +467,7 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
   if (inst->width < 1 || inst->height < 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
-  if (number_of_cores < 1) {
+  if (settings.number_of_cores < 1) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   if (inst->VP8().automaticResizeOn && inst->numberOfSimulcastStreams > 1) {
@@ -485,14 +486,15 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
 
   RTC_DCHECK(!frame_buffer_controller_);
   if (frame_buffer_controller_factory_) {
-    frame_buffer_controller_ = frame_buffer_controller_factory_->Create(*inst);
+    frame_buffer_controller_ =
+        frame_buffer_controller_factory_->Create(*inst, settings);
   } else {
     Vp8TemporalLayersFactory factory;
-    frame_buffer_controller_ = factory.Create(*inst);
+    frame_buffer_controller_ = factory.Create(*inst, settings);
   }
   RTC_DCHECK(frame_buffer_controller_);
 
-  number_of_cores_ = number_of_cores;
+  number_of_cores_ = settings.number_of_cores;
   timestamp_ = 0;
   codec_ = *inst;
 
@@ -611,7 +613,7 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
   // Determine number of threads based on the image size and #cores.
   // TODO(fbarchard): Consider number of Simulcast layers.
   vpx_configs_[0].g_threads = NumberOfThreads(
-      vpx_configs_[0].g_w, vpx_configs_[0].g_h, number_of_cores);
+      vpx_configs_[0].g_w, vpx_configs_[0].g_h, settings.number_of_cores);
 
   // Creating a wrapper to the image - setting image data to NULL.
   // Actual pointer will be set in encode. Setting align to 1, as it
@@ -891,6 +893,11 @@ bool LibvpxVp8Encoder::UpdateVpxConfiguration(size_t stream_index) {
   const Vp8EncoderConfig new_config =
       frame_buffer_controller_->UpdateConfiguration(stream_index);
 
+  if (new_config.reset_previous_configuration_overrides) {
+    *config = new_config;
+    return true;
+  }
+
   const bool changes_made = MaybeExtendVp8EncoderConfig(new_config, config);
 
   // Note that overrides must be applied even if they haven't changed.
@@ -941,12 +948,16 @@ int LibvpxVp8Encoder::Encode(const VideoFrame& frame,
 
   bool send_key_frame = key_frame_requested;
   bool drop_frame = false;
+  bool retransmission_allowed = true;
   Vp8FrameConfig tl_configs[kMaxSimulcastStreams];
   for (size_t i = 0; i < encoders_.size(); ++i) {
     tl_configs[i] =
         frame_buffer_controller_->NextFrameConfig(i, frame.timestamp());
     send_key_frame |= tl_configs[i].IntraFrame();
     drop_frame |= tl_configs[i].drop_frame;
+    RTC_DCHECK(i == 0 ||
+               retransmission_allowed == tl_configs[i].retransmission_allowed);
+    retransmission_allowed = tl_configs[i].retransmission_allowed;
   }
 
   if (drop_frame && !send_key_frame) {
@@ -1065,7 +1076,7 @@ int LibvpxVp8Encoder::Encode(const VideoFrame& frame,
     if (error)
       return WEBRTC_VIDEO_CODEC_ERROR;
     // Examines frame timestamps only.
-    error = GetEncodedPartitions(frame);
+    error = GetEncodedPartitions(frame, retransmission_allowed);
   }
   // TODO(sprang): Shouldn't we use the frame timestamp instead?
   timestamp_ += duration;
@@ -1091,7 +1102,8 @@ void LibvpxVp8Encoder::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
       (pkt.data.frame.flags & VPX_FRAME_IS_KEY) != 0, qp, codec_specific);
 }
 
-int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image) {
+int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
+                                           bool retransmission_allowed) {
   int stream_idx = static_cast<int>(encoders_.size()) - 1;
   int result = WEBRTC_VIDEO_CODEC_OK;
   for (size_t encoder_idx = 0; encoder_idx < encoders_.size();
@@ -1130,15 +1142,8 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image) {
       }
     }
     encoded_images_[encoder_idx].SetTimestamp(input_image.timestamp());
-    encoded_images_[encoder_idx].capture_time_ms_ =
-        input_image.render_time_ms();
-    encoded_images_[encoder_idx].rotation_ = input_image.rotation();
-    encoded_images_[encoder_idx].content_type_ =
-        (codec_.mode == VideoCodecMode::kScreensharing)
-            ? VideoContentType::SCREENSHARE
-            : VideoContentType::UNSPECIFIED;
-    encoded_images_[encoder_idx].timing_.flags = VideoSendTiming::kInvalid;
-    encoded_images_[encoder_idx].SetColorSpace(input_image.color_space());
+    encoded_images_[encoder_idx].SetRetransmissionAllowed(
+        retransmission_allowed);
 
     if (send_stream_[stream_idx]) {
       if (encoded_images_[encoder_idx].size() > 0) {

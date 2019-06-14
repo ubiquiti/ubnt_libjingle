@@ -86,7 +86,7 @@ WEBRTC_DEFINE_int(
 WEBRTC_DEFINE_float(drift_factor, 0.0, "Time drift factor.");
 
 WEBRTC_DEFINE_int(preload_packets,
-                  0,
+                  1,
                   "Preload the buffer with this many packets.");
 
 WEBRTC_DEFINE_string(
@@ -421,7 +421,7 @@ void NetEqQualityTest::Simulate() {
            decoded_time_ms_) {
       if (!in_file_->Read(in_size_samples_ * channels_, &in_data_[0])) {
         end_of_input = true;
-        ASSERT_FALSE(end_of_input && FLAG_runtime_ms < 0);
+        ASSERT_TRUE(end_of_input && FLAG_runtime_ms < 0);
         break;
       }
       payload_.Clear();

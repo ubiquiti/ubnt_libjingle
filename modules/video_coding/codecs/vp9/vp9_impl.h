@@ -21,6 +21,7 @@
 
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 
+#include "api/video_codecs/video_encoder.h"
 #include "media/base/vp9_profile.h"
 #include "modules/video_coding/codecs/vp9/vp9_frame_buffer_pool.h"
 #include "modules/video_coding/utility/framerate_controller.h"
@@ -40,8 +41,7 @@ class VP9EncoderImpl : public VP9Encoder {
   int Release() override;
 
   int InitEncode(const VideoCodec* codec_settings,
-                 int number_of_cores,
-                 size_t max_payload_size) override;
+                 const Settings& settings) override;
 
   int Encode(const VideoFrame& input_image,
              const std::vector<VideoFrameType>* frame_types) override;
@@ -194,11 +194,7 @@ class VP9DecoderImpl : public VP9Decoder {
   const char* ImplementationName() const override;
 
  private:
-  int ReturnFrame(const vpx_image_t* img,
-                  uint32_t timestamp,
-                  int64_t ntp_time_ms,
-                  int qp,
-                  const webrtc::ColorSpace* explicit_color_space);
+  int ReturnFrame(const vpx_image_t* img, uint32_t timestamp, int qp);
 
   // Memory pool used to share buffers between libvpx and webrtc.
   Vp9FrameBufferPool frame_buffer_pool_;

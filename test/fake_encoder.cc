@@ -68,8 +68,7 @@ void FakeEncoder::SetMaxBitrate(int max_kbps) {
 }
 
 int32_t FakeEncoder::InitEncode(const VideoCodec* config,
-                                int32_t number_of_cores,
-                                size_t max_payload_size) {
+                                const Settings& settings) {
   rtc::CritScope cs(&crit_sect_);
   config_ = *config;
   current_rate_settings_.bitrate.SetBitrate(0, 0, config_.startBitrate * 1000);
@@ -126,15 +125,10 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
     // Write a counter to the image to make each frame unique.
     WriteCounter(encoded.data() + frame_info.layers[i].size - 4, counter);
     encoded.SetTimestamp(input_image.timestamp());
-    encoded.capture_time_ms_ = input_image.render_time_ms();
     encoded._frameType = frame_info.keyframe ? VideoFrameType::kVideoFrameKey
                                              : VideoFrameType::kVideoFrameDelta;
     encoded._encodedWidth = simulcast_streams[i].width;
     encoded._encodedHeight = simulcast_streams[i].height;
-    encoded.rotation_ = input_image.rotation();
-    encoded.content_type_ = (mode == VideoCodecMode::kScreensharing)
-                                ? VideoContentType::SCREENSHARE
-                                : VideoContentType::UNSPECIFIED;
     encoded.SetSpatialIndex(i);
     CodecSpecificInfo codec_specific;
     std::unique_ptr<RTPFragmentationHeader> fragmentation =
@@ -369,8 +363,7 @@ MultithreadedFakeH264Encoder::MultithreadedFakeH264Encoder(
 }
 
 int32_t MultithreadedFakeH264Encoder::InitEncode(const VideoCodec* config,
-                                                 int32_t number_of_cores,
-                                                 size_t max_payload_size) {
+                                                 const Settings& settings) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
 
   queue1_ = task_queue_factory_->CreateTaskQueue(
@@ -378,7 +371,7 @@ int32_t MultithreadedFakeH264Encoder::InitEncode(const VideoCodec* config,
   queue2_ = task_queue_factory_->CreateTaskQueue(
       "Queue 2", TaskQueueFactory::Priority::NORMAL);
 
-  return FakeH264Encoder::InitEncode(config, number_of_cores, max_payload_size);
+  return FakeH264Encoder::InitEncode(config, settings);
 }
 
 class MultithreadedFakeH264Encoder::EncodeTask : public QueuedTask {

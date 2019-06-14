@@ -120,7 +120,7 @@ void RtpVideoStreamReceiver::RtcpFeedbackBuffer::SendLossNotification(
     bool buffering_allowed) {
   RTC_DCHECK(buffering_allowed);
   rtc::CritScope lock(&cs_);
-  RTC_DCHECK(lntf_state_)
+  RTC_DCHECK(!lntf_state_)
       << "SendLossNotification() called twice in a row with no call to "
          "SendBufferedRtcpFeedback() in between.";
   lntf_state_ = absl::make_optional<LossNotificationState>(
@@ -209,7 +209,6 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
   rtp_rtcp_->SetRTCPStatus(config_.rtp.rtcp_mode);
   rtp_rtcp_->SetSSRC(config_.rtp.local_ssrc);
   rtp_rtcp_->SetRemoteSSRC(config_.rtp.remote_ssrc);
-  rtp_rtcp_->SetKeyFrameRequestMethod(kKeyFrameReqPliRtcp);
 
   static const int kMaxPacketAgeToNack = 450;
   const int max_reordering_threshold = (config_.rtp.nack.rtp_history_ms > 0)
@@ -337,9 +336,6 @@ int32_t RtpVideoStreamReceiver::OnReceivedPayloadData(
       RTC_LOG(LS_WARNING)
           << "LossNotificationController does not support reordering.";
     } else {
-      // TODO(bugs.webrtc.org/10336): Coordinate with |nack_module_| to make
-      // sure that only a single RTCP packet is produced if both a LNTF as
-      // well as a NACK (or key frame request) should be issued.
       loss_notification_controller_->OnReceivedPacket(packet);
     }
   }
@@ -478,7 +474,7 @@ void RtpVideoStreamReceiver::RequestKeyFrame() {
   if (keyframe_request_sender_) {
     keyframe_request_sender_->RequestKeyFrame();
   } else {
-    rtp_rtcp_->RequestKeyFrame();
+    rtp_rtcp_->SendPictureLossIndication();
   }
 }
 

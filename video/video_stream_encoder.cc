@@ -20,6 +20,7 @@
 #include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_bitrate_allocator_factory.h"
+#include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/codecs/vp9/svc_rate_allocator.h"
 #include "modules/video_coding/include/video_codec_initializer.h"
 #include "modules/video_coding/include/video_coding.h"
@@ -664,9 +665,6 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     RTC_LOG(LS_ERROR) << "Failed to create encoder configuration.";
   }
 
-  rate_allocator_ =
-      settings_.bitrate_allocator_factory->CreateVideoBitrateAllocator(codec);
-
   // Set min_bitrate_bps, max_bitrate_bps, and max padding bit rate for VP9.
   if (encoder_config_.codec_type == kVideoCodecVP9) {
     // Lower max bitrate to the level codec actually can produce.
@@ -710,6 +708,9 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     codec.startBitrate = codec.maxBitrate;
   }
 
+  rate_allocator_ =
+      settings_.bitrate_allocator_factory->CreateVideoBitrateAllocator(codec);
+
   // Reset (release existing encoder) if one exists and anything except
   // start bitrate or max framerate has changed.
   const bool reset_required = RequiresEncoderReset(codec, send_codec_);
@@ -732,10 +733,13 @@ void VideoStreamEncoder::ReconfigureEncoder() {
           encoder_config_.video_format);
     }
 
-    if (encoder_->InitEncode(&send_codec_, number_of_cores_,
-                             max_data_payload_length_ > 0
-                                 ? max_data_payload_length_
-                                 : kDefaultPayloadSize) != 0) {
+    const size_t max_data_payload_length = max_data_payload_length_ > 0
+                                               ? max_data_payload_length_
+                                               : kDefaultPayloadSize;
+    if (encoder_->InitEncode(
+            &send_codec_,
+            VideoEncoder::Settings(settings_.capabilities, number_of_cores_,
+                                   max_data_payload_length)) != 0) {
       RTC_LOG(LS_ERROR) << "Failed to initialize the encoder associated with "
                            "codec type: "
                         << CodecTypeToPayloadString(send_codec_.codecType)
@@ -1214,6 +1218,12 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
   VideoFrame out_frame(video_frame);
   // Crop frame if needed.
   if (crop_width_ > 0 || crop_height_ > 0) {
+    // If the frame can't be converted to I420, drop it.
+    auto i420_buffer = video_frame.video_frame_buffer()->ToI420();
+    if (!i420_buffer) {
+      RTC_LOG(LS_ERROR) << "Frame conversion for crop failed, dropping frame.";
+      return;
+    }
     int cropped_width = video_frame.width() - crop_width_;
     int cropped_height = video_frame.height() - crop_height_;
     rtc::scoped_refptr<I420Buffer> cropped_buffer =
@@ -1222,17 +1232,16 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
     // happen after SinkWants signaled correctly from ReconfigureEncoder.
     VideoFrame::UpdateRect update_rect = video_frame.update_rect();
     if (crop_width_ < 4 && crop_height_ < 4) {
-      cropped_buffer->CropAndScaleFrom(
-          *video_frame.video_frame_buffer()->ToI420(), crop_width_ / 2,
-          crop_height_ / 2, cropped_width, cropped_height);
+      cropped_buffer->CropAndScaleFrom(*i420_buffer, crop_width_ / 2,
+                                       crop_height_ / 2, cropped_width,
+                                       cropped_height);
       update_rect.offset_x -= crop_width_ / 2;
       update_rect.offset_y -= crop_height_ / 2;
       update_rect.Intersect(
           VideoFrame::UpdateRect{0, 0, cropped_width, cropped_height});
 
     } else {
-      cropped_buffer->ScaleFrom(
-          *video_frame.video_frame_buffer()->ToI420().get());
+      cropped_buffer->ScaleFrom(*i420_buffer);
       if (!update_rect.IsEmpty()) {
         // Since we can't reason about pixels after scaling, we invalidate whole
         // picture, if anything changed.
@@ -1240,14 +1249,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
             VideoFrame::UpdateRect{0, 0, cropped_width, cropped_height};
       }
     }
-    out_frame = VideoFrame::Builder()
-                    .set_video_frame_buffer(cropped_buffer)
-                    .set_timestamp_rtp(video_frame.timestamp())
-                    .set_timestamp_ms(video_frame.render_time_ms())
-                    .set_rotation(video_frame.rotation())
-                    .set_id(video_frame.id())
-                    .set_update_rect(update_rect)
-                    .build();
+    out_frame.set_video_frame_buffer(cropped_buffer);
+    out_frame.set_update_rect(update_rect);
     out_frame.set_ntp_time_ms(video_frame.ntp_time_ms());
     // Since accumulated_update_rect_ is constructed before cropping,
     // we can't trust it. If any changes were pending, we invalidate whole
@@ -1322,14 +1325,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
           VideoFrame::UpdateRect{0, 0, out_frame.width(), out_frame.height()};
     }
 
-    out_frame = VideoFrame::Builder()
-                    .set_video_frame_buffer(converted_buffer)
-                    .set_timestamp_rtp(out_frame.timestamp())
-                    .set_timestamp_ms(out_frame.render_time_ms())
-                    .set_rotation(out_frame.rotation())
-                    .set_id(out_frame.id())
-                    .set_update_rect(update_rect)
-                    .build();
+    out_frame.set_video_frame_buffer(converted_buffer);
+    out_frame.set_update_rect(update_rect);
   }
 
   TRACE_EVENT1("webrtc", "VCMGenericEncoder::Encode", "timestamp",
