@@ -345,12 +345,9 @@ class ApmTest : public ::testing::Test {
   virtual void SetUp();
   virtual void TearDown();
 
-  static void SetUpTestCase() {
-  }
+  static void SetUpTestSuite() {}
 
-  static void TearDownTestCase() {
-    ClearTempFiles();
-  }
+  static void TearDownTestSuite() { ClearTempFiles(); }
 
   // Used to select between int and float interface tests.
   enum Format {
@@ -1584,14 +1581,14 @@ TEST_F(ApmTest, DebugDumpFromFileHandle) {
 
   const std::string filename =
       test::TempFilename(test::OutputPath(), "debug_aec");
-  FILE* fid = fopen(filename.c_str(), "w");
-  ASSERT_TRUE(fid);
+  FileWrapper f = FileWrapper::OpenWriteOnly(filename.c_str());
+  ASSERT_TRUE(f.is_open());
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   // Stopping without having started should be OK.
   apm_->DetachAecDump();
 
-  auto aec_dump = AecDumpFactory::Create(fid, -1, &worker_queue);
+  auto aec_dump = AecDumpFactory::Create(std::move(f), -1, &worker_queue);
   EXPECT_TRUE(aec_dump);
   apm_->AttachAecDump(std::move(aec_dump));
   EXPECT_EQ(apm_->kNoError, apm_->ProcessReverseStream(revframe_));
@@ -1599,14 +1596,12 @@ TEST_F(ApmTest, DebugDumpFromFileHandle) {
   apm_->DetachAecDump();
 
   // Verify the file has been written.
-  fid = fopen(filename.c_str(), "r");
+  FILE* fid = fopen(filename.c_str(), "r");
   ASSERT_TRUE(fid != NULL);
 
   // Clean it up.
   ASSERT_EQ(0, fclose(fid));
   ASSERT_EQ(0, remove(filename.c_str()));
-#else
-  ASSERT_EQ(0, fclose(fid));
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
 }
 
@@ -1932,7 +1927,7 @@ class AudioProcessingTest
 
   virtual ~AudioProcessingTest() {}
 
-  static void SetUpTestCase() {
+  static void SetUpTestSuite() {
     // Create all needed output reference files.
     const int kNativeRates[] = {8000, 16000, 32000, 48000};
     const size_t kNumChannels[] = {1, 2};
@@ -1953,9 +1948,7 @@ class AudioProcessingTest
     ClearTempOutFiles();
   }
 
-  static void TearDownTestCase() {
-    ClearTempFiles();
-  }
+  static void TearDownTestSuite() { ClearTempFiles(); }
 
   // Runs a process pass on files with the given parameters and dumps the output
   // to a file specified with |output_file_prefix|. Both forward and reverse

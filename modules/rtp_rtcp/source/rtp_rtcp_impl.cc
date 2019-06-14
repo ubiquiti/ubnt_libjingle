@@ -90,7 +90,6 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
       packet_overhead_(28),  // IPV4 UDP.
       nack_last_time_sent_full_ms_(0),
       nack_last_seq_number_sent_(0),
-      key_frame_req_method_(kKeyFrameReqPliRtcp),
       remote_bitrate_(configuration.remote_bitrate_estimator),
       ack_observer_(configuration.ack_observer),
       rtt_stats_(configuration.rtt_stats),
@@ -558,31 +557,6 @@ void ModuleRtpRtcpImpl::GetSendStreamDataCounters(
   rtp_sender_->GetDataCounters(rtp_counters, rtx_counters);
 }
 
-void ModuleRtpRtcpImpl::GetRtpPacketLossStats(
-    bool outgoing,
-    uint32_t ssrc,
-    struct RtpPacketLossStats* loss_stats) const {
-  if (!loss_stats)
-    return;
-  const PacketLossStats* stats_source = NULL;
-  if (outgoing) {
-    if (SSRC() == ssrc) {
-      stats_source = &send_loss_stats_;
-    }
-  } else {
-    if (rtcp_receiver_.RemoteSSRC() == ssrc) {
-      stats_source = &receive_loss_stats_;
-    }
-  }
-  if (stats_source) {
-    loss_stats->single_packet_loss_count = stats_source->GetSingleLossCount();
-    loss_stats->multiple_packet_loss_event_count =
-        stats_source->GetMultipleLossEventCount();
-    loss_stats->multiple_packet_loss_packet_count =
-        stats_source->GetMultipleLossPacketCount();
-  }
-}
-
 // Received RTCP report.
 int32_t ModuleRtpRtcpImpl::RemoteRTCPStat(
     std::vector<RTCPReportBlock>* receive_blocks) const {
@@ -649,9 +623,6 @@ void ModuleRtpRtcpImpl::SetTmmbn(std::vector<rtcp::TmmbItem> bounding_set) {
 // Send a Negative acknowledgment packet.
 int32_t ModuleRtpRtcpImpl::SendNACK(const uint16_t* nack_list,
                                     const uint16_t size) {
-  for (int i = 0; i < size; ++i) {
-    receive_loss_stats_.AddLostPacket(nack_list[i]);
-  }
   uint16_t nack_length = size;
   uint16_t start_id = 0;
   int64_t now_ms = clock_->TimeInMilliseconds();
@@ -736,22 +707,6 @@ bool ModuleRtpRtcpImpl::SendFeedbackPacket(
   return rtcp_sender_.SendFeedbackPacket(packet);
 }
 
-int32_t ModuleRtpRtcpImpl::SetKeyFrameRequestMethod(
-    const KeyFrameRequestMethod method) {
-  key_frame_req_method_ = method;
-  return 0;
-}
-
-int32_t ModuleRtpRtcpImpl::RequestKeyFrame() {
-  switch (key_frame_req_method_) {
-    case kKeyFrameReqPliRtcp:
-      return SendRTCP(kRtcpPli);
-    case kKeyFrameReqFirRtcp:
-      return SendRTCP(kRtcpFir);
-  }
-  return -1;
-}
-
 int32_t ModuleRtpRtcpImpl::SendLossNotification(uint16_t last_decoded_seq_num,
                                                 uint16_t last_received_seq_num,
                                                 bool decodability_flag,
@@ -789,9 +744,6 @@ void ModuleRtpRtcpImpl::OnReceivedNack(
   if (!rtp_sender_)
     return;
 
-  for (uint16_t nack_sequence_number : nack_sequence_numbers) {
-    send_loss_stats_.AddLostPacket(nack_sequence_number);
-  }
   if (!rtp_sender_->StorePackets() || nack_sequence_numbers.size() == 0) {
     return;
   }

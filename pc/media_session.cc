@@ -540,12 +540,15 @@ static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
       selected_transport_info->description.ice_pwd;
   ConnectionRole selected_connection_role =
       selected_transport_info->description.connection_role;
+  const absl::optional<OpaqueTransportParameters>& selected_opaque_parameters =
+      selected_transport_info->description.opaque_parameters;
   for (TransportInfo& transport_info : sdesc->transport_infos()) {
     if (bundle_group.HasContentName(transport_info.content_name) &&
         transport_info.content_name != selected_content_name) {
       transport_info.description.ice_ufrag = selected_ufrag;
       transport_info.description.ice_pwd = selected_pwd;
       transport_info.description.connection_role = selected_connection_role;
+      transport_info.description.opaque_parameters = selected_opaque_parameters;
     }
   }
   return true;
@@ -787,6 +790,19 @@ static bool ReferencedCodecsMatch(const std::vector<C>& codecs1,
 }
 
 template <class C>
+static void NegotiatePacketization(const C& local_codec,
+                                   const C& remote_codec,
+                                   C* negotiated_codec) {}
+
+template <>
+void NegotiatePacketization(const VideoCodec& local_codec,
+                            const VideoCodec& remote_codec,
+                            VideoCodec* negotiated_codec) {
+  negotiated_codec->packetization =
+      VideoCodec::IntersectPacketization(local_codec, remote_codec);
+}
+
+template <class C>
 static void NegotiateCodecs(const std::vector<C>& local_codecs,
                             const std::vector<C>& offered_codecs,
                             std::vector<C>* negotiated_codecs,
@@ -797,6 +813,7 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
     // local codecs, in case the remote offer contains duplicate codecs.
     if (FindMatchingCodec(local_codecs, offered_codecs, ours, &theirs)) {
       C negotiated = ours;
+      NegotiatePacketization(ours, theirs, &negotiated);
       negotiated.IntersectFeedbackParams(theirs);
       if (IsRtxCodec(negotiated)) {
         const auto apt_it =
@@ -2187,6 +2204,14 @@ bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
     }
   }
 
+  if (session_options.raw_packetization_for_video) {
+    for (VideoCodec& codec : filtered_codecs) {
+      if (codec.GetCodecType() == VideoCodec::CODEC_VIDEO) {
+        codec.packetization = kPacketizationParamRaw;
+      }
+    }
+  }
+
   if (!CreateMediaContentOffer(media_description_options, session_options,
                                filtered_codecs, sdes_policy,
                                GetCryptos(current_content), crypto_suites,
@@ -2504,6 +2529,14 @@ bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
     }
   }
 
+  if (session_options.raw_packetization_for_video) {
+    for (VideoCodec& codec : filtered_codecs) {
+      if (codec.GetCodecType() == VideoCodec::CODEC_VIDEO) {
+        codec.packetization = kPacketizationParamRaw;
+      }
+    }
+  }
+
   bool bundle_enabled = offer_description->HasGroup(GROUP_TYPE_BUNDLE) &&
                         session_options.bundle_enabled;
 
@@ -2769,15 +2802,6 @@ const SctpDataContentDescription* GetFirstSctpDataContentDescription(
   return desc ? desc->as_sctp() : nullptr;
 }
 
-// Returns a shim representing either an SctpDataContentDescription
-// or an RtpDataContentDescription, as appropriate.
-// TODO(bugs.webrtc.org/10597): Remove together with shim.
-const DataContentDescription* GetFirstDataContentDescription(
-    const SessionDescription* sdesc) {
-  auto desc = GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_DATA);
-  return desc ? desc->as_data() : nullptr;
-}
-
 //
 // Non-const versions of the above functions.
 //
@@ -2854,13 +2878,6 @@ SctpDataContentDescription* GetFirstSctpDataContentDescription(
     SessionDescription* sdesc) {
   auto desc = GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_DATA);
   return desc ? desc->as_sctp() : nullptr;
-}
-
-// Returns shim
-DataContentDescription* GetFirstDataContentDescription(
-    SessionDescription* sdesc) {
-  auto desc = GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_DATA);
-  return desc ? desc->as_data() : nullptr;
 }
 
 }  // namespace cricket

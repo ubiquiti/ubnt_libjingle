@@ -337,12 +337,6 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
       StreamDataCounters* rtp_counters,
       StreamDataCounters* rtx_counters) const = 0;
 
-  // Returns packet loss statistics for the RTP stream.
-  virtual void GetRtpPacketLossStats(
-      bool outgoing,
-      uint32_t ssrc,
-      struct RtpPacketLossStats* loss_stats) const = 0;
-
   // Returns received RTCP report block.
   // Returns -1 on failure else 0.
   // TODO(https://crbug.com/webrtc/10678): Remove this in favor of
@@ -423,13 +417,11 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
   // Video
   // **************************************************************************
 
-  // Set method for requestion a new key frame.
-  // Returns -1 on failure else 0.
-  virtual int32_t SetKeyFrameRequestMethod(KeyFrameRequestMethod method) = 0;
-
-  // Sends a request for a keyframe.
-  // Returns -1 on failure else 0.
-  virtual int32_t RequestKeyFrame() = 0;
+  // Requests new key frame.
+  // using PLI, https://tools.ietf.org/html/rfc4585#section-6.3.1.1
+  void SendPictureLossIndication() { SendRTCP(kRtcpPli); }
+  // using FIR, https://tools.ietf.org/html/rfc5104#section-4.3.1.2
+  void SendFullIntraRequest() { SendRTCP(kRtcpFir); }
 
   // Sends a LossNotification RTCP message.
   // Returns -1 on failure else 0.
