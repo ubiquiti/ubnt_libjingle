@@ -88,7 +88,7 @@ deps = {
   'src/base':
     Var('chromium_git') + '/chromium/src/base' + '@' + 'bf8f8970a864899efb9a1db9998f9587cedbab47',
   'src/build':
-    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@fix_ios_min_target',
+    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@v0.0.2',
   'src/buildtools':
     Var('chromium_git') + '/chromium/src/buildtools' + '@' + '09893e534d6df18471314f47af5c3f51336e8827',
   # Gradle 4.3-rc4. Used for testing Android Studio project generation for WebRTC.
