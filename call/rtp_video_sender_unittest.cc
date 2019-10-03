@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "call/rtp_video_sender.h"
+
 #include <memory>
 #include <string>
 
-#include "absl/memory/memory.h"
 #include "api/task_queue/default_task_queue_factory.h"
 #include "call/rtp_transport_controller_send.h"
-#include "call/rtp_video_sender.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
@@ -136,7 +136,7 @@ class RtpVideoSenderTestFixture {
                      VideoEncoderConfig::ContentType::kRealtimeVideo),
         retransmission_rate_limiter_(&clock_, kRetransmitWindowSizeMs) {
     std::map<uint32_t, RtpState> suspended_ssrcs;
-    router_ = absl::make_unique<RtpVideoSender>(
+    router_ = std::make_unique<RtpVideoSender>(
         &clock_, suspended_ssrcs, suspended_payload_states, config_.rtp,
         config_.rtcp_report_interval_ms, &transport_,
         CreateObservers(&call_stats_, &encoder_feedback_, &stats_proxy_,
@@ -144,7 +144,7 @@ class RtpVideoSenderTestFixture {
                         frame_count_observer, &stats_proxy_, &stats_proxy_,
                         &send_delay_stats_),
         &transport_controller_, &event_log_, &retransmission_rate_limiter_,
-        absl::make_unique<FecControllerDefault>(&clock_), nullptr,
+        std::make_unique<FecControllerDefault>(&clock_), nullptr,
         CryptoOptions{});
   }
   RtpVideoSenderTestFixture(
@@ -166,7 +166,7 @@ class RtpVideoSenderTestFixture {
   NiceMock<MockTransport> transport_;
   NiceMock<MockRtcpIntraFrameObserver> encoder_feedback_;
   SimulatedClock clock_;
-  RtcEventLogNullImpl event_log_;
+  RtcEventLogNull event_log_;
   VideoSendStream::Config config_;
   SendDelayStats send_delay_stats_;
   BitrateConstraints bitrate_config_;
@@ -186,9 +186,7 @@ TEST(RtpVideoSenderTest, SendOnOneModule) {
   encoded_image.SetTimestamp(1);
   encoded_image.capture_time_ms_ = 2;
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
-  encoded_image.Allocate(1);
-  encoded_image.data()[0] = kPayload;
-  encoded_image.set_size(1);
+  encoded_image.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
 
   RtpVideoSenderTestFixture test({kSsrc1}, {kRtxSsrc1}, kPayloadType, {});
   EXPECT_NE(
@@ -217,9 +215,7 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActive) {
   encoded_image_1.SetTimestamp(1);
   encoded_image_1.capture_time_ms_ = 2;
   encoded_image_1._frameType = VideoFrameType::kVideoFrameKey;
-  encoded_image_1.Allocate(1);
-  encoded_image_1.data()[0] = kPayload;
-  encoded_image_1.set_size(1);
+  encoded_image_1.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
 
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
@@ -262,9 +258,7 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
   encoded_image_1.SetTimestamp(1);
   encoded_image_1.capture_time_ms_ = 2;
   encoded_image_1._frameType = VideoFrameType::kVideoFrameKey;
-  encoded_image_1.Allocate(1);
-  encoded_image_1.data()[0] = kPayload;
-  encoded_image_1.set_size(1);
+  encoded_image_1.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
 
   EncodedImage encoded_image_2(encoded_image_1);
   encoded_image_2.SetSpatialIndex(1);
@@ -355,9 +349,7 @@ TEST(RtpVideoSenderTest, FrameCountCallbacks) {
   encoded_image.SetTimestamp(1);
   encoded_image.capture_time_ms_ = 2;
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
-  encoded_image.Allocate(1);
-  encoded_image.data()[0] = kPayload;
-  encoded_image.set_size(1);
+  encoded_image.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
 
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
 
@@ -396,7 +388,12 @@ TEST(RtpVideoSenderTest, FrameCountCallbacks) {
 // Integration test verifying that ack of packet via TransportFeedback means
 // that the packet is removed from RtpPacketHistory and won't be retransmitted
 // again.
+// TODO(crbug.com/webrtc/10873): Re-enable on iOS
+#if defined(WEBRTC_IOS)
+TEST(RtpVideoSenderTest, DISABLED_DoesNotRetrasmitAckedPackets) {
+#else
 TEST(RtpVideoSenderTest, DoesNotRetrasmitAckedPackets) {
+#endif
   const int64_t kTimeoutMs = 500;
 
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
@@ -408,9 +405,7 @@ TEST(RtpVideoSenderTest, DoesNotRetrasmitAckedPackets) {
   encoded_image.SetTimestamp(1);
   encoded_image.capture_time_ms_ = 2;
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
-  encoded_image.Allocate(1);
-  encoded_image.data()[0] = kPayload;
-  encoded_image.set_size(1);
+  encoded_image.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
 
   // Send two tiny images, mapping to two RTP packets. Capture sequence numbers.
   rtc::Event event;

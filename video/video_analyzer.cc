@@ -13,11 +13,12 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/rtp_rtcp/source/rtp_format.h"
 #include "modules/rtp_rtcp/source/rtp_utility.h"
 #include "rtc_base/cpu_time.h"
-#include "rtc_base/flags.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/memory_usage.h"
 #include "system_wrappers/include/cpu_info.h"
@@ -27,11 +28,11 @@
 #include "test/testsupport/perf_test.h"
 #include "test/testsupport/test_artifacts.h"
 
-WEBRTC_DEFINE_bool(
-    save_worst_frame,
-    false,
-    "Enable saving a frame with the lowest PSNR to a jpeg file in the "
-    "test_artifacts_dir");
+ABSL_FLAG(bool,
+          save_worst_frame,
+          false,
+          "Enable saving a frame with the lowest PSNR to a jpeg file in the "
+          "test_artifacts_dir");
 
 namespace webrtc {
 namespace {
@@ -65,7 +66,7 @@ VideoAnalyzer::VideoAnalyzer(
     bool is_quick_test_enabled,
     Clock* clock,
     std::string rtp_dump_name,
-    test::SingleThreadedTaskQueueForTesting* task_queue)
+    test::DEPRECATED_SingleThreadedTaskQueueForTesting* task_queue)
     : transport_(transport),
       receiver_(nullptr),
       call_(nullptr),
@@ -81,6 +82,7 @@ VideoAnalyzer::VideoAnalyzer(
       selected_stream_(selected_stream),
       selected_sl_(selected_sl),
       selected_tl_(selected_tl),
+      mean_decode_time_ms_(0.0),
       freeze_count_(0),
       total_freezes_duration_ms_(0),
       total_frames_duration_ms_(0),
@@ -91,17 +93,14 @@ VideoAnalyzer::VideoAnalyzer(
       frames_to_process_(duration_frames),
       frames_recorded_(0),
       frames_processed_(0),
-      dropped_frames_(0),
       captured_frames_(0),
+      dropped_frames_(0),
       dropped_frames_before_first_encode_(0),
       dropped_frames_before_rendering_(0),
       last_render_time_(0),
       last_render_delta_ms_(0),
       last_unfreeze_time_ms_(0),
       rtp_timestamp_delta_(0),
-      total_media_bytes_(0),
-      first_sending_time_(0),
-      last_sending_time_(0),
       cpu_time_(0),
       wallclock_time_(0),
       avg_psnr_threshold_(avg_psnr_threshold),
@@ -288,12 +287,7 @@ bool VideoAnalyzer::SendRtp(const uint8_t* packet,
       if (IsInSelectedSpatialAndTemporalLayer(packet, length, header)) {
         encoded_frame_sizes_[timestamp] +=
             length - (header.headerLength + header.paddingLength);
-        total_media_bytes_ +=
-            length - (header.headerLength + header.paddingLength);
       }
-      if (first_sending_time_ == 0)
-        first_sending_time_ = current_time;
-      last_sending_time_ = current_time;
     }
   }
   return result;
@@ -508,6 +502,12 @@ void VideoAnalyzer::PollStats() {
 
   if (receive_stream_ != nullptr) {
     VideoReceiveStream::Stats receive_stats = receive_stream_->GetStats();
+    // |total_decode_time_ms| gives a good estimate of the mean decode time,
+    // |decode_ms| is used to keep track of the standard deviation.
+    if (receive_stats.frames_decoded > 0)
+      mean_decode_time_ms_ =
+          static_cast<double>(receive_stats.total_decode_time_ms) /
+          receive_stats.frames_decoded;
     if (receive_stats.decode_ms > 0)
       decode_time_ms_.AddSample(receive_stats.decode_ms);
     if (receive_stats.max_decode_ms > 0)
@@ -622,31 +622,46 @@ bool VideoAnalyzer::FrameProcessed() {
 }
 
 void VideoAnalyzer::PrintResults() {
+  using ::webrtc::test::ImproveDirection;
+
   StopMeasuringCpuProcessTime();
-  int frames_left;
+  int dropped_frames_diff;
   {
     rtc::CritScope crit(&crit_);
-    frames_left = frames_.size();
+    dropped_frames_diff = dropped_frames_before_first_encode_ +
+                          dropped_frames_before_rendering_ + frames_.size();
   }
   rtc::CritScope crit(&comparison_lock_);
-  PrintResult("psnr", psnr_, " dB");
-  PrintResult("ssim", ssim_, " score");
-  PrintResult("sender_time", sender_time_, " ms");
-  PrintResult("receiver_time", receiver_time_, " ms");
-  PrintResult("network_time", network_time_, " ms");
-  PrintResult("total_delay_incl_network", end_to_end_, " ms");
-  PrintResult("time_between_rendered_frames", rendered_delta_, " ms");
-  PrintResult("encode_frame_rate", encode_frame_rate_, " fps");
-  PrintResult("encode_time", encode_time_ms_, " ms");
-  PrintResult("media_bitrate", media_bitrate_bps_, " bps");
-  PrintResult("fec_bitrate", fec_bitrate_bps_, " bps");
-  PrintResult("send_bandwidth", send_bandwidth_bps_, " bps");
-  PrintResult("pixels_per_frame", pixels_, " px");
+  PrintResult("psnr", psnr_, "dB", ImproveDirection::kBiggerIsBetter);
+  PrintResult("ssim", ssim_, "unitless", ImproveDirection::kBiggerIsBetter);
+  PrintResult("sender_time", sender_time_, "ms",
+              ImproveDirection::kSmallerIsBetter);
+  PrintResult("receiver_time", receiver_time_, "ms",
+              ImproveDirection::kSmallerIsBetter);
+  PrintResult("network_time", network_time_, "ms",
+              ImproveDirection::kSmallerIsBetter);
+  PrintResult("total_delay_incl_network", end_to_end_, "ms",
+              ImproveDirection::kSmallerIsBetter);
+  PrintResult("time_between_rendered_frames", rendered_delta_, "ms",
+              ImproveDirection::kSmallerIsBetter);
+  PrintResult("encode_frame_rate", encode_frame_rate_, "fps",
+              ImproveDirection::kBiggerIsBetter);
+  PrintResult("encode_time", encode_time_ms_, "ms",
+              ImproveDirection::kSmallerIsBetter);
+  PrintResult("media_bitrate", media_bitrate_bps_, "bps",
+              ImproveDirection::kNone);
+  PrintResult("fec_bitrate", fec_bitrate_bps_, "bps", ImproveDirection::kNone);
+  PrintResult("send_bandwidth", send_bandwidth_bps_, "bps",
+              ImproveDirection::kNone);
+  PrintResult("pixels_per_frame", pixels_, "count",
+              ImproveDirection::kBiggerIsBetter);
 
   test::PrintResult("decode_frame_rate", "", test_label_.c_str(),
-                    decode_frame_rate_, "fps", false);
+                    decode_frame_rate_, "fps", false,
+                    ImproveDirection::kBiggerIsBetter);
   test::PrintResult("render_frame_rate", "", test_label_.c_str(),
-                    render_frame_rate_, "fps", false);
+                    render_frame_rate_, "fps", false,
+                    ImproveDirection::kBiggerIsBetter);
 
   // Record the time from the last freeze until the last rendered frame to
   // ensure we cover the full timespan of the session. Otherwise the metric
@@ -654,7 +669,8 @@ void VideoAnalyzer::PrintResults() {
   time_between_freezes_.AddSample(last_render_time_ - last_unfreeze_time_ms_);
 
   // Freeze metrics.
-  PrintResult("time_between_freezes", time_between_freezes_, " ms");
+  PrintResult("time_between_freezes", time_between_freezes_, "ms",
+              ImproveDirection::kBiggerIsBetter);
 
   const double freeze_count_double = static_cast<double>(freeze_count_);
   const double total_freezes_duration_ms_double =
@@ -665,8 +681,8 @@ void VideoAnalyzer::PrintResults() {
   if (total_frames_duration_ms_double > 0) {
     test::PrintResult(
         "freeze_duration_ratio", "", test_label_.c_str(),
-        total_freezes_duration_ms_double / total_frames_duration_ms_double, "",
-        false);
+        total_freezes_duration_ms_double / total_frames_duration_ms_double,
+        "unitless", false, ImproveDirection::kSmallerIsBetter);
     RTC_DCHECK_LE(total_freezes_duration_ms_double,
                   total_frames_duration_ms_double);
 
@@ -676,7 +692,7 @@ void VideoAnalyzer::PrintResults() {
     if (total_frames_duration_min > 0) {
       test::PrintResult("freeze_count_per_minute", "", test_label_.c_str(),
                         freeze_count_double / total_frames_duration_min,
-                        "freezes", false);
+                        "unitless", false, ImproveDirection::kSmallerIsBetter);
     }
   }
 
@@ -684,41 +700,43 @@ void VideoAnalyzer::PrintResults() {
                     freeze_count_double > 0
                         ? total_freezes_duration_ms_double / freeze_count_double
                         : 0,
-                    "ms", false);
+                    "ms", false, ImproveDirection::kSmallerIsBetter);
 
   if (1000 * sum_squared_frame_durations_ > 0) {
     test::PrintResult(
         "harmonic_frame_rate", "", test_label_.c_str(),
         total_frames_duration_ms_double / (1000 * sum_squared_frame_durations_),
-        "", false);
+        "fps", false, ImproveDirection::kBiggerIsBetter);
   }
 
   if (worst_frame_) {
     test::PrintResult("min_psnr", "", test_label_.c_str(), worst_frame_->psnr,
-                      "dB", false);
+                      "dB", false, ImproveDirection::kBiggerIsBetter);
   }
 
   if (receive_stream_ != nullptr) {
-    PrintResult("decode_time", decode_time_ms_, " ms");
+    PrintResultWithExternalMean("decode_time", mean_decode_time_ms_,
+                                decode_time_ms_, "ms",
+                                ImproveDirection::kSmallerIsBetter);
   }
-  dropped_frames_ += dropped_frames_before_first_encode_ +
-                     dropped_frames_before_rendering_ + frames_left;
+  dropped_frames_ += dropped_frames_diff;
   test::PrintResult("dropped_frames", "", test_label_.c_str(), dropped_frames_,
-                    "frames", false);
+                    "count", false, ImproveDirection::kSmallerIsBetter);
   test::PrintResult("cpu_usage", "", test_label_.c_str(), GetCpuUsagePercent(),
-                    "%", false);
+                    "%", false, ImproveDirection::kSmallerIsBetter);
 
 #if defined(WEBRTC_WIN)
   // On Linux and Mac in Resident Set some unused pages may be counted.
   // Therefore this metric will depend on order in which tests are run and
   // will be flaky.
-  PrintResult("memory_usage", memory_usage_, " bytes");
+  PrintResult("memory_usage", memory_usage_, "sizeInBytes",
+              ImproveDirection::kSmallerIsBetter);
 #endif
 
   // Saving only the worst frame for manual analysis. Intention here is to
   // only detect video corruptions and not to track picture quality. Thus,
   // jpeg is used here.
-  if (FLAG_save_worst_frame && worst_frame_) {
+  if (absl::GetFlag(FLAGS_save_worst_frame) && worst_frame_) {
     std::string output_dir;
     test::GetTestArtifactsDir(&output_dir);
     std::string output_path =
@@ -730,9 +748,12 @@ void VideoAnalyzer::PrintResults() {
   }
 
   if (audio_receive_stream_ != nullptr) {
-    PrintResult("audio_expand_rate", audio_expand_rate_, "");
-    PrintResult("audio_accelerate_rate", audio_accelerate_rate_, "");
-    PrintResult("audio_jitter_buffer", audio_jitter_buffer_ms_, " ms");
+    PrintResult("audio_expand_rate", audio_expand_rate_, "unitless",
+                ImproveDirection::kSmallerIsBetter);
+    PrintResult("audio_accelerate_rate", audio_accelerate_rate_, "unitless",
+                ImproveDirection::kSmallerIsBetter);
+    PrintResult("audio_jitter_buffer", audio_jitter_buffer_ms_, "ms",
+                ImproveDirection::kNone);
   }
 
   //  Disable quality check for quick test, as quality checks may fail
@@ -812,12 +833,32 @@ void VideoAnalyzer::PerformFrameComparison(
   encoded_frame_size_.AddSample(comparison.encoded_frame_size);
 }
 
-void VideoAnalyzer::PrintResult(const char* result_type,
-                                Statistics stats,
-                                const char* unit) {
+void VideoAnalyzer::PrintResult(
+    const char* result_type,
+    Statistics stats,
+    const char* unit,
+    webrtc::test::ImproveDirection improve_direction) {
   test::PrintResultMeanAndError(
       result_type, "", test_label_.c_str(), stats.GetMean().value_or(0),
-      stats.GetStandardDeviation().value_or(0), unit, false);
+      stats.GetStandardDeviation().value_or(0), unit, false, improve_direction);
+}
+
+void VideoAnalyzer::PrintResultWithExternalMean(
+    const char* result_type,
+    double mean,
+    Statistics stats,
+    const char* unit,
+    webrtc::test::ImproveDirection improve_direction) {
+  // If the true mean is different than the sample mean, the sample variance is
+  // too low. The sample variance given a known mean is obtained by adding the
+  // squared error between the true mean and the sample mean.
+  double compensated_variance =
+      stats.Size() > 0
+          ? *stats.GetVariance() + pow(mean - *stats.GetMean(), 2.0)
+          : 0.0;
+  test::PrintResultMeanAndError(result_type, "", test_label_.c_str(), mean,
+                                std::sqrt(compensated_variance), unit, false,
+                                improve_direction);
 }
 
 void VideoAnalyzer::PrintSamplesToFile() {
@@ -828,7 +869,7 @@ void VideoAnalyzer::PrintSamplesToFile() {
   });
 
   fprintf(out, "%s\n", graph_title_.c_str());
-  fprintf(out, "%" PRIuS "\n", samples_.size());
+  fprintf(out, "%" RTC_PRIuS "\n", samples_.size());
   fprintf(out,
           "dropped "
           "input_time_ms "
@@ -841,7 +882,7 @@ void VideoAnalyzer::PrintSamplesToFile() {
           "encode_time_ms\n");
   for (const Sample& sample : samples_) {
     fprintf(out,
-            "%d %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" PRIuS
+            "%d %" PRId64 " %" PRId64 " %" PRId64 " %" PRId64 " %" RTC_PRIuS
             " %lf %lf\n",
             sample.dropped, sample.input_time_ms, sample.send_time_ms,
             sample.recv_time_ms, sample.render_time_ms,
@@ -849,21 +890,18 @@ void VideoAnalyzer::PrintSamplesToFile() {
   }
 }
 
-double VideoAnalyzer::GetAverageMediaBitrateBps() {
-  if (last_sending_time_ == first_sending_time_) {
-    return 0;
-  } else {
-    return static_cast<double>(total_media_bytes_) * 8 /
-           (last_sending_time_ - first_sending_time_) *
-           rtc::kNumMillisecsPerSec;
-  }
-}
-
 void VideoAnalyzer::AddCapturedFrameForComparison(
     const VideoFrame& video_frame) {
-  rtc::CritScope lock(&crit_);
-  if (captured_frames_ < frames_to_process_) {
-    ++captured_frames_;
+  bool must_capture = false;
+  {
+    rtc::CritScope lock(&comparison_lock_);
+    must_capture = captured_frames_ < frames_to_process_;
+    if (must_capture) {
+      ++captured_frames_;
+    }
+  }
+  if (must_capture) {
+    rtc::CritScope lock(&crit_);
     frames_.push_back(video_frame);
   }
 }

@@ -8,31 +8,27 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "modules/rtp_rtcp/source/rtp_rtcp_impl.h"
+
 #include <map>
 #include <memory>
 #include <set>
 
-#include "absl/memory/memory.h"
 #include "api/transport/field_trial_based_config.h"
 #include "api/video_codecs/video_codec.h"
-#include "modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/playout_delay_oracle.h"
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
-#include "modules/rtp_rtcp/source/rtp_rtcp_impl.h"
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "rtc_base/rate_limiter.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/rtcp_packet_parser.h"
+#include "test/rtp_header_parser.h"
 
-using ::testing::_;
 using ::testing::ElementsAre;
-using ::testing::NiceMock;
-using ::testing::Return;
-using ::testing::SaveArg;
 
 namespace webrtc {
 namespace {
@@ -71,7 +67,7 @@ class SendTransport : public Transport {
                size_t len,
                const PacketOptions& options) override {
     RTPHeader header;
-    std::unique_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
+    std::unique_ptr<RtpHeaderParser> parser(RtpHeaderParser::CreateForTest());
     EXPECT_TRUE(parser->Parse(static_cast<const uint8_t*>(data), len, &header));
     ++rtp_packets_sent_;
     last_rtp_header_ = header;
@@ -102,27 +98,22 @@ class SendTransport : public Transport {
 
 class RtpRtcpModule : public RtcpPacketTypeCounterObserver {
  public:
-  explicit RtpRtcpModule(SimulatedClock* clock)
-      : receive_statistics_(ReceiveStatistics::Create(clock)),
-        remote_ssrc_(0),
+  RtpRtcpModule(SimulatedClock* clock, bool is_sender)
+      : is_sender_(is_sender),
+        receive_statistics_(ReceiveStatistics::Create(clock)),
         clock_(clock) {
     CreateModuleImpl();
     transport_.SimulateNetworkDelay(kOneWayNetworkDelayMs, clock);
   }
 
+  const bool is_sender_;
   RtcpPacketTypeCounter packets_sent_;
   RtcpPacketTypeCounter packets_received_;
   std::unique_ptr<ReceiveStatistics> receive_statistics_;
   SendTransport transport_;
   RtcpRttStatsTestImpl rtt_stats_;
   std::unique_ptr<ModuleRtpRtcpImpl> impl_;
-  uint32_t remote_ssrc_;
   int rtcp_report_interval_ms_ = 0;
-
-  void SetRemoteSsrc(uint32_t ssrc) {
-    remote_ssrc_ = ssrc;
-    impl_->SetRemoteSSRC(ssrc);
-  }
 
   void RtcpPacketTypesCounterUpdated(
       uint32_t ssrc,
@@ -132,7 +123,7 @@ class RtpRtcpModule : public RtcpPacketTypeCounterObserver {
 
   RtcpPacketTypeCounter RtcpSent() {
     // RTCP counters for remote SSRC.
-    return counter_map_[remote_ssrc_];
+    return counter_map_[is_sender_ ? kReceiverSsrc : kSenderSsrc];
   }
 
   RtcpPacketTypeCounter RtcpReceived() {
@@ -161,8 +152,10 @@ class RtpRtcpModule : public RtcpPacketTypeCounterObserver {
     config.rtcp_packet_type_counter_observer = this;
     config.rtt_stats = &rtt_stats_;
     config.rtcp_report_interval_ms = rtcp_report_interval_ms_;
+    config.local_media_ssrc = is_sender_ ? kSenderSsrc : kReceiverSsrc;
 
     impl_.reset(new ModuleRtpRtcpImpl(config));
+    impl_->SetRemoteSSRC(is_sender_ ? kReceiverSsrc : kSenderSsrc);
     impl_->SetRTCPStatus(RtcpMode::kCompound);
   }
 
@@ -174,20 +167,20 @@ class RtpRtcpModule : public RtcpPacketTypeCounterObserver {
 class RtpRtcpImplTest : public ::testing::Test {
  protected:
   RtpRtcpImplTest()
-      : clock_(133590000000000), sender_(&clock_), receiver_(&clock_) {}
+      : clock_(133590000000000),
+        sender_(&clock_, /*is_sender=*/true),
+        receiver_(&clock_, /*is_sender=*/false) {}
 
   void SetUp() override {
     // Send module.
-    sender_.impl_->SetSSRC(kSenderSsrc);
     EXPECT_EQ(0, sender_.impl_->SetSendingStatus(true));
     sender_.impl_->SetSendingMediaStatus(true);
-    sender_.SetRemoteSsrc(kReceiverSsrc);
     sender_.impl_->SetSequenceNumber(kSequenceNumber);
     sender_.impl_->SetStorePacketsStatus(true, 100);
 
-    sender_video_ = absl::make_unique<RTPSenderVideo>(
+    sender_video_ = std::make_unique<RTPSenderVideo>(
         &clock_, sender_.impl_->RtpSender(), nullptr, &playout_delay_oracle_,
-        nullptr, false, false, FieldTrialBasedConfig());
+        nullptr, false, false, false, FieldTrialBasedConfig());
 
     memset(&codec_, 0, sizeof(VideoCodec));
     codec_.plType = 100;
@@ -199,8 +192,6 @@ class RtpRtcpImplTest : public ::testing::Test {
     // Receive module.
     EXPECT_EQ(0, receiver_.impl_->SetSendingStatus(false));
     receiver_.impl_->SetSendingMediaStatus(false);
-    receiver_.impl_->SetSSRC(kReceiverSsrc);
-    receiver_.SetRemoteSsrc(kSenderSsrc);
     // Transport settings.
     sender_.transport_.SetRtpRtcpModule(receiver_.impl_.get());
     receiver_.transport_.SetRtpRtcpModule(sender_.impl_.get());

@@ -30,7 +30,6 @@
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "modules/rtp_rtcp/source/contributing_sources.h"
 #include "modules/video_coding/h264_sps_pps_tracker.h"
 #include "modules/video_coding/loss_notification_controller.h"
 #include "modules/video_coding/packet_buffer.h"
@@ -175,8 +174,6 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
   void AddSecondarySink(RtpPacketSinkInterface* sink);
   void RemoveSecondarySink(const RtpPacketSinkInterface* sink);
 
-  std::vector<webrtc::RtpSource> GetSources() const;
-
  private:
   // Used for buffering RTCP feedback messages and sending them all together.
   // Note:
@@ -198,7 +195,6 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
     void RequestKeyFrame() override;
 
     // NackSender implementation.
-    void SendNack(const std::vector<uint16_t>& sequence_numbers) override;
     void SendNack(const std::vector<uint16_t>& sequence_numbers,
                   bool buffering_allowed) override;
 
@@ -277,8 +273,14 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
   std::unique_ptr<NackModule> nack_module_;
   std::unique_ptr<LossNotificationController> loss_notification_controller_;
 
-  rtc::scoped_refptr<video_coding::PacketBuffer> packet_buffer_;
-  std::unique_ptr<video_coding::RtpFrameReferenceFinder> reference_finder_;
+  video_coding::PacketBuffer packet_buffer_;
+
+  rtc::CriticalSection reference_finder_lock_;
+  std::unique_ptr<video_coding::RtpFrameReferenceFinder> reference_finder_
+      RTC_GUARDED_BY(reference_finder_lock_);
+  absl::optional<VideoCodecType> current_codec_;
+  uint32_t last_assembled_frame_rtp_timestamp_;
+
   rtc::CriticalSection last_seq_num_cs_;
   std::map<int64_t, uint16_t> last_seq_num_for_pic_id_
       RTC_GUARDED_BY(last_seq_num_cs_);
@@ -298,14 +300,13 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
   std::vector<RtpPacketSinkInterface*> secondary_sinks_
       RTC_GUARDED_BY(worker_task_checker_);
 
-  // Info for GetSources and GetSyncInfo is updated on network or worker thread,
-  // queried on the worker thread.
-  rtc::CriticalSection rtp_sources_lock_;
-  ContributingSources contributing_sources_ RTC_GUARDED_BY(&rtp_sources_lock_);
+  // Info for GetSyncInfo is updated on network or worker thread, and queried on
+  // the worker thread.
+  rtc::CriticalSection sync_info_lock_;
   absl::optional<uint32_t> last_received_rtp_timestamp_
-      RTC_GUARDED_BY(rtp_sources_lock_);
+      RTC_GUARDED_BY(sync_info_lock_);
   absl::optional<int64_t> last_received_rtp_system_time_ms_
-      RTC_GUARDED_BY(rtp_sources_lock_);
+      RTC_GUARDED_BY(sync_info_lock_);
 
   // Used to validate the buffered frame decryptor is always run on the correct
   // thread.
@@ -316,6 +317,8 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
       RTC_PT_GUARDED_BY(network_tc_);
   std::atomic<bool> frames_decryptable_;
   absl::optional<ColorSpace> last_color_space_;
+
+  int64_t last_completed_picture_id_ = 0;
 };
 
 }  // namespace webrtc

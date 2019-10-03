@@ -11,13 +11,15 @@
 #include "api/video_codecs/video_encoder_software_fallback_wrapper.h"
 
 #include <stdint.h>
+
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/types/optional.h"
+#include "api/fec_controller_override.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_frame.h"
 #include "api/video_codecs/video_codec.h"
@@ -79,6 +81,9 @@ class VideoEncoderSoftwareFallbackWrapper final : public VideoEncoder {
       std::unique_ptr<webrtc::VideoEncoder> hw_encoder);
   ~VideoEncoderSoftwareFallbackWrapper() override;
 
+  void SetFecControllerOverride(
+      FecControllerOverride* fec_controller_override) override;
+
   int32_t InitEncode(const VideoCodec* codec_settings,
                      const VideoEncoder::Settings& settings) override;
 
@@ -86,9 +91,18 @@ class VideoEncoderSoftwareFallbackWrapper final : public VideoEncoder {
       EncodedImageCallback* callback) override;
 
   int32_t Release() override;
+
   int32_t Encode(const VideoFrame& frame,
                  const std::vector<VideoFrameType>* frame_types) override;
+
+  void OnPacketLossRateUpdate(float packet_loss_rate) override;
+
+  void OnRttUpdate(int64_t rtt_ms) override;
+
+  void OnLossNotification(const LossNotification& loss_notification) override;
+
   void SetRates(const RateControlParameters& parameters) override;
+
   EncoderInfo GetEncoderInfo() const override;
 
  private:
@@ -149,6 +163,7 @@ VideoEncoderSoftwareFallbackWrapper::VideoEncoderSoftwareFallbackWrapper(
       fallback_encoder_(std::move(sw_encoder)),
       callback_(nullptr),
       forced_fallback_possible_(EnableForcedFallback()) {
+  RTC_DCHECK(fallback_encoder_);
   if (forced_fallback_possible_) {
     GetForcedFallbackParamsFromFieldTrialGroup(
         &forced_fallback_.min_pixels_, &forced_fallback_.max_pixels_,
@@ -182,6 +197,15 @@ bool VideoEncoderSoftwareFallbackWrapper::InitFallbackEncoder() {
   // Set calls for rates and channel parameters in the meantime.
   encoder_->Release();
   return true;
+}
+
+void VideoEncoderSoftwareFallbackWrapper::SetFecControllerOverride(
+    FecControllerOverride* fec_controller_override) {
+  // It is important that only one of those would ever interact with the
+  // |fec_controller_override| at a given time. This is the responsibility
+  // of |this| to maintain.
+  encoder_->SetFecControllerOverride(fec_controller_override);
+  fallback_encoder_->SetFecControllerOverride(fec_controller_override);
 }
 
 int32_t VideoEncoderSoftwareFallbackWrapper::InitEncode(
@@ -260,6 +284,26 @@ void VideoEncoderSoftwareFallbackWrapper::SetRates(
   encoder_->SetRates(parameters);
   if (use_fallback_encoder_)
     fallback_encoder_->SetRates(parameters);
+}
+
+void VideoEncoderSoftwareFallbackWrapper::OnPacketLossRateUpdate(
+    float packet_loss_rate) {
+  VideoEncoder* encoder =
+      use_fallback_encoder_ ? fallback_encoder_.get() : encoder_.get();
+  encoder->OnPacketLossRateUpdate(packet_loss_rate);
+}
+
+void VideoEncoderSoftwareFallbackWrapper::OnRttUpdate(int64_t rtt_ms) {
+  VideoEncoder* encoder =
+      use_fallback_encoder_ ? fallback_encoder_.get() : encoder_.get();
+  encoder->OnRttUpdate(rtt_ms);
+}
+
+void VideoEncoderSoftwareFallbackWrapper::OnLossNotification(
+    const LossNotification& loss_notification) {
+  VideoEncoder* encoder =
+      use_fallback_encoder_ ? fallback_encoder_.get() : encoder_.get();
+  encoder->OnLossNotification(loss_notification);
 }
 
 VideoEncoder::EncoderInfo VideoEncoderSoftwareFallbackWrapper::GetEncoderInfo()
@@ -351,7 +395,7 @@ void VideoEncoderSoftwareFallbackWrapper::ValidateSettingsForForcedFallback() {
 std::unique_ptr<VideoEncoder> CreateVideoEncoderSoftwareFallbackWrapper(
     std::unique_ptr<VideoEncoder> sw_fallback_encoder,
     std::unique_ptr<VideoEncoder> hw_encoder) {
-  return absl::make_unique<VideoEncoderSoftwareFallbackWrapper>(
+  return std::make_unique<VideoEncoderSoftwareFallbackWrapper>(
       std::move(sw_fallback_encoder), std::move(hw_encoder));
 }
 

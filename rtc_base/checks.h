@@ -24,7 +24,7 @@
 #if defined(_MSC_VER)
 #define RTC_NORETURN __declspec(noreturn)
 #elif defined(__GNUC__)
-#define RTC_NORETURN __attribute__ ((__noreturn__))
+#define RTC_NORETURN __attribute__((__noreturn__))
 #else
 #define RTC_NORETURN
 #endif
@@ -83,9 +83,6 @@ RTC_NORETURN void rtc_FatalMessage(const char* file, int line, const char* msg);
 //   RTC_DCHECK.
 //
 // - FATAL() aborts unconditionally.
-//
-// TODO(ajm): Ideally, checks.h would be combined with logging.h, but
-// consolidation with system_wrappers/logging.h should happen first.
 
 namespace rtc {
 namespace webrtc_checks_impl {

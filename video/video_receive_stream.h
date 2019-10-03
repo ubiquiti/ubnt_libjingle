@@ -14,14 +14,15 @@
 #include <memory>
 #include <vector>
 
-#include "api/media_transport_interface.h"
 #include "api/task_queue/task_queue_factory.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "call/syncable.h"
 #include "call/video_receive_stream.h"
 #include "modules/rtp_rtcp/include/flexfec_receiver.h"
+#include "modules/rtp_rtcp/source/source_tracker.h"
 #include "modules/video_coding/frame_buffer2.h"
-#include "modules/video_coding/video_coding_impl.h"
+#include "modules/video_coding/video_receiver2.h"
 #include "rtc_base/synchronization/sequence_checker.h"
 #include "rtc_base/task_queue.h"
 #include "system_wrappers/include/clock.h"
@@ -100,7 +101,6 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   void OnFrame(const VideoFrame& video_frame) override;
 
   // Implements NackSender.
-  void SendNack(const std::vector<uint16_t>& sequence_numbers) override;
   // For this particular override of the interface,
   // only (buffering_allowed == true) is acceptable.
   void SendNack(const std::vector<uint16_t>& sequence_numbers,
@@ -134,14 +134,14 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
  private:
   int64_t GetWaitMs() const;
   void StartNextDecode() RTC_RUN_ON(decode_queue_);
-  static void DecodeThreadFunction(void* ptr);
-  bool Decode();
   void HandleEncodedFrame(std::unique_ptr<video_coding::EncodedFrame> frame);
   void HandleFrameBufferTimeout();
 
   void UpdatePlayoutDelays() const
       RTC_EXCLUSIVE_LOCKS_REQUIRED(playout_delay_lock_);
   void RequestKeyFrame();
+
+  void UpdateHistograms();
 
   SequenceChecker worker_sequence_checker_;
   SequenceChecker module_process_sequence_checker_;
@@ -155,22 +155,19 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   ProcessThread* const process_thread_;
   Clock* const clock_;
 
-  const bool use_task_queue_;
-
-  rtc::PlatformThread decode_thread_;
-
   CallStats* const call_stats_;
 
   bool decoder_running_ RTC_GUARDED_BY(worker_sequence_checker_) = false;
   bool decoder_stopped_ RTC_GUARDED_BY(decode_queue_) = true;
 
+  SourceTracker source_tracker_;
   ReceiveStatisticsProxy stats_proxy_;
   // Shared by media and rtx stream receivers, since the latter has no RtpRtcp
   // module of its own.
   const std::unique_ptr<ReceiveStatistics> rtp_receive_statistics_;
 
   std::unique_ptr<VCMTiming> timing_;  // Jitter buffer experiment.
-  vcm::VideoReceiver video_receiver_;
+  VideoReceiver2 video_receiver_;
   std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>> incoming_video_stream_;
   RtpVideoStreamReceiver rtp_video_stream_receiver_;
   std::unique_ptr<VideoStreamDecoder> video_stream_decoder_;

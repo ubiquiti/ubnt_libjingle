@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "api/video/encoded_image.h"
-#include "modules/include/module_common_types.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_coding_defines.h"
 
@@ -23,7 +22,7 @@ namespace webrtc {
 class VCMEncodedFrame : protected EncodedImage {
  public:
   VCMEncodedFrame();
-  VCMEncodedFrame(const VCMEncodedFrame&) = delete;
+  VCMEncodedFrame(const VCMEncodedFrame&);
 
   ~VCMEncodedFrame();
   /**
@@ -54,8 +53,11 @@ class VCMEncodedFrame : protected EncodedImage {
 
   using EncodedImage::ColorSpace;
   using EncodedImage::data;
+  using EncodedImage::PacketInfos;
   using EncodedImage::set_size;
   using EncodedImage::SetColorSpace;
+  using EncodedImage::SetEncodedData;
+  using EncodedImage::SetPacketInfos;
   using EncodedImage::SetSpatialIndex;
   using EncodedImage::SetSpatialLayerFrameSize;
   using EncodedImage::SetTimestamp;
@@ -128,11 +130,6 @@ class VCMEncodedFrame : protected EncodedImage {
   bool _missingFrame;
   CodecSpecificInfo _codecSpecificInfo;
   webrtc::VideoCodecType _codec;
-
-  // Video rotation is only set along with the last packet for each frame
-  // (same as marker bit). This |_rotation_set| is only for debugging purpose
-  // to ensure we don't set it twice for a frame.
-  bool _rotation_set;
 };
 
 }  // namespace webrtc

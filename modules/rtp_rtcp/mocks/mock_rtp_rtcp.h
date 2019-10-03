@@ -11,6 +11,7 @@
 #ifndef MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
 #define MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
 
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/checks.h"
 #include "test/gmock.h"
 
@@ -47,7 +49,8 @@ class MockRtpRtcp : public RtpRtcp {
                bool(const std::string& uri, int id));
   MOCK_METHOD1(DeregisterSendRtpHeaderExtension,
                int32_t(RTPExtensionType type));
-  MOCK_CONST_METHOD0(HasBweExtensions, bool());
+  MOCK_CONST_METHOD0(SupportsPadding, bool());
+  MOCK_CONST_METHOD0(SupportsRtxPayloadPadding, bool());
   MOCK_CONST_METHOD0(StartTimestamp, uint32_t());
   MOCK_METHOD1(SetStartTimestamp, void(uint32_t timestamp));
   MOCK_CONST_METHOD0(SequenceNumber, uint16_t());
@@ -82,14 +85,12 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_CONST_METHOD1(EstimatedReceiveBandwidth,
                      int(uint32_t* available_bandwidth));
   MOCK_METHOD4(OnSendingRtpFrame, bool(uint32_t, int64_t, int, bool));
-  MOCK_METHOD5(TimeToSendPacket,
-               RtpPacketSendResult(uint32_t ssrc,
-                                   uint16_t sequence_number,
-                                   int64_t capture_time_ms,
-                                   bool retransmission,
-                                   const PacedPacketInfo& pacing_info));
-  MOCK_METHOD2(TimeToSendPadding,
-               size_t(size_t bytes, const PacedPacketInfo& pacing_info));
+  MOCK_METHOD2(TrySendPacket,
+               bool(RtpPacketToSend* packet,
+                    const PacedPacketInfo& pacing_info));
+  MOCK_METHOD1(
+      GeneratePadding,
+      std::vector<std::unique_ptr<RtpPacketToSend>>(size_t target_size_bytes));
   MOCK_METHOD2(RegisterRtcpObservers,
                void(RtcpIntraFrameObserver* intra_frame_callback,
                     RtcpBandwidthObserver* bandwidth_callback));
@@ -144,8 +145,11 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_CONST_METHOD0(StorePackets, bool());
   MOCK_METHOD1(RegisterRtcpStatisticsCallback, void(RtcpStatisticsCallback*));
   MOCK_METHOD0(GetRtcpStatisticsCallback, RtcpStatisticsCallback*());
+  MOCK_METHOD1(RegisterRtcpCnameCallback, void(RtcpCnameCallback*));
   MOCK_METHOD1(SetReportBlockDataObserver, void(ReportBlockDataObserver*));
   MOCK_METHOD1(SendFeedbackPacket, bool(const rtcp::TransportFeedback& packet));
+  MOCK_METHOD1(SendNetworkStateEstimatePacket,
+               bool(const rtcp::RemoteEstimate& packet));
   MOCK_METHOD1(SetTargetSendBitrate, void(uint32_t bitrate_bps));
   MOCK_METHOD4(SendLossNotification,
                int32_t(uint16_t last_decoded_seq_num,

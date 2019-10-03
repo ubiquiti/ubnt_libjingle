@@ -10,22 +10,24 @@
 #include "test/scenario/scenario.h"
 
 #include <algorithm>
+#include <memory>
 
-#include "absl/memory/memory.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "rtc_base/flags.h"
 #include "rtc_base/socket_address.h"
 #include "test/logging/file_log_writer.h"
-#include "test/scenario/network/network_emulation.h"
+#include "test/network/network_emulation.h"
 #include "test/testsupport/file_utils.h"
 #include "test/time_controller/real_time_controller.h"
 #include "test/time_controller/simulated_time_controller.h"
 
-WEBRTC_DEFINE_bool(scenario_logs, false, "Save logs from scenario framework.");
-WEBRTC_DEFINE_string(scenario_logs_root,
-                     "",
-                     "Output root path, based on project root if unset.");
+ABSL_FLAG(bool, scenario_logs, false, "Save logs from scenario framework.");
+ABSL_FLAG(std::string,
+          scenario_logs_root,
+          "",
+          "Output root path, based on project root if unset.");
 
 namespace webrtc {
 namespace test {
@@ -34,26 +36,25 @@ const Timestamp kSimulatedStartTime = Timestamp::seconds(100000);
 
 std::unique_ptr<FileLogWriterFactory> GetScenarioLogManager(
     std::string file_name) {
-  if (FLAG_scenario_logs && !file_name.empty()) {
-    std::string output_root = FLAG_scenario_logs_root;
+  if (absl::GetFlag(FLAGS_scenario_logs) && !file_name.empty()) {
+    std::string output_root = absl::GetFlag(FLAGS_scenario_logs_root);
     if (output_root.empty())
       output_root = OutputPath() + "output_data/";
 
     auto base_filename = output_root + file_name + ".";
     RTC_LOG(LS_INFO) << "Saving scenario logs to: " << base_filename;
-    return absl::make_unique<FileLogWriterFactory>(base_filename);
+    return std::make_unique<FileLogWriterFactory>(base_filename);
   }
   return nullptr;
 }
 std::unique_ptr<TimeController> CreateTimeController(bool real_time) {
   if (real_time) {
-    return absl::make_unique<RealTimeController>();
+    return std::make_unique<RealTimeController>();
   } else {
-    return absl::make_unique<GlobalSimulatedTimeController>(
-        kSimulatedStartTime);
+    return std::make_unique<GlobalSimulatedTimeController>(kSimulatedStartTime);
   }
 }
-}
+}  // namespace
 
 Scenario::Scenario()
     : Scenario(std::unique_ptr<LogWriterFactoryInterface>(),
@@ -86,12 +87,12 @@ Scenario::~Scenario() {
 }
 
 ColumnPrinter Scenario::TimePrinter() {
-  return ColumnPrinter::Lambda("time",
-                               [this](rtc::SimpleStringBuilder& sb) {
-                                 sb.AppendFormat("%.3lf",
-                                                 Now().seconds<double>());
-                               },
-                               32);
+  return ColumnPrinter::Lambda(
+      "time",
+      [this](rtc::SimpleStringBuilder& sb) {
+        sb.AppendFormat("%.3lf", Now().seconds<double>());
+      },
+      32);
 }
 
 StatesPrinter* Scenario::CreatePrinter(std::string name,
@@ -292,7 +293,7 @@ void Scenario::RunUntil(TimeDelta target_time_since_start,
 }
 
 void Scenario::Start() {
-  start_time_ = Timestamp::us(clock_->TimeInMicroseconds());
+  start_time_ = clock_->CurrentTime();
   for (auto& stream_pair : video_streams_)
     stream_pair->receive()->Start();
   for (auto& stream_pair : audio_streams_)
@@ -324,7 +325,7 @@ void Scenario::Stop() {
 }
 
 Timestamp Scenario::Now() {
-  return Timestamp::us(clock_->TimeInMicroseconds());
+  return clock_->CurrentTime();
 }
 
 TimeDelta Scenario::TimeSinceStart() {

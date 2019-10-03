@@ -9,18 +9,20 @@
  */
 
 #include "modules/audio_device/mac/audio_device_mac.h"
-#include "absl/memory/memory.h"
+
+#include <ApplicationServices/ApplicationServices.h>
+#include <libkern/OSAtomic.h>  // OSAtomicCompareAndSwap()
+#include <mach/mach.h>         // mach_task_self()
+#include <sys/sysctl.h>        // sysctlbyname()
+
+#include <memory>
+
 #include "modules/audio_device/audio_device_config.h"
 #include "modules/third_party/portaudio/pa_ringbuffer.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/system/arch.h"
-
-#include <ApplicationServices/ApplicationServices.h>
-#include <libkern/OSAtomic.h>  // OSAtomicCompareAndSwap()
-#include <mach/mach.h>         // mach_task_self()
-#include <sys/sysctl.h>        // sysctlbyname()
 
 namespace webrtc {
 
@@ -197,7 +199,6 @@ AudioDeviceMac::~AudioDeviceMac() {
   if (kernErr != KERN_SUCCESS) {
     RTC_LOG(LS_ERROR) << "semaphore_destroy() error: " << kernErr;
   }
-
 }
 
 // ============================================================================
@@ -1557,7 +1558,7 @@ int32_t AudioDeviceMac::GetNumberDevices(const AudioObjectPropertyScope scope,
   }
 
   UInt32 numberDevices = size / sizeof(AudioDeviceID);
-  const auto deviceIds = absl::make_unique<AudioDeviceID[]>(numberDevices);
+  const auto deviceIds = std::make_unique<AudioDeviceID[]>(numberDevices);
   AudioBufferList* bufferList = NULL;
   UInt32 numberScopedDevices = 0;
 

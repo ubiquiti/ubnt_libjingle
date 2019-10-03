@@ -14,16 +14,15 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "test/logging/log_writer.h"
+#include "test/network/network_emulation_manager.h"
 #include "test/scenario/audio_stream.h"
 #include "test/scenario/call_client.h"
 #include "test/scenario/column_printer.h"
-#include "test/scenario/network/network_emulation_manager.h"
 #include "test/scenario/network_node.h"
 #include "test/scenario/scenario_config.h"
 #include "test/scenario/video_stream.h"
@@ -148,7 +147,7 @@ class Scenario {
       std::string name) {
     if (!log_writer_factory_ || name.empty())
       return nullptr;
-    return absl::make_unique<LogWriterFactoryAddPrefix>(
+    return std::make_unique<LogWriterFactoryAddPrefix>(
         log_writer_factory_.get(), name);
   }
 

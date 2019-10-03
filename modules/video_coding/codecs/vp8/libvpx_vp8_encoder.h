@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "api/fec_controller_override.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
 #include "api/video_codecs/video_encoder.h"
@@ -26,7 +27,6 @@
 #include "modules/video_coding/utility/framerate_controller.h"
 #include "rtc_base/experiments/cpu_speed_experiment.h"
 #include "rtc_base/experiments/rate_control_settings.h"
-
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_encoder.h"
 
@@ -44,6 +44,9 @@ class LibvpxVp8Encoder : public VideoEncoder {
   ~LibvpxVp8Encoder() override;
 
   int Release() override;
+
+  void SetFecControllerOverride(
+      FecControllerOverride* fec_controller_override) override;
 
   int InitEncode(const VideoCodec* codec_settings,
                  const VideoEncoder::Settings& settings) override;
@@ -100,6 +103,7 @@ class LibvpxVp8Encoder : public VideoEncoder {
   const absl::optional<std::vector<CpuSpeedExperiment::Config>>
       experimental_cpu_speed_config_arm_;
   const RateControlSettings rate_control_settings_;
+  const absl::optional<int> screenshare_max_qp_;
 
   EncodedImageCallback* encoded_complete_callback_;
   VideoCodec codec_;
@@ -137,6 +141,8 @@ class LibvpxVp8Encoder : public VideoEncoder {
       std::string group_name);
   FramerateController framerate_controller_;
   int num_steady_state_frames_;
+
+  FecControllerOverride* fec_controller_override_;
 };
 
 }  // namespace webrtc

@@ -19,7 +19,6 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "absl/types/optional.h"
 #include "api/crypto_params.h"
@@ -31,6 +30,7 @@
 #include "pc/media_protocol_names.h"
 #include "pc/rtp_media_utils.h"
 #include "pc/srtp_filter.h"
+#include "pc/used_ids.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/logging.h"
@@ -280,94 +280,6 @@ void FilterDataCodecs(std::vector<DataCodec>* codecs, bool sctp) {
                                }),
                 codecs->end());
 }
-
-template <typename IdStruct>
-class UsedIds {
- public:
-  UsedIds(int min_allowed_id, int max_allowed_id)
-      : min_allowed_id_(min_allowed_id),
-        max_allowed_id_(max_allowed_id),
-        next_id_(max_allowed_id) {}
-
-  // Loops through all Id in |ids| and changes its id if it is
-  // already in use by another IdStruct. Call this methods with all Id
-  // in a session description to make sure no duplicate ids exists.
-  // Note that typename Id must be a type of IdStruct.
-  template <typename Id>
-  void FindAndSetIdUsed(std::vector<Id>* ids) {
-    for (const Id& id : *ids) {
-      FindAndSetIdUsed(&id);
-    }
-  }
-
-  // Finds and sets an unused id if the |idstruct| id is already in use.
-  void FindAndSetIdUsed(IdStruct* idstruct) {
-    const int original_id = idstruct->id;
-    int new_id = idstruct->id;
-
-    if (original_id > max_allowed_id_ || original_id < min_allowed_id_) {
-      // If the original id is not in range - this is an id that can't be
-      // dynamically changed.
-      return;
-    }
-
-    if (IsIdUsed(original_id)) {
-      new_id = FindUnusedId();
-      RTC_LOG(LS_WARNING) << "Duplicate id found. Reassigning from "
-                          << original_id << " to " << new_id;
-      idstruct->id = new_id;
-    }
-    SetIdUsed(new_id);
-  }
-
- private:
-  // Returns the first unused id in reverse order.
-  // This hopefully reduce the risk of more collisions. We want to change the
-  // default ids as little as possible.
-  int FindUnusedId() {
-    while (IsIdUsed(next_id_) && next_id_ >= min_allowed_id_) {
-      --next_id_;
-    }
-    RTC_DCHECK(next_id_ >= min_allowed_id_);
-    return next_id_;
-  }
-
-  bool IsIdUsed(int new_id) { return id_set_.find(new_id) != id_set_.end(); }
-
-  void SetIdUsed(int new_id) { id_set_.insert(new_id); }
-
-  const int min_allowed_id_;
-  const int max_allowed_id_;
-  int next_id_;
-  std::set<int> id_set_;
-};
-
-// Helper class used for finding duplicate RTP payload types among audio, video
-// and data codecs. When bundle is used the payload types may not collide.
-class UsedPayloadTypes : public UsedIds<Codec> {
- public:
-  UsedPayloadTypes()
-      : UsedIds<Codec>(kDynamicPayloadTypeMin, kDynamicPayloadTypeMax) {}
-
- private:
-  static const int kDynamicPayloadTypeMin = 96;
-  static const int kDynamicPayloadTypeMax = 127;
-};
-
-// Helper class used for finding duplicate RTP Header extension ids among
-// audio and video extensions. Only applies to one-byte header extensions at the
-// moment. ids > 14 will always be reported as available.
-// TODO(kron): This class needs to be refactored when we start to send two-byte
-// header extensions.
-class UsedRtpHeaderExtensionIds : public UsedIds<webrtc::RtpExtension> {
- public:
-  UsedRtpHeaderExtensionIds()
-      : UsedIds<webrtc::RtpExtension>(
-            webrtc::RtpExtension::kMinId,
-            webrtc::RtpExtension::kOneByteHeaderExtensionMaxId) {}
-
- private:
-};
 
 static StreamParams CreateStreamParamsForNewSenderWithSsrcs(
     const SenderOptions& sender,
@@ -748,6 +660,8 @@ static bool CreateContentOffer(
       }
     }
   }
+
+  offer->set_alt_protocol(media_description_options.alt_protocol);
 
   if (secure_policy == SEC_REQUIRED && offer->cryptos().empty()) {
     return false;
@@ -1246,6 +1160,8 @@ static bool CreateMediaContentAnswer(
     answer->set_rtcp_reduced_size(offer->rtcp_reduced_size());
   }
 
+  answer->set_remote_estimate(offer->remote_estimate());
+
   if (sdes_policy != SEC_DISABLED) {
     CryptoParams crypto;
     if (SelectCrypto(offer, bundle_enabled, session_options.crypto_options,
@@ -1265,6 +1181,10 @@ static bool CreateMediaContentAnswer(
 
   answer->set_direction(NegotiateRtpTransceiverDirection(
       offer->direction(), media_description_options.direction));
+
+  if (offer->alt_protocol() == media_description_options.alt_protocol) {
+    answer->set_alt_protocol(media_description_options.alt_protocol);
+  }
   return true;
 }
 
@@ -1512,10 +1432,11 @@ std::unique_ptr<SessionDescription> MediaSessionDescriptionFactory::CreateOffer(
 
   RtpHeaderExtensions audio_rtp_extensions;
   RtpHeaderExtensions video_rtp_extensions;
-  GetRtpHdrExtsToOffer(current_active_contents, &audio_rtp_extensions,
-                       &video_rtp_extensions);
+  GetRtpHdrExtsToOffer(current_active_contents,
+                       session_options.offer_extmap_allow_mixed,
+                       &audio_rtp_extensions, &video_rtp_extensions);
 
-  auto offer = absl::make_unique<SessionDescription>();
+  auto offer = std::make_unique<SessionDescription>();
 
   // Iterate through the media description options, matching with existing media
   // descriptions in |current_description|.
@@ -1660,7 +1581,7 @@ MediaSessionDescriptionFactory::CreateAnswer(
   FilterDataCodecs(&answer_rtp_data_codecs,
                    session_options.data_channel_type == DCT_SCTP);
 
-  auto answer = absl::make_unique<SessionDescription>();
+  auto answer = std::make_unique<SessionDescription>();
 
   // If the offer supports BUNDLE, and we want to use it too, create a BUNDLE
   // group in the answer with the appropriate content names.
@@ -1958,11 +1879,19 @@ void MediaSessionDescriptionFactory::GetCodecsForAnswer(
 
 void MediaSessionDescriptionFactory::GetRtpHdrExtsToOffer(
     const std::vector<const ContentInfo*>& current_active_contents,
+    bool extmap_allow_mixed,
     RtpHeaderExtensions* offer_audio_extensions,
     RtpHeaderExtensions* offer_video_extensions) const {
   // All header extensions allocated from the same range to avoid potential
   // issues when using BUNDLE.
-  UsedRtpHeaderExtensionIds used_ids;
+
+  // Strictly speaking the SDP attribute extmap_allow_mixed signals that the
+  // receiver supports an RTP stream where one- and two-byte RTP header
+  // extensions are mixed. For backwards compatibility reasons it's used in
+  // WebRTC to signal that two-byte RTP header extensions are supported.
+  UsedRtpHeaderExtensionIds used_ids(
+      extmap_allow_mixed ? UsedRtpHeaderExtensionIds::IdDomain::kTwoByteAllowed
+                         : UsedRtpHeaderExtensionIds::IdDomain::kOneByteOnly);
   RtpHeaderExtensions all_regular_extensions;
   RtpHeaderExtensions all_encrypted_extensions;
 
@@ -2331,7 +2260,9 @@ bool MediaSessionDescriptionFactory::AddDataContentForOffer(
     StreamParamsVec* current_streams,
     SessionDescription* desc,
     IceCredentialsIterator* ice_credentials) const {
-  bool is_sctp = (session_options.data_channel_type == DCT_SCTP);
+  bool is_sctp =
+      (session_options.data_channel_type == DCT_SCTP ||
+       session_options.data_channel_type == DCT_DATA_CHANNEL_TRANSPORT_SCTP);
   // If the DataChannel type is not specified, use the DataChannel type in
   // the current description.
   if (session_options.data_channel_type == DCT_NONE && current_content) {
@@ -2610,7 +2541,7 @@ bool MediaSessionDescriptionFactory::AddDataContentForAnswer(
   std::unique_ptr<MediaContentDescription> data_answer;
   if (offer_content->media_description()->as_sctp()) {
     // SCTP data content
-    data_answer = absl::make_unique<SctpDataContentDescription>();
+    data_answer = std::make_unique<SctpDataContentDescription>();
     const SctpDataContentDescription* offer_data_description =
         offer_content->media_description()->as_sctp();
     // Respond with the offerer's proto, whatever it is.
@@ -2638,7 +2569,7 @@ bool MediaSessionDescriptionFactory::AddDataContentForAnswer(
     data_answer->as_sctp()->set_use_sctpmap(offer_uses_sctpmap);
   } else {
     // RTP offer
-    data_answer = absl::make_unique<RtpDataContentDescription>();
+    data_answer = std::make_unique<RtpDataContentDescription>();
 
     const RtpDataContentDescription* offer_data_description =
         offer_content->media_description()->as_rtp_data();

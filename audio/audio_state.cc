@@ -11,10 +11,10 @@
 #include "audio/audio_state.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "audio/audio_receive_stream.h"
 #include "modules/audio_device/include/audio_device.h"
 #include "rtc_base/checks.h"
@@ -130,8 +130,7 @@ void AudioState::SetPlayout(bool enabled) {
       }
     } else {
       config_.audio_device_module->StopPlayout();
-      null_audio_poller_ =
-          absl::make_unique<NullAudioPoller>(&audio_transport_);
+      null_audio_poller_ = std::make_unique<NullAudioPoller>(&audio_transport_);
     }
   }
 }
@@ -149,18 +148,6 @@ void AudioState::SetRecording(bool enabled) {
       config_.audio_device_module->StopRecording();
     }
   }
-}
-
-AudioState::Stats AudioState::GetAudioInputStats() const {
-  RTC_DCHECK(thread_checker_.IsCurrent());
-  const voe::AudioLevel& audio_level = audio_transport_.audio_level();
-  Stats result;
-  result.audio_level = audio_level.LevelFullRange();
-  RTC_DCHECK_LE(0, result.audio_level);
-  RTC_DCHECK_GE(32767, result.audio_level);
-  result.total_energy = audio_level.TotalEnergy();
-  result.total_duration = audio_level.TotalDuration();
-  return result;
 }
 
 void AudioState::SetStereoChannelSwapping(bool enable) {

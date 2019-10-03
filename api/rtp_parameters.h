@@ -12,6 +12,7 @@
 #define API_RTP_PARAMETERS_H_
 
 #include <stdint.h>
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -266,6 +267,10 @@ struct RtpExtension {
   // Header extension for absolute send time, see url for details:
   // http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
   static const char kAbsSendTimeUri[];
+
+  // Header extension for absolute capture time, see url for details:
+  // http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time
+  static const char kAbsoluteCaptureTimeUri[];
 
   // Header extension for coordination of video orientation, see url for
   // details:

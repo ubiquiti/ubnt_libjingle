@@ -12,12 +12,14 @@
 #define MODULES_RTP_RTCP_INCLUDE_RTP_HEADER_EXTENSION_MAP_H_
 
 #include <stdint.h>
+
 #include <string>
 
 #include "api/array_view.h"
 #include "api/rtp_parameters.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/deprecation.h"
 
 namespace webrtc {
 
@@ -50,7 +52,7 @@ class RtpHeaderExtensionMap {
   }
 
   // TODO(danilchap): Remove use of the functions below.
-  int32_t Register(RTPExtensionType type, int id) {
+  RTC_DEPRECATED int32_t Register(RTPExtensionType type, int id) {
     return RegisterByType(id, type) ? 0 : -1;
   }
   int32_t Deregister(RTPExtensionType type);

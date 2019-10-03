@@ -8,12 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "api/video_codecs/builtin_video_decoder_factory.h"
-#include "api/video_codecs/builtin_video_encoder_factory.h"
+#include <memory>
+
+#include "api/task_queue/default_task_queue_factory.h"
 #include "media/engine/webrtc_media_engine.h"
-#include "modules/audio_processing/include/audio_processing.h"
+#include "media/engine/webrtc_media_engine_defaults.h"
 #include "pc/media_session.h"
 #include "pc/peer_connection_factory.h"
 #include "pc/peer_connection_wrapper.h"
@@ -21,7 +20,6 @@
 #ifdef WEBRTC_ANDROID
 #include "pc/test/android_test_initializer.h"
 #endif
-#include "absl/memory/memory.h"
 #include "pc/test/fake_audio_capture_module.h"
 #include "pc/test/fake_sctp_transport.h"
 #include "rtc_base/gunit.h"
@@ -38,10 +36,10 @@ namespace webrtc {
 
 using cricket::MediaContentDescription;
 using RTCConfiguration = PeerConnectionInterface::RTCConfiguration;
-using ::testing::Values;
 using ::testing::Combine;
 using ::testing::ElementsAre;
 using ::testing::UnorderedElementsAre;
+using ::testing::Values;
 
 class PeerConnectionFactoryForJsepTest : public PeerConnectionFactory {
  public:
@@ -51,21 +49,20 @@ class PeerConnectionFactoryForJsepTest : public PeerConnectionFactory {
           dependencies.worker_thread = rtc::Thread::Current();
           dependencies.network_thread = rtc::Thread::Current();
           dependencies.signaling_thread = rtc::Thread::Current();
-          dependencies.media_engine = cricket::WebRtcMediaEngineFactory::Create(
-              rtc::scoped_refptr<AudioDeviceModule>(
-                  FakeAudioCaptureModule::Create()),
-              CreateBuiltinAudioEncoderFactory(),
-              CreateBuiltinAudioDecoderFactory(),
-              CreateBuiltinVideoEncoderFactory(),
-              CreateBuiltinVideoDecoderFactory(), nullptr,
-              AudioProcessingBuilder().Create());
+          dependencies.task_queue_factory = CreateDefaultTaskQueueFactory();
+          cricket::MediaEngineDependencies media_deps;
+          media_deps.task_queue_factory = dependencies.task_queue_factory.get();
+          media_deps.adm = FakeAudioCaptureModule::Create();
+          SetMediaEngineDefaults(&media_deps);
+          dependencies.media_engine =
+              cricket::CreateMediaEngine(std::move(media_deps));
           dependencies.call_factory = CreateCallFactory();
           return dependencies;
         }()) {}
 
   std::unique_ptr<cricket::SctpTransportInternalFactory>
   CreateSctpTransportInternalFactory() {
-    return absl::make_unique<FakeSctpTransportFactory>();
+    return std::make_unique<FakeSctpTransportFactory>();
   }
 };
 
@@ -90,7 +87,7 @@ class PeerConnectionJsepTest : public ::testing::Test {
     rtc::scoped_refptr<PeerConnectionFactory> pc_factory(
         new rtc::RefCountedObject<PeerConnectionFactoryForJsepTest>());
     RTC_CHECK(pc_factory->Initialize());
-    auto observer = absl::make_unique<MockPeerConnectionObserver>();
+    auto observer = std::make_unique<MockPeerConnectionObserver>();
     auto pc = pc_factory->CreatePeerConnection(config, nullptr, nullptr,
                                                observer.get());
     if (!pc) {
@@ -98,8 +95,8 @@ class PeerConnectionJsepTest : public ::testing::Test {
     }
 
     observer->SetPeerConnectionInterface(pc.get());
-    return absl::make_unique<PeerConnectionWrapper>(pc_factory, pc,
-                                                    std::move(observer));
+    return std::make_unique<PeerConnectionWrapper>(pc_factory, pc,
+                                                   std::move(observer));
   }
 
   std::unique_ptr<rtc::VirtualSocketServer> vss_;

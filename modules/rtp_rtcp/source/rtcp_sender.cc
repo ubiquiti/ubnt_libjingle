@@ -10,14 +10,14 @@
 
 #include "modules/rtp_rtcp/source/rtcp_sender.h"
 
-#include <string.h>   // memcpy
-#include <algorithm>  // std::min
+#include <string.h>  // memcpy
 
+#include <algorithm>  // std::min
+#include <memory>
 #include <utility>
 
-#include "absl/memory/memory.h"
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "logging/rtc_event_log/events/rtc_event_rtcp_packet_outgoing.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/app.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
@@ -48,6 +48,8 @@ namespace {
 const uint32_t kRtcpAnyExtendedReports = kRtcpXrReceiverReferenceTime |
                                          kRtcpXrDlrrReportBlock |
                                          kRtcpXrTargetBitrate;
+constexpr int32_t kDefaultVideoReportInterval = 1000;
+constexpr int32_t kDefaultAudioReportInterval = 5000;
 }  // namespace
 
 RTCPSender::FeedbackState::FeedbackState()
@@ -80,8 +82,7 @@ class PacketContainer : public rtcp::CompoundPacket {
       if (transport_->SendRtcp(packet.data(), packet.size())) {
         bytes_sent += packet.size();
         if (event_log_) {
-          event_log_->Log(
-              absl::make_unique<RtcEventRtcpPacketOutgoing>(packet));
+          event_log_->Log(std::make_unique<RtcEventRtcpPacketOutgoing>(packet));
         }
       }
     });
@@ -112,29 +113,25 @@ class RTCPSender::RtcpContext {
   const int64_t now_us_;
 };
 
-RTCPSender::RTCPSender(
-    bool audio,
-    Clock* clock,
-    ReceiveStatisticsProvider* receive_statistics,
-    RtcpPacketTypeCounterObserver* packet_type_counter_observer,
-    RtcEventLog* event_log,
-    Transport* outgoing_transport,
-    int report_interval_ms)
-    : audio_(audio),
-      clock_(clock),
+RTCPSender::RTCPSender(const RtpRtcp::Configuration& config)
+    : audio_(config.audio),
+      clock_(config.clock),
       random_(clock_->TimeInMicroseconds()),
       method_(RtcpMode::kOff),
-      event_log_(event_log),
-      transport_(outgoing_transport),
-      report_interval_ms_(report_interval_ms),
+      event_log_(config.event_log),
+      transport_(config.outgoing_transport),
+      report_interval_ms_(config.rtcp_report_interval_ms > 0
+                              ? config.rtcp_report_interval_ms
+                              : (config.audio ? kDefaultAudioReportInterval
+                                              : kDefaultVideoReportInterval)),
       sending_(false),
       next_time_to_send_rtcp_(0),
       timestamp_offset_(0),
       last_rtp_timestamp_(0),
       last_frame_capture_time_ms_(-1),
-      ssrc_(0),
+      ssrc_(config.local_media_ssrc.value_or(0)),
       remote_ssrc_(0),
-      receive_statistics_(receive_statistics),
+      receive_statistics_(config.receive_statistics),
 
       sequence_number_fir_(0),
 
@@ -150,7 +147,7 @@ RTCPSender::RTCPSender(
       app_length_(0),
 
       xr_send_receiver_reference_time_enabled_(false),
-      packet_type_counter_observer_(packet_type_counter_observer),
+      packet_type_counter_observer_(config.rtcp_packet_type_counter_observer),
       send_video_bitrate_allocation_(false),
       last_payload_type_(-1) {
   RTC_DCHECK(transport_ != nullptr);
@@ -307,7 +304,7 @@ uint32_t RTCPSender::SSRC() const {
 void RTCPSender::SetSSRC(uint32_t ssrc) {
   rtc::CritScope lock(&critical_section_rtcp_sender_);
 
-  if (ssrc_ != 0) {
+  if (ssrc_ != 0 && ssrc != ssrc_) {
     // not first SetSSRC, probably due to a collision
     // schedule a new RTCP report
     // make sure that we send a RTP packet
@@ -608,7 +605,7 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildAPP(const RtcpContext& ctx) {
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildLossNotification(
     const RtcpContext& ctx) {
-  auto loss_notification = absl::make_unique<rtcp::LossNotification>(
+  auto loss_notification = std::make_unique<rtcp::LossNotification>(
       loss_notification_state_.last_decoded_seq_num,
       loss_notification_state_.last_received_seq_num,
       loss_notification_state_.decodability_flag);
@@ -745,7 +742,7 @@ int32_t RTCPSender::SendCompoundRTCP(
 
       BuilderFunc func = builder_it->second;
       std::unique_ptr<rtcp::RtcpPacket> packet = (this->*func)(context);
-      if (packet.get() == nullptr)
+      if (packet == nullptr)
         return -1;
       // If there is a BYE, don't append now - save it and append it
       // at the end later.
@@ -991,12 +988,30 @@ bool RTCPSender::SendFeedbackPacket(const rtcp::TransportFeedback& packet) {
   auto callback = [&](rtc::ArrayView<const uint8_t> packet) {
     if (transport_->SendRtcp(packet.data(), packet.size())) {
       if (event_log_)
-        event_log_->Log(absl::make_unique<RtcEventRtcpPacketOutgoing>(packet));
+        event_log_->Log(std::make_unique<RtcEventRtcpPacketOutgoing>(packet));
     } else {
       send_failure = true;
     }
   };
   return packet.Build(max_packet_size, callback) && !send_failure;
+}
+
+bool RTCPSender::SendNetworkStateEstimatePacket(
+    const rtcp::RemoteEstimate& packet) {
+  size_t max_packet_size;
+  {
+    rtc::CritScope lock(&critical_section_rtcp_sender_);
+    if (method_ == RtcpMode::kOff)
+      return false;
+    max_packet_size = max_packet_size_;
+  }
+
+  RTC_DCHECK_LE(max_packet_size, IP_PACKET_SIZE);
+  bool send_success = false;
+  auto callback = [&](rtc::ArrayView<const uint8_t> packet) {
+    send_success = transport_->SendRtcp(packet.data(), packet.size());
+  };
+  return packet.Build(max_packet_size, callback) && send_success;
 }
 
 }  // namespace webrtc

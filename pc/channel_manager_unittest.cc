@@ -12,10 +12,9 @@
 
 #include <memory>
 
-#include "absl/memory/memory.h"
-#include "api/media_transport_config.h"
 #include "api/rtc_error.h"
 #include "api/test/fake_media_transport.h"
+#include "api/transport/media/media_transport_config.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "media/base/fake_media_engine.h"
 #include "media/base/test_utils.h"
@@ -36,11 +35,14 @@ const bool kDefaultSrtpRequired = true;
 namespace cricket {
 
 static const AudioCodec kAudioCodecs[] = {
-    AudioCodec(97, "voice", 1, 2, 3), AudioCodec(111, "OPUS", 48000, 32000, 2),
+    AudioCodec(97, "voice", 1, 2, 3),
+    AudioCodec(111, "OPUS", 48000, 32000, 2),
 };
 
 static const VideoCodec kVideoCodecs[] = {
-    VideoCodec(99, "H264"), VideoCodec(100, "VP8"), VideoCodec(96, "rtx"),
+    VideoCodec(99, "H264"),
+    VideoCodec(100, "VP8"),
+    VideoCodec(96, "rtx"),
 };
 
 class ChannelManagerTest : public ::testing::Test {
@@ -63,9 +65,9 @@ class ChannelManagerTest : public ::testing::Test {
   }
 
   std::unique_ptr<webrtc::RtpTransportInternal> CreateDtlsSrtpTransport() {
-    rtp_dtls_transport_ = absl::make_unique<FakeDtlsTransport>(
+    rtp_dtls_transport_ = std::make_unique<FakeDtlsTransport>(
         "fake_dtls_transport", cricket::ICE_CANDIDATE_COMPONENT_RTP);
-    auto dtls_srtp_transport = absl::make_unique<webrtc::DtlsSrtpTransport>(
+    auto dtls_srtp_transport = std::make_unique<webrtc::DtlsSrtpTransport>(
         /*rtcp_mux_required=*/true);
     dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport_.get(),
                                            /*rtcp_dtls_transport=*/nullptr);

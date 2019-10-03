@@ -8,9 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "video/overuse_frame_detector.h"
+
 #include <memory>
 
-#include "absl/memory/memory.h"
 #include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
 #include "modules/video_coding/utility/quality_scaler.h"
@@ -20,12 +21,11 @@
 #include "rtc_base/task_queue_for_test.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "video/overuse_frame_detector.h"
 
 namespace webrtc {
 
-using ::testing::InvokeWithoutArgs;
 using ::testing::_;
+using ::testing::InvokeWithoutArgs;
 
 namespace {
 const int kWidth = 640;
@@ -41,7 +41,7 @@ class MockCpuOveruseObserver : public AdaptationObserverInterface {
   virtual ~MockCpuOveruseObserver() {}
 
   MOCK_METHOD1(AdaptUp, void(AdaptReason));
-  MOCK_METHOD1(AdaptDown, void(AdaptReason));
+  MOCK_METHOD1(AdaptDown, bool(AdaptReason));
 };
 
 class CpuOveruseObserverImpl : public AdaptationObserverInterface {
@@ -49,7 +49,10 @@ class CpuOveruseObserverImpl : public AdaptationObserverInterface {
   CpuOveruseObserverImpl() : overuse_(0), normaluse_(0) {}
   virtual ~CpuOveruseObserverImpl() {}
 
-  void AdaptDown(AdaptReason) { ++overuse_; }
+  bool AdaptDown(AdaptReason) {
+    ++overuse_;
+    return true;
+  }
   void AdaptUp(AdaptReason) { ++normaluse_; }
 
   int overuse_;
@@ -73,7 +76,7 @@ class OveruseFrameDetectorTest : public ::testing::Test,
   void SetUp() override {
     observer_ = &mock_observer_;
     options_.min_process_count = 0;
-    overuse_detector_ = absl::make_unique<OveruseFrameDetectorUnderTest>(this);
+    overuse_detector_ = std::make_unique<OveruseFrameDetectorUnderTest>(this);
     // Unfortunately, we can't call SetOptions here, since that would break
     // single-threading requirements in the RunOnTqNormalUsage test.
   }
@@ -636,7 +639,8 @@ TEST_F(OveruseFrameDetectorTest, NoOveruseForSimulcast) {
 
   constexpr int kNumFrames = 500;
   constexpr int kEncodeTimesUs[] = {
-      10 * rtc::kNumMicrosecsPerMillisec, 8 * rtc::kNumMicrosecsPerMillisec,
+      10 * rtc::kNumMicrosecsPerMillisec,
+      8 * rtc::kNumMicrosecsPerMillisec,
       12 * rtc::kNumMicrosecsPerMillisec,
   };
   constexpr int kIntervalUs = 30 * rtc::kNumMicrosecsPerMillisec;
@@ -981,7 +985,7 @@ TEST_F(OveruseFrameDetectorTest2, ToleratesOutOfOrderFrames) {
   // three encoded frames, and the last of those isn't finished until after the
   // first encoded frame corresponding to the next input frame.
   const int kEncodeTimeUs = 30 * rtc::kNumMicrosecsPerMillisec;
-  const int kCaptureTimesMs[] = { 33, 33, 66, 33 };
+  const int kCaptureTimesMs[] = {33, 33, 66, 33};
 
   for (int capture_time_ms : kCaptureTimesMs) {
     overuse_detector_->FrameSent(
@@ -998,7 +1002,8 @@ TEST_F(OveruseFrameDetectorTest2, NoOveruseForSimulcast) {
 
   constexpr int kNumFrames = 500;
   constexpr int kEncodeTimesUs[] = {
-      10 * rtc::kNumMicrosecsPerMillisec, 8 * rtc::kNumMicrosecsPerMillisec,
+      10 * rtc::kNumMicrosecsPerMillisec,
+      8 * rtc::kNumMicrosecsPerMillisec,
       12 * rtc::kNumMicrosecsPerMillisec,
   };
   constexpr int kIntervalUs = 30 * rtc::kNumMicrosecsPerMillisec;

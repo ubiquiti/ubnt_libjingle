@@ -13,9 +13,9 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "modules/video_coding/frame_object.h"
 #include "modules/video_coding/jitter_estimator.h"
 #include "modules/video_coding/timing.h"
@@ -59,8 +59,7 @@ class VCMTimingFake : public VCMTiming {
     return render_time_ms - now_ms - kDecodeTime;
   }
 
-  bool GetTimings(int* decode_ms,
-                  int* max_decode_ms,
+  bool GetTimings(int* max_decode_ms,
                   int* current_delay_ms,
                   int* target_delay_ms,
                   int* jitter_buffer_ms,
@@ -70,16 +69,15 @@ class VCMTimingFake : public VCMTiming {
   }
 
   int GetCurrentJitter() {
-    int decode_ms;
     int max_decode_ms;
     int current_delay_ms;
     int target_delay_ms;
     int jitter_buffer_ms;
     int min_playout_delay_ms;
     int render_delay_ms;
-    VCMTiming::GetTimings(&decode_ms, &max_decode_ms, &current_delay_ms,
-                          &target_delay_ms, &jitter_buffer_ms,
-                          &min_playout_delay_ms, &render_delay_ms);
+    VCMTiming::GetTimings(&max_decode_ms, &current_delay_ms, &target_delay_ms,
+                          &jitter_buffer_ms, &min_playout_delay_ms,
+                          &render_delay_ms);
     return jitter_buffer_ms;
   }
 
@@ -113,11 +111,11 @@ class VCMReceiveStatisticsCallbackMock : public VCMReceiveStatisticsCallback {
                void(bool is_keyframe,
                     size_t size_bytes,
                     VideoContentType content_type));
+  MOCK_METHOD1(OnDroppedFrames, void(uint32_t frames_dropped));
   MOCK_METHOD1(OnDiscardedPacketsUpdated, void(int discarded_packets));
   MOCK_METHOD1(OnFrameCountsUpdated, void(const FrameCounts& frame_counts));
-  MOCK_METHOD7(OnFrameBufferTimingsUpdated,
-               void(int decode_ms,
-                    int max_decode_ms,
+  MOCK_METHOD6(OnFrameBufferTimingsUpdated,
+               void(int max_decode_ms,
                     int current_delay_ms,
                     int target_delay_ms,
                     int jitter_buffer_ms,
@@ -138,9 +136,7 @@ class TestFrameBuffer2 : public ::testing::Test {
       : trial_("WebRTC-AddRttToPlayoutDelay/Enabled/"),
         clock_(0),
         timing_(&clock_),
-        buffer_(new FrameBuffer(&clock_,
-                                &timing_,
-                                &stats_callback_)),
+        buffer_(new FrameBuffer(&clock_, &timing_, &stats_callback_)),
         rand_(0x34678213),
         tear_down_(false),
         extract_thread_(&ExtractLoop, this, "Extract Thread") {}
@@ -166,7 +162,7 @@ class TestFrameBuffer2 : public ::testing::Test {
     std::array<uint16_t, sizeof...(refs)> references = {
         {rtc::checked_cast<uint16_t>(refs)...}};
 
-    auto frame = absl::make_unique<FrameObjectFake>();
+    auto frame = std::make_unique<FrameObjectFake>();
     frame->id.picture_id = picture_id;
     frame->id.spatial_layer = spatial_layer;
     frame->SetSpatialIndex(spatial_layer);
@@ -411,6 +407,8 @@ TEST_F(TestFrameBuffer2, DropTemporalLayerSlowDecoder) {
                 pid + i, pid + i - 1);
   }
 
+  EXPECT_CALL(stats_callback_, OnDroppedFrames(1)).Times(3);
+
   for (int i = 0; i < 10; ++i) {
     ExtractFrame();
     clock_.AdvanceTimeMilliseconds(70);
@@ -426,6 +424,41 @@ TEST_F(TestFrameBuffer2, DropTemporalLayerSlowDecoder) {
   CheckNoFrame(7);
   CheckNoFrame(8);
   CheckNoFrame(9);
+}
+
+TEST_F(TestFrameBuffer2, DropFramesIfSystemIsStalled) {
+  uint16_t pid = Rand();
+  uint32_t ts = Rand();
+
+  InsertFrame(pid, 0, ts, false, true, kFrameSize);
+  InsertFrame(pid + 1, 0, ts + 1 * kFps10, false, true, kFrameSize, pid);
+  InsertFrame(pid + 2, 0, ts + 2 * kFps10, false, true, kFrameSize, pid + 1);
+  InsertFrame(pid + 3, 0, ts + 3 * kFps10, false, true, kFrameSize);
+
+  ExtractFrame();
+  // Jump forward in time, simulating the system being stalled for some reason.
+  clock_.AdvanceTimeMilliseconds(3 * kFps10);
+  // Extract one more frame, expect second and third frame to be dropped.
+  EXPECT_CALL(stats_callback_, OnDroppedFrames(2)).Times(1);
+  ExtractFrame();
+
+  CheckFrame(0, pid + 0, 0);
+  CheckFrame(1, pid + 3, 0);
+}
+
+TEST_F(TestFrameBuffer2, DroppedFramesCountedOnClear) {
+  uint16_t pid = Rand();
+  uint32_t ts = Rand();
+
+  InsertFrame(pid, 0, ts, false, true, kFrameSize);
+  for (int i = 1; i < 5; ++i) {
+    InsertFrame(pid + i, 0, ts + i * kFps10, false, true, kFrameSize,
+                pid + i - 1);
+  }
+
+  // All frames should be dropped when Clear is called.
+  EXPECT_CALL(stats_callback_, OnDroppedFrames(5)).Times(1);
+  buffer_->Clear();
 }
 
 TEST_F(TestFrameBuffer2, InsertLateFrame) {
@@ -548,8 +581,7 @@ TEST_F(TestFrameBuffer2, StatsCallback) {
 
   EXPECT_CALL(stats_callback_,
               OnCompleteFrame(true, kFrameSize, VideoContentType::UNSPECIFIED));
-  EXPECT_CALL(stats_callback_,
-              OnFrameBufferTimingsUpdated(_, _, _, _, _, _, _));
+  EXPECT_CALL(stats_callback_, OnFrameBufferTimingsUpdated(_, _, _, _, _, _));
 
   {
     std::unique_ptr<FrameObjectFake> frame(new FrameObjectFake());

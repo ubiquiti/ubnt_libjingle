@@ -8,9 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "rtc_base/thread.h"
+
 #include <memory>
 
-#include "absl/memory/memory.h"
 #include "rtc_base/async_invoker.h"
 #include "rtc_base/async_udp_socket.h"
 #include "rtc_base/event.h"
@@ -19,7 +20,6 @@
 #include "rtc_base/physical_socket_server.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
 
 #if defined(WEBRTC_WIN)
 #include <comdef.h>  // NOLINT
@@ -517,7 +517,7 @@ TEST_F(AsyncInvokeTest, KillInvokerDuringExecuteWithReentrantInvoke) {
   bool reentrant_functor_run = false;
 
   Thread* main = Thread::Current();
-  Thread thread(absl::make_unique<NullSocketServer>());
+  Thread thread(std::make_unique<NullSocketServer>());
   thread.Start();
   {
     AsyncInvoker invoker;

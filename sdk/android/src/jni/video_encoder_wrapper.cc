@@ -20,8 +20,8 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/time_utils.h"
-#include "sdk/android/generated_video_jni/jni/VideoEncoderWrapper_jni.h"
-#include "sdk/android/generated_video_jni/jni/VideoEncoder_jni.h"
+#include "sdk/android/generated_video_jni/VideoEncoderWrapper_jni.h"
+#include "sdk/android/generated_video_jni/VideoEncoder_jni.h"
 #include "sdk/android/native_api/jni/class_loader.h"
 #include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/encoded_image.h"
@@ -35,6 +35,10 @@ VideoEncoderWrapper::VideoEncoderWrapper(JNIEnv* jni,
     : encoder_(jni, j_encoder), int_array_class_(GetClass(jni, "[I")) {
   initialized_ = false;
   num_resets_ = 0;
+
+  // Get bitrate limits in the constructor. This is a static property of the
+  // encoder and is expected to be available before it is initialized.
+  encoder_info_.resolution_bitrate_limits = GetResolutionBitrateLimits(jni);
 }
 VideoEncoderWrapper::~VideoEncoderWrapper() = default;
 
@@ -214,9 +218,39 @@ VideoEncoderWrapper::GetScalingSettingsInternal(JNIEnv* jni) const {
   }
 }
 
+std::vector<VideoEncoder::ResolutionBitrateLimits>
+VideoEncoderWrapper::GetResolutionBitrateLimits(JNIEnv* jni) const {
+  std::vector<VideoEncoder::ResolutionBitrateLimits> resolution_bitrate_limits;
+
+  ScopedJavaLocalRef<jobjectArray> j_bitrate_limits_array =
+      Java_VideoEncoder_getResolutionBitrateLimits(jni, encoder_);
+
+  const jsize num_thresholds =
+      jni->GetArrayLength(j_bitrate_limits_array.obj());
+  for (int i = 0; i < num_thresholds; ++i) {
+    ScopedJavaLocalRef<jobject> j_bitrate_limits = ScopedJavaLocalRef<jobject>(
+        jni, jni->GetObjectArrayElement(j_bitrate_limits_array.obj(), i));
+
+    jint frame_size_pixels =
+        Java_ResolutionBitrateLimits_getFrameSizePixels(jni, j_bitrate_limits);
+    jint min_start_bitrate_bps =
+        Java_ResolutionBitrateLimits_getMinStartBitrateBps(jni,
+                                                           j_bitrate_limits);
+    jint min_bitrate_bps =
+        Java_ResolutionBitrateLimits_getMinBitrateBps(jni, j_bitrate_limits);
+    jint max_bitrate_bps =
+        Java_ResolutionBitrateLimits_getMaxBitrateBps(jni, j_bitrate_limits);
+
+    resolution_bitrate_limits.push_back(VideoEncoder::ResolutionBitrateLimits(
+        frame_size_pixels, min_start_bitrate_bps, min_bitrate_bps,
+        max_bitrate_bps));
+  }
+
+  return resolution_bitrate_limits;
+}
+
 void VideoEncoderWrapper::OnEncodedFrame(
     JNIEnv* jni,
-    const JavaRef<jobject>& j_caller,
     const JavaRef<jobject>& j_encoded_image) {
   EncodedImage frame = JavaToNativeEncodedImage(jni, j_encoded_image);
   int64_t capture_time_ns =

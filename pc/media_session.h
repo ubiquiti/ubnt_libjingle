@@ -78,6 +78,7 @@ struct MediaDescriptionOptions {
   // stream information goes in the local descriptions.
   std::vector<SenderOptions> sender_options;
   std::vector<webrtc::RtpCodecCapability> codec_preferences;
+  absl::optional<std::string> alt_protocol;
 
  private:
   // Doesn't DCHECK on |type|.
@@ -203,6 +204,7 @@ class MediaSessionDescriptionFactory {
       RtpDataCodecs* rtp_data_codecs) const;
   void GetRtpHdrExtsToOffer(
       const std::vector<const ContentInfo*>& current_active_contents,
+      bool extmap_allow_mixed,
       RtpHeaderExtensions* audio_extensions,
       RtpHeaderExtensions* video_extensions) const;
   bool AddTransportOffer(const std::string& content_name,

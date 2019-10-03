@@ -11,10 +11,11 @@
 #include "api/video_codecs/vp8_temporal_layers_factory.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
+#include "api/fec_controller_override.h"
 #include "modules/video_coding/codecs/vp8/default_temporal_layers.h"
 #include "modules/video_coding/codecs/vp8/screenshare_layers.h"
 #include "modules/video_coding/utility/simulcast_utility.h"
@@ -24,7 +25,8 @@ namespace webrtc {
 
 std::unique_ptr<Vp8FrameBufferController> Vp8TemporalLayersFactory::Create(
     const VideoCodec& codec,
-    const VideoEncoder::Settings& settings) {
+    const VideoEncoder::Settings& settings,
+    FecControllerOverride* fec_controller_override) {
   std::vector<std::unique_ptr<Vp8FrameBufferController>> controllers;
   const int num_streams = SimulcastUtility::NumberOfSimulcastStreams(codec);
   RTC_DCHECK_GE(num_streams, 1);
@@ -37,14 +39,20 @@ std::unique_ptr<Vp8FrameBufferController> Vp8TemporalLayersFactory::Create(
       // Legacy screenshare layers supports max 2 layers.
       num_temporal_layers = std::max(2, num_temporal_layers);
       controllers.push_back(
-          absl::make_unique<ScreenshareLayers>(num_temporal_layers));
+          std::make_unique<ScreenshareLayers>(num_temporal_layers));
     } else {
       controllers.push_back(
-          absl::make_unique<DefaultTemporalLayers>(num_temporal_layers));
+          std::make_unique<DefaultTemporalLayers>(num_temporal_layers));
     }
   }
 
-  return absl::make_unique<Vp8TemporalLayers>(std::move(controllers));
+  return std::make_unique<Vp8TemporalLayers>(std::move(controllers),
+                                             fec_controller_override);
+}
+
+std::unique_ptr<Vp8FrameBufferControllerFactory>
+Vp8TemporalLayersFactory::Clone() const {
+  return std::make_unique<Vp8TemporalLayersFactory>();
 }
 
 }  // namespace webrtc

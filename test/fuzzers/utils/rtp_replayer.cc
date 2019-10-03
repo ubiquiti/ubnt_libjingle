@@ -11,19 +11,19 @@
 #include "test/fuzzers/utils/rtp_replayer.h"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
-#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "api/task_queue/default_task_queue_factory.h"
 #include "rtc_base/strings/json.h"
-#include "rtc_base/task_queue_stdlib.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/call_config_utils.h"
 #include "test/encoder_settings.h"
 #include "test/fake_decoder.h"
 #include "test/rtp_file_reader.h"
+#include "test/rtp_header_parser.h"
 
 namespace webrtc {
 namespace test {
@@ -31,7 +31,7 @@ namespace test {
 void RtpReplayer::Replay(const std::string& replay_config_filepath,
                          const uint8_t* rtp_dump_data,
                          size_t rtp_dump_size) {
-  auto stream_state = absl::make_unique<StreamState>();
+  auto stream_state = std::make_unique<StreamState>();
   std::vector<VideoReceiveStream::Config> receive_stream_configs =
       ReadConfigFromFile(replay_config_filepath, &(stream_state->transport));
   return Replay(std::move(stream_state), std::move(receive_stream_configs),
@@ -51,11 +51,9 @@ void RtpReplayer::Replay(
   }
 
   // Setup the video streams based on the configuration.
-  webrtc::RtcEventLogNullImpl event_log;
-  // TODO(bugs.webrtc.org/10284): Replace with DefaultTaskQueueFactory when
-  // chromium stops hijacking it.
+  webrtc::RtcEventLogNull event_log;
   std::unique_ptr<TaskQueueFactory> task_queue_factory =
-      CreateTaskQueueStdlibFactory();
+      CreateDefaultTaskQueueFactory();
   Call::Config call_config(&event_log);
   call_config.task_queue_factory = task_queue_factory.get();
   std::unique_ptr<Call> call(Call::Create(call_config));
@@ -98,7 +96,7 @@ void RtpReplayer::SetupVideoStreams(
     std::vector<VideoReceiveStream::Config>* receive_stream_configs,
     StreamState* stream_state,
     Call* call) {
-  stream_state->decoder_factory = absl::make_unique<InternalDecoderFactory>();
+  stream_state->decoder_factory = std::make_unique<InternalDecoderFactory>();
   for (auto& receive_config : *receive_stream_configs) {
     // Attach the decoder for the corresponding payload type in the config.
     for (auto& decoder : receive_config.decoders) {
@@ -160,7 +158,8 @@ void RtpReplayer::ReplayPackets(Call* call, test::RtpFileReader* rtp_reader) {
         break;
       case PacketReceiver::DELIVERY_UNKNOWN_SSRC: {
         RTPHeader header;
-        std::unique_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
+        std::unique_ptr<RtpHeaderParser> parser(
+            RtpHeaderParser::CreateForTest());
 
         parser->Parse(packet.data, packet.length, &header);
         if (unknown_packets[header.ssrc] == 0) {
@@ -173,7 +172,8 @@ void RtpReplayer::ReplayPackets(Call* call, test::RtpFileReader* rtp_reader) {
         RTC_LOG(LS_ERROR)
             << "Packet error, corrupt packets or incorrect setup?";
         RTPHeader header;
-        std::unique_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
+        std::unique_ptr<RtpHeaderParser> parser(
+            RtpHeaderParser::CreateForTest());
         parser->Parse(packet.data, packet.length, &header);
         RTC_LOG(LS_ERROR) << "Packet packet_length=" << packet.length
                           << " payload_type=" << header.payloadType

@@ -11,8 +11,7 @@
 // This file contains interfaces for MediaStream, MediaTrack and MediaSource.
 // These interfaces are used for implementing MediaStream and MediaTrack as
 // defined in http://dev.w3.org/2011/webrtc/editor/webrtc.html#stream-api. These
-// interfaces must be used only with PeerConnection. PeerConnectionManager
-// interface provides the factory methods to create MediaStream and MediaTracks.
+// interfaces must be used only with PeerConnection.
 
 #ifndef API_MEDIA_STREAM_INTERFACE_H_
 #define API_MEDIA_STREAM_INTERFACE_H_
@@ -76,8 +75,8 @@ class RTC_EXPORT MediaStreamTrackInterface : public rtc::RefCountInterface,
     kEnded,
   };
 
-  static const char kAudioKind[];
-  static const char kVideoKind[];
+  static const char* const kAudioKind;
+  static const char* const kVideoKind;
 
   // The kind() method must return kAudioKind only if the object is a
   // subclass of AudioTrackInterface, and kVideoKind only if the

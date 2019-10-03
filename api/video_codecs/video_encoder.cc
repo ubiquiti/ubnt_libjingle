@@ -90,7 +90,8 @@ VideoEncoder::EncoderInfo::EncoderInfo()
       has_internal_source(false),
       fps_allocation{absl::InlinedVector<uint8_t, kMaxTemporalStreams>(
           1,
-          kMaxFramerateFraction)} {}
+          kMaxFramerateFraction)},
+      supports_simulcast(false) {}
 
 VideoEncoder::EncoderInfo::EncoderInfo(const EncoderInfo&) = default;
 
@@ -116,7 +117,21 @@ VideoEncoder::RateControlParameters::RateControlParameters(
       framerate_fps(framerate_fps),
       bandwidth_allocation(bandwidth_allocation) {}
 
+bool VideoEncoder::RateControlParameters::operator==(
+    const VideoEncoder::RateControlParameters& rhs) const {
+  return std::tie(bitrate, framerate_fps, bandwidth_allocation) ==
+         std::tie(rhs.bitrate, rhs.framerate_fps, rhs.bandwidth_allocation);
+}
+
+bool VideoEncoder::RateControlParameters::operator!=(
+    const VideoEncoder::RateControlParameters& rhs) const {
+  return !(rhs == *this);
+}
+
 VideoEncoder::RateControlParameters::~RateControlParameters() = default;
+
+void VideoEncoder::SetFecControllerOverride(
+    FecControllerOverride* fec_controller_override) {}
 
 int32_t VideoEncoder::InitEncode(const VideoCodec* codec_settings,
                                  int32_t number_of_cores,

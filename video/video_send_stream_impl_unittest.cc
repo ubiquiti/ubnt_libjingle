@@ -8,14 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "video/video_send_stream_impl.h"
+
+#include <memory>
 #include <string>
 
-#include "absl/memory/memory.h"
 #include "absl/types/optional.h"
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "call/rtp_video_sender.h"
 #include "call/test/mock_bitrate_allocator.h"
 #include "call/test/mock_rtp_transport_controller_send.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/rtp_rtcp/source/rtp_sequence_number_map.h"
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_coding/fec_controller_default.h"
@@ -27,7 +29,6 @@
 #include "test/gtest.h"
 #include "test/mock_transport.h"
 #include "video/test/mock_video_stream_encoder.h"
-#include "video/video_send_stream_impl.h"
 
 namespace webrtc {
 namespace internal {
@@ -73,6 +74,8 @@ class MockRtpVideoSender : public RtpVideoSenderInterface {
                      std::vector<RtpSequenceNumberMap::Info>(
                          uint32_t ssrc,
                          rtc::ArrayView<const uint16_t> sequence_numbers));
+
+  MOCK_METHOD1(SetFecAllowed, void(bool fec_allowed));
 };
 
 BitrateAllocationUpdate CreateAllocation(int bitrate_bps) {
@@ -101,8 +104,7 @@ class VideoSendStreamImplTest : public ::testing::Test {
 
     EXPECT_CALL(transport_controller_, packet_router())
         .WillRepeatedly(Return(&packet_router_));
-    EXPECT_CALL(transport_controller_,
-                CreateRtpVideoSender(_, _, _, _, _, _, _, _, _))
+    EXPECT_CALL(transport_controller_, CreateRtpVideoSender)
         .WillRepeatedly(Return(&rtp_video_sender_));
     EXPECT_CALL(rtp_video_sender_, SetActive(_))
         .WillRepeatedly(::testing::Invoke(
@@ -121,13 +123,13 @@ class VideoSendStreamImplTest : public ::testing::Test {
         .WillOnce(Return(123000));
     std::map<uint32_t, RtpState> suspended_ssrcs;
     std::map<uint32_t, RtpPayloadState> suspended_payload_states;
-    return absl::make_unique<VideoSendStreamImpl>(
+    return std::make_unique<VideoSendStreamImpl>(
         &clock_, &stats_proxy_, &test_queue_, &call_stats_,
         &transport_controller_, &bitrate_allocator_, &send_delay_stats_,
         &video_stream_encoder_, &event_log_, &config_,
         initial_encoder_max_bitrate, initial_encoder_bitrate_priority,
         suspended_ssrcs, suspended_payload_states, content_type,
-        absl::make_unique<FecControllerDefault>(&clock_),
+        std::make_unique<FecControllerDefault>(&clock_),
         /*media_transport=*/nullptr);
   }
 
@@ -140,7 +142,7 @@ class VideoSendStreamImplTest : public ::testing::Test {
 
   bool rtp_video_sender_active_ = false;
   SimulatedClock clock_;
-  RtcEventLogNullImpl event_log_;
+  RtcEventLogNull event_log_;
   VideoSendStream::Config config_;
   SendDelayStats send_delay_stats_;
   TaskQueueForTest test_queue_;
@@ -152,7 +154,6 @@ class VideoSendStreamImplTest : public ::testing::Test {
 
 TEST_F(VideoSendStreamImplTest, RegistersAsBitrateObserverOnStart) {
   test_queue_.SendTask([this] {
-    config_.track_id = "test";
     const bool kSuspend = false;
     config_.suspend_below_min_bitrate = kSuspend;
     auto vss_impl = CreateVideoSendStreamImpl(
@@ -165,7 +166,6 @@ TEST_F(VideoSendStreamImplTest, RegistersAsBitrateObserverOnStart) {
               EXPECT_EQ(config.max_bitrate_bps, kDefaultInitialBitrateBps);
               EXPECT_EQ(config.pad_up_bitrate_bps, 0u);
               EXPECT_EQ(config.enforce_min_bitrate, !kSuspend);
-              EXPECT_EQ(config.track_id, "test");
               EXPECT_EQ(config.bitrate_priority, kDefaultBitratePriority);
             }));
     vss_impl->Start();
@@ -176,7 +176,6 @@ TEST_F(VideoSendStreamImplTest, RegistersAsBitrateObserverOnStart) {
 
 TEST_F(VideoSendStreamImplTest, UpdatesObserverOnConfigurationChange) {
   test_queue_.SendTask([this] {
-    config_.track_id = "test";
     const bool kSuspend = false;
     config_.suspend_below_min_bitrate = kSuspend;
     config_.rtp.extensions.emplace_back(
@@ -239,7 +238,6 @@ TEST_F(VideoSendStreamImplTest, UpdatesObserverOnConfigurationChange) {
 
 TEST_F(VideoSendStreamImplTest, UpdatesObserverOnConfigurationChangeWithAlr) {
   test_queue_.SendTask([this] {
-    config_.track_id = "test";
     const bool kSuspend = false;
     config_.suspend_below_min_bitrate = kSuspend;
     config_.rtp.extensions.emplace_back(
@@ -339,20 +337,20 @@ TEST_F(VideoSendStreamImplTest,
     config_.rtp.ssrcs.emplace_back(2);
 
     EXPECT_CALL(bitrate_allocator_, AddObserver(vss_impl.get(), _))
-        .WillRepeatedly(Invoke([&](BitrateAllocatorObserver*,
-                                   MediaStreamAllocationConfig config) {
-          EXPECT_EQ(config.min_bitrate_bps,
-                    static_cast<uint32_t>(low_stream.min_bitrate_bps));
-          EXPECT_EQ(config.max_bitrate_bps,
-                    static_cast<uint32_t>(low_stream.max_bitrate_bps +
-                                          high_stream.max_bitrate_bps));
-          if (config.pad_up_bitrate_bps != 0) {
-            EXPECT_EQ(
-                config.pad_up_bitrate_bps,
-                static_cast<uint32_t>(low_stream.target_bitrate_bps +
-                                      1.25 * high_stream.min_bitrate_bps));
-          }
-        }));
+        .WillRepeatedly(Invoke(
+            [&](BitrateAllocatorObserver*, MediaStreamAllocationConfig config) {
+              EXPECT_EQ(config.min_bitrate_bps,
+                        static_cast<uint32_t>(low_stream.min_bitrate_bps));
+              EXPECT_EQ(config.max_bitrate_bps,
+                        static_cast<uint32_t>(low_stream.max_bitrate_bps +
+                                              high_stream.max_bitrate_bps));
+              if (config.pad_up_bitrate_bps != 0) {
+                EXPECT_EQ(
+                    config.pad_up_bitrate_bps,
+                    static_cast<uint32_t>(low_stream.target_bitrate_bps +
+                                          1.25 * high_stream.min_bitrate_bps));
+              }
+            }));
 
     static_cast<VideoStreamEncoderInterface::EncoderSink*>(vss_impl.get())
         ->OnEncoderConfigurationChanged(
@@ -628,7 +626,6 @@ TEST_F(VideoSendStreamImplTest, ForwardsVideoBitrateAllocationAfterTimeout) {
 
 TEST_F(VideoSendStreamImplTest, CallsVideoStreamEncoderOnBitrateUpdate) {
   test_queue_.SendTask([this] {
-    config_.track_id = "test";
     const bool kSuspend = false;
     config_.suspend_below_min_bitrate = kSuspend;
     config_.rtp.extensions.emplace_back(
@@ -662,16 +659,17 @@ TEST_F(VideoSendStreamImplTest, CallsVideoStreamEncoderOnBitrateUpdate) {
         DataRate::bps(qvga_stream.target_bitrate_bps);
     BitrateAllocationUpdate update;
     update.target_bitrate = network_constrained_rate;
-    update.link_capacity = network_constrained_rate;
+    update.stable_target_bitrate = network_constrained_rate;
     update.round_trip_time = TimeDelta::ms(1);
     EXPECT_CALL(rtp_video_sender_,
                 OnBitrateUpdated(network_constrained_rate.bps(), _,
                                  update.round_trip_time.ms(), _));
     EXPECT_CALL(rtp_video_sender_, GetPayloadBitrateBps())
         .WillOnce(Return(network_constrained_rate.bps()));
-    EXPECT_CALL(video_stream_encoder_,
-                OnBitrateUpdated(network_constrained_rate,
-                                 network_constrained_rate, 0, _));
+    EXPECT_CALL(
+        video_stream_encoder_,
+        OnBitrateUpdated(network_constrained_rate, network_constrained_rate,
+                         network_constrained_rate, 0, _));
     static_cast<BitrateAllocatorObserver*>(vss_impl.get())
         ->OnBitrateUpdated(update);
 
@@ -687,9 +685,10 @@ TEST_F(VideoSendStreamImplTest, CallsVideoStreamEncoderOnBitrateUpdate) {
     EXPECT_CALL(rtp_video_sender_, GetPayloadBitrateBps())
         .WillOnce(Return(rate_with_headroom.bps()));
     EXPECT_CALL(video_stream_encoder_,
-                OnBitrateUpdated(qvga_max_bitrate, rate_with_headroom, 0, _));
+                OnBitrateUpdated(qvga_max_bitrate, qvga_max_bitrate,
+                                 rate_with_headroom, 0, _));
     update.target_bitrate = rate_with_headroom;
-    update.link_capacity = rate_with_headroom;
+    update.stable_target_bitrate = rate_with_headroom;
     static_cast<BitrateAllocatorObserver*>(vss_impl.get())
         ->OnBitrateUpdated(update);
 
@@ -706,9 +705,9 @@ TEST_F(VideoSendStreamImplTest, CallsVideoStreamEncoderOnBitrateUpdate) {
         .WillOnce(Return(rate_with_headroom.bps()));
     const DataRate headroom_minus_protection =
         rate_with_headroom - DataRate::bps(protection_bitrate_bps);
-    EXPECT_CALL(
-        video_stream_encoder_,
-        OnBitrateUpdated(qvga_max_bitrate, headroom_minus_protection, 0, _));
+    EXPECT_CALL(video_stream_encoder_,
+                OnBitrateUpdated(qvga_max_bitrate, qvga_max_bitrate,
+                                 headroom_minus_protection, 0, _));
     static_cast<BitrateAllocatorObserver*>(vss_impl.get())
         ->OnBitrateUpdated(update);
 
@@ -722,13 +721,15 @@ TEST_F(VideoSendStreamImplTest, CallsVideoStreamEncoderOnBitrateUpdate) {
     EXPECT_CALL(rtp_video_sender_, GetPayloadBitrateBps())
         .WillOnce(Return(rate_with_headroom.bps()));
     EXPECT_CALL(video_stream_encoder_,
-                OnBitrateUpdated(qvga_max_bitrate, qvga_max_bitrate, 0, _));
+                OnBitrateUpdated(qvga_max_bitrate, qvga_max_bitrate,
+                                 qvga_max_bitrate, 0, _));
     static_cast<BitrateAllocatorObserver*>(vss_impl.get())
         ->OnBitrateUpdated(update);
 
     // Set rates to zero on stop.
     EXPECT_CALL(video_stream_encoder_,
-                OnBitrateUpdated(DataRate::Zero(), DataRate::Zero(), 0, 0));
+                OnBitrateUpdated(DataRate::Zero(), DataRate::Zero(),
+                                 DataRate::Zero(), 0, 0));
     vss_impl->Stop();
   });
 }
@@ -756,8 +757,6 @@ TEST_F(VideoSendStreamImplTest, DisablesPaddingOnPausedEncoder) {
     EXPECT_CALL(rtp_video_sender_, OnEncodedImage(_, _, _))
         .WillRepeatedly(Return(
             EncodedImageCallback::Result(EncodedImageCallback::Result::OK)));
-
-    config_.track_id = "test";
     const bool kSuspend = false;
     config_.suspend_below_min_bitrate = kSuspend;
     config_.rtp.extensions.emplace_back(

@@ -15,6 +15,7 @@
 #define PC_STATS_COLLECTOR_H_
 
 #include <stdint.h>
+
 #include <map>
 #include <memory>
 #include <string>
@@ -82,6 +83,8 @@ class StatsCollector {
                              const std::string& track_id,
                              const StatsReport::Id& transport_id,
                              StatsReport::Direction direction);
+
+  StatsReport* PrepareADMReport();
 
   // A track is invalid if there is no report data for it.
   bool IsValidTrack(const std::string& track_id);

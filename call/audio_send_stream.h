@@ -23,10 +23,10 @@
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
 #include "api/crypto/frame_encryptor_interface.h"
-#include "api/media_transport_config.h"
-#include "api/media_transport_interface.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
+#include "api/transport/media/media_transport_config.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "call/rtp_config.h"
 #include "modules/audio_processing/include/audio_processing_statistics.h"
 #include "modules/rtp_rtcp/include/report_block_data.h"
@@ -53,10 +53,9 @@ class AudioSendStream {
     float fraction_lost = -1.0f;
     std::string codec_name;
     absl::optional<int> codec_payload_type;
-    int32_t ext_seqnum = -1;
     int32_t jitter_ms = -1;
     int64_t rtt_ms = -1;
-    int32_t audio_level = -1;
+    int16_t audio_level = 0;
     // See description of "totalAudioEnergy" in the WebRTC stats spec:
     // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
     double total_input_energy = 0.0;

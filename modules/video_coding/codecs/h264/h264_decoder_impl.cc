@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 
 extern "C" {
 #include "third_party/ffmpeg/libavcodec/avcodec.h"
@@ -25,7 +26,6 @@ extern "C" {
 #include "third_party/ffmpeg/libavutil/imgutils.h"
 }  // extern "C"
 
-#include "absl/memory/memory.h"
 #include "api/video/color_space.h"
 #include "api/video/i010_buffer.h"
 #include "api/video/i420_buffer.h"
@@ -57,8 +57,9 @@ enum H264DecoderImplEvent {
 
 }  // namespace
 
-int H264DecoderImpl::AVGetBuffer2(
-    AVCodecContext* context, AVFrame* av_frame, int flags) {
+int H264DecoderImpl::AVGetBuffer2(AVCodecContext* context,
+                                  AVFrame* av_frame,
+                                  int flags) {
   // Set in |InitDecode|.
   H264DecoderImpl* decoder = static_cast<H264DecoderImpl*>(context->opaque);
   // DCHECK values set in |InitDecode|.
@@ -129,13 +130,13 @@ int H264DecoderImpl::AVGetBuffer2(
   // Refactor to do not use a VideoFrame object at all.
   av_frame->buf[0] = av_buffer_create(
       av_frame->data[kYPlaneIndex], total_size, AVFreeBuffer2,
-      static_cast<void*>(absl::make_unique<VideoFrame>(
-                             VideoFrame::Builder()
-                                 .set_video_frame_buffer(frame_buffer)
-                                 .set_rotation(kVideoRotation_0)
-                                 .set_timestamp_us(0)
-                                 .build())
-                             .release()),
+      static_cast<void*>(
+          std::make_unique<VideoFrame>(VideoFrame::Builder()
+                                           .set_video_frame_buffer(frame_buffer)
+                                           .set_rotation(kVideoRotation_0)
+                                           .set_timestamp_us(0)
+                                           .build())
+              .release()),
       0);
   RTC_CHECK(av_frame->buf[0]);
   return 0;
@@ -164,8 +165,7 @@ H264DecoderImpl::~H264DecoderImpl() {
 int32_t H264DecoderImpl::InitDecode(const VideoCodec* codec_settings,
                                     int32_t number_of_cores) {
   ReportInit();
-  if (codec_settings &&
-      codec_settings->codecType != kVideoCodecH264) {
+  if (codec_settings && codec_settings->codecType != kVideoCodecH264) {
     ReportError();
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
@@ -368,8 +368,7 @@ void H264DecoderImpl::ReportInit() {
   if (has_reported_init_)
     return;
   RTC_HISTOGRAM_ENUMERATION("WebRTC.Video.H264DecoderImpl.Event",
-                            kH264DecoderEventInit,
-                            kH264DecoderEventMax);
+                            kH264DecoderEventInit, kH264DecoderEventMax);
   has_reported_init_ = true;
 }
 
@@ -377,8 +376,7 @@ void H264DecoderImpl::ReportError() {
   if (has_reported_error_)
     return;
   RTC_HISTOGRAM_ENUMERATION("WebRTC.Video.H264DecoderImpl.Event",
-                            kH264DecoderEventError,
-                            kH264DecoderEventMax);
+                            kH264DecoderEventError, kH264DecoderEventMax);
   has_reported_error_ = true;
 }
 

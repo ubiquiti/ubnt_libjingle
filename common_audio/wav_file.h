@@ -12,11 +12,11 @@
 #define COMMON_AUDIO_WAV_FILE_H_
 
 #include <stdint.h>
+
 #include <cstddef>
 #include <string>
 
 #include "rtc_base/constructor_magic.h"
-#include "rtc_base/platform_file.h"
 #include "rtc_base/system/file_wrapper.h"
 
 namespace webrtc {
@@ -70,8 +70,8 @@ class WavReader final : public WavFile {
   // Opens an existing WAV file for reading.
   explicit WavReader(const std::string& filename);
 
-  // Opens an existing WAV file for reading.
-  explicit WavReader(rtc::PlatformFile file);
+  // Use an existing WAV file for reading.
+  explicit WavReader(FileWrapper file);
 
   // Close the WAV file.
   ~WavReader() override;
@@ -94,8 +94,9 @@ class WavReader final : public WavFile {
   size_t num_channels_;
   size_t num_samples_;  // Total number of samples in the file.
   size_t num_samples_remaining_;
-  FILE* file_handle_;  // Input file, owned by this class.
-  fpos_t data_start_pos_;  // Position in the file immediately after WAV header.
+  FileWrapper file_;  // Input file, owned by this class.
+  int64_t
+      data_start_pos_;  // Position in the file immediately after WAV header.
 
   RTC_DISALLOW_COPY_AND_ASSIGN(WavReader);
 };

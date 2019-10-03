@@ -22,10 +22,10 @@
 #include "api/audio_options.h"
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/crypto/frame_encryptor_interface.h"
-#include "api/media_transport_config.h"
 #include "api/rtc_error.h"
 #include "api/rtp_parameters.h"
-#include "api/rtp_receiver_interface.h"
+#include "api/transport/media/media_transport_config.h"
+#include "api/transport/rtp/rtp_source.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_sink_interface.h"
 #include "api/video/video_source_interface.h"
@@ -42,6 +42,7 @@
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/dscp.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/network_route.h"
@@ -201,9 +202,6 @@ class MediaChannel : public sigslot::has_slots<> {
   // Called when a RTP packet is received.
   virtual void OnPacketReceived(rtc::CopyOnWriteBuffer packet,
                                 int64_t packet_time_us) = 0;
-  // Called when a RTCP packet is received.
-  virtual void OnRtcpReceived(rtc::CopyOnWriteBuffer packet,
-                              int64_t packet_time_us) = 0;
   // Called when the socket's ability to send has changed.
   virtual void OnReadyToSend(bool ready) = 0;
   // Called when the network route used for sending packets changed.
@@ -450,6 +448,8 @@ struct MediaReceiverInfo {
   int64_t bytes_rcvd = 0;
   int packets_rcvd = 0;
   int packets_lost = 0;
+  // TODO(bugs.webrtc.org/10679): Unused, delete as soon as downstream code is
+  // updated.
   float fraction_lost = 0.0f;
   // The timestamp at which the last packet was received, i.e. the time of the
   // local clock when it was received - not the RTP timestamp of that packet.
@@ -464,8 +464,8 @@ struct MediaReceiverInfo {
 struct VoiceSenderInfo : public MediaSenderInfo {
   VoiceSenderInfo();
   ~VoiceSenderInfo();
-  int ext_seqnum = 0;
   int jitter_ms = 0;
+  // Current audio level, expressed linearly [0,32767].
   int audio_level = 0;
   // See description of "totalAudioEnergy" in the WebRTC stats spec:
   // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
@@ -479,7 +479,6 @@ struct VoiceSenderInfo : public MediaSenderInfo {
 struct VoiceReceiverInfo : public MediaReceiverInfo {
   VoiceReceiverInfo();
   ~VoiceReceiverInfo();
-  int ext_seqnum = 0;
   int jitter_ms = 0;
   int jitter_buffer_ms = 0;
   int jitter_buffer_preferred_ms = 0;
@@ -519,7 +518,9 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
   int decoding_calls_to_silence_generator = 0;
   int decoding_calls_to_neteq = 0;
   int decoding_normal = 0;
+  // TODO(alexnarest): Consider decoding_neteq_plc for consistency
   int decoding_plc = 0;
+  int decoding_codec_plc = 0;
   int decoding_cng = 0;
   int decoding_plc_cng = 0;
   int decoding_muted_output = 0;
@@ -541,7 +542,6 @@ struct VideoSenderInfo : public MediaSenderInfo {
   VideoSenderInfo();
   ~VideoSenderInfo();
   std::vector<SsrcGroup> ssrc_groups;
-  // TODO(hbos): Move this to |VideoMediaInfo::send_codecs|?
   std::string encoder_implementation_name;
   int firs_rcvd = 0;
   int plis_rcvd = 0;
@@ -559,9 +559,12 @@ struct VideoSenderInfo : public MediaSenderInfo {
   // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-qualitylimitationdurations
   std::map<webrtc::QualityLimitationReason, int64_t>
       quality_limitation_durations_ms;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-qualitylimitationresolutionchanges
+  uint32_t quality_limitation_resolution_changes = 0;
   int avg_encode_ms = 0;
   int encode_usage_percent = 0;
   uint32_t frames_encoded = 0;
+  uint32_t key_frames_encoded = 0;
   // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-totalencodetime
   uint64_t total_encode_time_ms = 0;
   // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-totalencodedbytestarget
@@ -578,7 +581,6 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   VideoReceiverInfo();
   ~VideoReceiverInfo();
   std::vector<SsrcGroup> ssrc_groups;
-  // TODO(hbos): Move this to |VideoMediaInfo::receive_codecs|?
   std::string decoder_implementation_name;
   int packets_concealed = 0;
   int firs_sent = 0;
@@ -594,9 +596,13 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   // Framerate that the renderer reports.
   int framerate_render_output = 0;
   uint32_t frames_received = 0;
+  uint32_t frames_dropped = 0;
   uint32_t frames_decoded = 0;
+  uint32_t key_frames_decoded = 0;
   uint32_t frames_rendered = 0;
   absl::optional<uint64_t> qp_sum;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-totaldecodetime
+  uint64_t total_decode_time_ms = 0;
   int64_t interframe_delay_max_ms = -1;
   uint32_t freeze_count = 0;
   uint32_t pause_count = 0;
@@ -678,6 +684,7 @@ struct VoiceMediaInfo {
   std::vector<VoiceReceiverInfo> receivers;
   RtpCodecParametersMap send_codecs;
   RtpCodecParametersMap receive_codecs;
+  int32_t device_underrun_count = 0;
 };
 
 struct VideoMediaInfo {
@@ -712,6 +719,7 @@ struct DataMediaInfo {
 
 struct RtcpParameters {
   bool reduced_size = false;
+  bool remote_estimate = false;
 };
 
 template <class Codec>

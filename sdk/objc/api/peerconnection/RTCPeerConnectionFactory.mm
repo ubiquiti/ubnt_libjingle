@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #import "RTCPeerConnectionFactory+Native.h"
 #import "RTCPeerConnectionFactory+Private.h"
 #import "RTCPeerConnectionFactoryOptions+Private.h"
@@ -28,11 +30,10 @@
 #import "components/video_codec/RTCVideoEncoderFactoryH264.h"
 // The no-media version PeerConnectionFactory doesn't depend on these files, but the gn check tool
 // is not smart enough to take the #ifdef into account.
-#include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"     // nogncheck
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"     // nogncheck
+#include "api/rtc_event_log/rtc_event_log_factory.h"
 #include "api/task_queue/default_task_queue_factory.h"
-#include "logging/rtc_event_log/rtc_event_log_factory.h"
 #include "modules/audio_device/include/audio_device.h"          // nogncheck
 #include "modules/audio_processing/include/audio_processing.h"  // nogncheck
 
@@ -51,8 +52,7 @@
 // C++ target.
 // TODO(zhihuang): Remove nogncheck once MediaEngineInterface is moved to C++
 // API layer.
-#include "absl/memory/memory.h"
-#include "api/media_transport_interface.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "media/engine/webrtc_media_engine.h"  // nogncheck
 
 @implementation RTCPeerConnectionFactory {
@@ -231,7 +231,7 @@
     dependencies.media_engine = cricket::CreateMediaEngine(std::move(media_deps));
     dependencies.call_factory = webrtc::CreateCallFactory();
     dependencies.event_log_factory =
-        absl::make_unique<webrtc::RtcEventLogFactory>(dependencies.task_queue_factory.get());
+        std::make_unique<webrtc::RtcEventLogFactory>(dependencies.task_queue_factory.get());
     dependencies.network_controller_factory = std::move(networkControllerFactory);
     dependencies.media_transport_factory = std::move(mediaTransportFactory);
 #endif
@@ -310,12 +310,12 @@
     RTCLogError(@"Aec dump already started.");
     return NO;
   }
-  int fd = open(filePath.UTF8String, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-  if (fd < 0) {
-    RTCLogError(@"Error opening file: %@. Error: %d", filePath, errno);
+  FILE *f = fopen(filePath.UTF8String, "wb");
+  if (!f) {
+    RTCLogError(@"Error opening file: %@. Error: %s", filePath, strerror(errno));
     return NO;
   }
-  _hasStartedAecDump = _nativeFactory->StartAecDump(fd, maxSizeInBytes);
+  _hasStartedAecDump = _nativeFactory->StartAecDump(f, maxSizeInBytes);
   return _hasStartedAecDump;
 }
 

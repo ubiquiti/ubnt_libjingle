@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "modules/rtp_rtcp/source/rtp_sender_video.h"
+
 #include <string>
 #include <vector>
 
@@ -22,7 +24,6 @@
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
-#include "modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/rate_limiter.h"
 #include "test/gmock.h"
@@ -56,22 +57,21 @@ constexpr int64_t kDefaultExpectedRetransmissionTimeMs = 125;
 class LoopbackTransportTest : public webrtc::Transport {
  public:
   LoopbackTransportTest() {
-    receivers_extensions_.Register(kRtpExtensionTransmissionTimeOffset,
-                                   kTransmissionTimeOffsetExtensionId);
-    receivers_extensions_.Register(kRtpExtensionAbsoluteSendTime,
-                                   kAbsoluteSendTimeExtensionId);
-    receivers_extensions_.Register(kRtpExtensionTransportSequenceNumber,
-                                   kTransportSequenceNumberExtensionId);
-    receivers_extensions_.Register(kRtpExtensionVideoRotation,
-                                   kVideoRotationExtensionId);
-    receivers_extensions_.Register(kRtpExtensionVideoTiming,
-                                   kVideoTimingExtensionId);
-    receivers_extensions_.Register(kRtpExtensionGenericFrameDescriptor00,
-                                   kGenericDescriptorId00);
-    receivers_extensions_.Register(kRtpExtensionGenericFrameDescriptor01,
-                                   kGenericDescriptorId01);
-    receivers_extensions_.Register(kRtpExtensionFrameMarking,
-                                   kFrameMarkingExtensionId);
+    receivers_extensions_.Register<TransmissionOffset>(
+        kTransmissionTimeOffsetExtensionId);
+    receivers_extensions_.Register<AbsoluteSendTime>(
+        kAbsoluteSendTimeExtensionId);
+    receivers_extensions_.Register<TransportSequenceNumber>(
+        kTransportSequenceNumberExtensionId);
+    receivers_extensions_.Register<VideoOrientation>(kVideoRotationExtensionId);
+    receivers_extensions_.Register<VideoTimingExtension>(
+        kVideoTimingExtensionId);
+    receivers_extensions_.Register<RtpGenericFrameDescriptorExtension00>(
+        kGenericDescriptorId00);
+    receivers_extensions_.Register<RtpGenericFrameDescriptorExtension01>(
+        kGenericDescriptorId01);
+    receivers_extensions_.Register<FrameMarkingExtension>(
+        kFrameMarkingExtensionId);
   }
 
   bool SendRtp(const uint8_t* data,
@@ -105,15 +105,16 @@ class TestRtpSenderVideo : public RTPSenderVideo {
                        nullptr,
                        false,
                        false,
+                       false,
                        field_trials) {}
   ~TestRtpSenderVideo() override {}
 
-  StorageType GetStorageType(const RTPVideoHeader& header,
-                             int32_t retransmission_settings,
-                             int64_t expected_retransmission_time_ms) {
-    return RTPSenderVideo::GetStorageType(GetTemporalId(header),
-                                          retransmission_settings,
-                                          expected_retransmission_time_ms);
+  bool AllowRetransmission(const RTPVideoHeader& header,
+                           int32_t retransmission_settings,
+                           int64_t expected_retransmission_time_ms) {
+    return RTPSenderVideo::AllowRetransmission(GetTemporalId(header),
+                                               retransmission_settings,
+                                               expected_retransmission_time_ms);
   }
   PlayoutDelayOracle playout_delay_oracle_;
 };
@@ -140,29 +141,18 @@ class RtpSenderVideoTest : public ::testing::TestWithParam<bool> {
       : field_trials_(GetParam()),
         fake_clock_(kStartTime),
         retransmission_rate_limiter_(&fake_clock_, 1000),
-        // TODO(pbos): Set up to use pacer.
-        rtp_sender_(false,
-                    &fake_clock_,
-                    &transport_,
-                    nullptr,
-                    absl::nullopt,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    &retransmission_rate_limiter_,
-                    nullptr,
-                    false,
-                    nullptr,
-                    false,
-                    false,
-                    field_trials_),
+        rtp_sender_([&] {
+          RtpRtcp::Configuration config;
+          config.clock = &fake_clock_;
+          config.outgoing_transport = &transport_;
+          config.retransmission_rate_limiter = &retransmission_rate_limiter_;
+          config.field_trials = &field_trials_;
+          config.local_media_ssrc = kSsrc;
+          return config;
+        }()),
         rtp_sender_video_(&fake_clock_, &rtp_sender_, nullptr, field_trials_) {
     rtp_sender_.SetSequenceNumber(kSeqNum);
     rtp_sender_.SetTimestampOffset(0);
-    rtp_sender_.SetSSRC(kSsrc);
 
     rtp_sender_video_.RegisterPayloadType(kPayload, "generic",
                                           /*raw_payload=*/false);
@@ -333,19 +323,15 @@ TEST_P(RtpSenderVideoTest, RetransmissionTypesGeneric) {
   RTPVideoHeader header;
   header.codec = kVideoCodecGeneric;
 
-  EXPECT_EQ(kDontRetransmit,
-            rtp_sender_video_.GetStorageType(
-                header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                      header, kRetransmitBaseLayer,
-                                      kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                      header, kRetransmitHigherLayers,
-                                      kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(
-                header, kConditionallyRetransmitHigherLayers,
-                kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitBaseLayer, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitHigherLayers, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kConditionallyRetransmitHigherLayers,
+      kDefaultExpectedRetransmissionTimeMs));
 }
 
 TEST_P(RtpSenderVideoTest, RetransmissionTypesH264) {
@@ -355,27 +341,22 @@ TEST_P(RtpSenderVideoTest, RetransmissionTypesH264) {
   header.codec = kVideoCodecH264;
   header.frame_marking.temporal_id = kNoTemporalIdx;
 
-  EXPECT_EQ(kDontRetransmit,
-            rtp_sender_video_.GetStorageType(
-                header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                      header, kRetransmitBaseLayer,
-                                      kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                      header, kRetransmitHigherLayers,
-                                      kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(
-                header, kConditionallyRetransmitHigherLayers,
-                kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitBaseLayer, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitHigherLayers, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kConditionallyRetransmitHigherLayers,
+      kDefaultExpectedRetransmissionTimeMs));
 
   // Test higher level retransmit.
   for (int tid = 0; tid <= kMaxTemporalStreams; ++tid) {
     header.frame_marking.temporal_id = tid;
-    EXPECT_EQ(kAllowRetransmission,
-              rtp_sender_video_.GetStorageType(
-                  header, kRetransmitHigherLayers | kRetransmitBaseLayer,
-                  kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitHigherLayers | kRetransmitBaseLayer,
+        kDefaultExpectedRetransmissionTimeMs));
   }
 }
 
@@ -385,27 +366,21 @@ TEST_P(RtpSenderVideoTest, RetransmissionTypesVP8BaseLayer) {
   auto& vp8_header = header.video_type_header.emplace<RTPVideoHeaderVP8>();
   vp8_header.temporalIdx = 0;
 
-  EXPECT_EQ(kDontRetransmit,
-            rtp_sender_video_.GetStorageType(
-                header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                      header, kRetransmitBaseLayer,
-                                      kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kDontRetransmit, rtp_sender_video_.GetStorageType(
-                                 header, kRetransmitHigherLayers,
-                                 kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(
-                header, kRetransmitHigherLayers | kRetransmitBaseLayer,
-                kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(kDontRetransmit, rtp_sender_video_.GetStorageType(
-                                 header, kConditionallyRetransmitHigherLayers,
-                                 kDefaultExpectedRetransmissionTimeMs));
-  EXPECT_EQ(
-      kAllowRetransmission,
-      rtp_sender_video_.GetStorageType(
-          header, kRetransmitBaseLayer | kConditionallyRetransmitHigherLayers,
-          kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitBaseLayer, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitHigherLayers, kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitHigherLayers | kRetransmitBaseLayer,
+      kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+      header, kConditionallyRetransmitHigherLayers,
+      kDefaultExpectedRetransmissionTimeMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+      header, kRetransmitBaseLayer | kConditionallyRetransmitHigherLayers,
+      kDefaultExpectedRetransmissionTimeMs));
 }
 
 TEST_P(RtpSenderVideoTest, RetransmissionTypesVP8HigherLayers) {
@@ -416,19 +391,15 @@ TEST_P(RtpSenderVideoTest, RetransmissionTypesVP8HigherLayers) {
   for (int tid = 1; tid <= kMaxTemporalStreams; ++tid) {
     vp8_header.temporalIdx = tid;
 
-    EXPECT_EQ(kDontRetransmit, rtp_sender_video_.GetStorageType(
-                                   header, kRetransmitOff,
-                                   kDefaultExpectedRetransmissionTimeMs));
-    EXPECT_EQ(kDontRetransmit, rtp_sender_video_.GetStorageType(
-                                   header, kRetransmitBaseLayer,
-                                   kDefaultExpectedRetransmissionTimeMs));
-    EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                        header, kRetransmitHigherLayers,
-                                        kDefaultExpectedRetransmissionTimeMs));
-    EXPECT_EQ(kAllowRetransmission,
-              rtp_sender_video_.GetStorageType(
-                  header, kRetransmitHigherLayers | kRetransmitBaseLayer,
-                  kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitBaseLayer, kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitHigherLayers, kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitHigherLayers | kRetransmitBaseLayer,
+        kDefaultExpectedRetransmissionTimeMs));
   }
 }
 
@@ -440,19 +411,15 @@ TEST_P(RtpSenderVideoTest, RetransmissionTypesVP9) {
   for (int tid = 1; tid <= kMaxTemporalStreams; ++tid) {
     vp9_header.temporal_idx = tid;
 
-    EXPECT_EQ(kDontRetransmit, rtp_sender_video_.GetStorageType(
-                                   header, kRetransmitOff,
-                                   kDefaultExpectedRetransmissionTimeMs));
-    EXPECT_EQ(kDontRetransmit, rtp_sender_video_.GetStorageType(
-                                   header, kRetransmitBaseLayer,
-                                   kDefaultExpectedRetransmissionTimeMs));
-    EXPECT_EQ(kAllowRetransmission, rtp_sender_video_.GetStorageType(
-                                        header, kRetransmitHigherLayers,
-                                        kDefaultExpectedRetransmissionTimeMs));
-    EXPECT_EQ(kAllowRetransmission,
-              rtp_sender_video_.GetStorageType(
-                  header, kRetransmitHigherLayers | kRetransmitBaseLayer,
-                  kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitOff, kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_FALSE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitBaseLayer, kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitHigherLayers, kDefaultExpectedRetransmissionTimeMs));
+    EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(
+        header, kRetransmitHigherLayers | kRetransmitBaseLayer,
+        kDefaultExpectedRetransmissionTimeMs));
   }
 }
 
@@ -474,7 +441,7 @@ TEST_P(RtpSenderVideoTest, ConditionalRetransmit) {
   auto& vp8_header = header.video_type_header.emplace<RTPVideoHeaderVP8>();
   for (size_t i = 0; i < arraysize(kPattern) * kNumRepetitions; ++i) {
     vp8_header.temporalIdx = kPattern[i % arraysize(kPattern)];
-    rtp_sender_video_.GetStorageType(header, kSettings, kRttMs);
+    rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs);
     fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
   }
 
@@ -483,35 +450,32 @@ TEST_P(RtpSenderVideoTest, ConditionalRetransmit) {
   // acknowledging that it did not arrive, which means this frame and the next
   // will not be retransmitted.
   vp8_header.temporalIdx = 1;
-  EXPECT_EQ(StorageType::kDontRetransmit,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_FALSE(
+      rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
   fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
-  EXPECT_EQ(StorageType::kDontRetransmit,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_FALSE(
+      rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
   fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
 
   // The TL0 frame did not arrive. So allow retransmission.
-  EXPECT_EQ(StorageType::kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
   fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
 
   // Insert a frame for TL2. We just had frame in TL1, so the next one there is
   // in three frames away. TL0 is still too far in the past. So, allow
   // retransmission.
   vp8_header.temporalIdx = 2;
-  EXPECT_EQ(StorageType::kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
   fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
 
   // Another TL2, next in TL1 is two frames away. Allow again.
-  EXPECT_EQ(StorageType::kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
   fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
 
   // Yet another TL2, next in TL1 is now only one frame away, so don't store
   // for retransmission.
-  EXPECT_EQ(StorageType::kDontRetransmit,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_FALSE(
+      rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
 }
 
 TEST_P(RtpSenderVideoTest, ConditionalRetransmitLimit) {
@@ -533,7 +497,7 @@ TEST_P(RtpSenderVideoTest, ConditionalRetransmitLimit) {
   for (size_t i = 0; i < arraysize(kPattern) * kNumRepetitions; ++i) {
     vp8_header.temporalIdx = kPattern[i % arraysize(kPattern)];
 
-    rtp_sender_video_.GetStorageType(header, kSettings, kRttMs);
+    rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs);
     fake_clock_.AdvanceTimeMilliseconds(kFrameIntervalMs);
   }
 
@@ -543,8 +507,7 @@ TEST_P(RtpSenderVideoTest, ConditionalRetransmitLimit) {
   // layer, but that last frame in TL1 was a long time ago in absolute terms,
   // so allow retransmission anyway.
   vp8_header.temporalIdx = 1;
-  EXPECT_EQ(StorageType::kAllowRetransmission,
-            rtp_sender_video_.GetStorageType(header, kSettings, kRttMs));
+  EXPECT_TRUE(rtp_sender_video_.AllowRetransmission(header, kSettings, kRttMs));
 }
 
 void RtpSenderVideoTest::PopulateGenericFrameDescriptor(int version) {

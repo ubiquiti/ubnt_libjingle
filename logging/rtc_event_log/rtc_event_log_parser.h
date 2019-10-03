@@ -18,10 +18,10 @@
 #include <utility>  // pair
 #include <vector>
 
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "logging/rtc_event_log/logged_events.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "rtc_base/ignore_wundef.h"
@@ -220,6 +220,38 @@ class PacketView {
   size_t element_size_;
 };
 
+// Conversion functions for version 2 of the wire format.
+BandwidthUsage GetRuntimeDetectorState(
+    rtclog2::DelayBasedBweUpdates::DetectorState detector_state);
+
+ProbeFailureReason GetRuntimeProbeFailureReason(
+    rtclog2::BweProbeResultFailure::FailureReason failure);
+
+DtlsTransportState GetRuntimeDtlsTransportState(
+    rtclog2::DtlsTransportStateEvent::DtlsTransportState state);
+
+IceCandidatePairConfigType GetRuntimeIceCandidatePairConfigType(
+    rtclog2::IceCandidatePairConfig::IceCandidatePairConfigType type);
+
+IceCandidateType GetRuntimeIceCandidateType(
+    rtclog2::IceCandidatePairConfig::IceCandidateType type);
+
+IceCandidatePairProtocol GetRuntimeIceCandidatePairProtocol(
+    rtclog2::IceCandidatePairConfig::Protocol protocol);
+
+IceCandidatePairAddressFamily GetRuntimeIceCandidatePairAddressFamily(
+    rtclog2::IceCandidatePairConfig::AddressFamily address_family);
+
+IceCandidateNetworkType GetRuntimeIceCandidateNetworkType(
+    rtclog2::IceCandidatePairConfig::NetworkType network_type);
+
+IceCandidatePairEventType GetRuntimeIceCandidatePairEventType(
+    rtclog2::IceCandidatePairEvent::IceCandidatePairEventType type);
+
+std::vector<RtpExtension> GetRuntimeRtpHeaderExtensionConfig(
+    const rtclog2::RtpHeaderExtensionConfig& proto_header_extensions);
+// End of conversion functions.
+
 class ParsedRtcEventLog {
  public:
   enum class MediaType { ANY, AUDIO, VIDEO, DATA };
@@ -392,6 +424,10 @@ class ParsedRtcEventLog {
 
   const std::vector<LoggedRouteChangeEvent>& route_change_events() const {
     return route_change_events_;
+  }
+
+  const std::vector<LoggedRemoteEstimateEvent>& remote_estimate_events() const {
+    return remote_estimate_events_;
   }
 
   // RTP
@@ -624,6 +660,7 @@ class ParsedRtcEventLog {
   void StoreOutgoingRtpPackets(const rtclog2::OutgoingRtpPackets& proto);
   void StoreParsedNewFormatEvent(const rtclog2::EventStream& event);
   void StoreRouteChangeEvent(const rtclog2::RouteChange& proto);
+  void StoreRemoteEstimateEvent(const rtclog2::RemoteEstimates& proto);
   void StoreStartEvent(const rtclog2::BeginLogEvent& proto);
   void StoreStopEvent(const rtclog2::EndLogEvent& proto);
   void StoreVideoRecvConfig(const rtclog2::VideoRecvStreamConfig& proto);
@@ -739,6 +776,7 @@ class ParsedRtcEventLog {
   std::vector<LoggedGenericAckReceived> generic_acks_received_;
 
   std::vector<LoggedRouteChangeEvent> route_change_events_;
+  std::vector<LoggedRemoteEstimateEvent> remote_estimate_events_;
 
   uint8_t last_incoming_rtcp_packet_[IP_PACKET_SIZE];
   uint8_t last_incoming_rtcp_packet_length_;

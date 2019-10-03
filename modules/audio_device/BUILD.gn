@@ -148,7 +148,6 @@ rtc_source_set("audio_device_module_from_input_and_output") {
       "../../api/task_queue",
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
@@ -178,9 +177,9 @@ rtc_source_set("audio_device_impl") {
     "../../rtc_base/system:file_wrapper",
     "../../rtc_base/task_utils:repeating_task",
     "../../system_wrappers",
+    "../../system_wrappers:field_trial",
     "../../system_wrappers:metrics",
     "../utility",
-    "//third_party/abseil-cpp/absl/memory",
   ]
   if (rtc_include_internal_audio_device && is_ios) {
     deps += [ "../../sdk:audio_device" ]
@@ -300,16 +299,9 @@ rtc_source_set("audio_device_impl") {
           "mac/audio_mixer_manager_mac.cc",
           "mac/audio_mixer_manager_mac.h",
         ]
-        deps += [ "../third_party/portaudio:mac_portaudio" ]
-        libs = [
-          # Needed for CoreGraphics:
-          "ApplicationServices.framework",
-
-          "AudioToolbox.framework",
-          "CoreAudio.framework",
-
-          # Needed for CGEventSourceKeyState in audio_device_mac.cc:
-          "CoreGraphics.framework",
+        deps += [
+          ":audio_device_impl_frameworks",
+          "../third_party/portaudio:mac_portaudio",
         ]
       }
       if (is_win) {
@@ -336,6 +328,22 @@ rtc_source_set("audio_device_impl") {
       # Do not link these into Chrome since they contain static data.
       "dummy/file_audio_device_factory.cc",
       "dummy/file_audio_device_factory.h",
+    ]
+  }
+}
+
+if (is_mac) {
+  rtc_source_set("audio_device_impl_frameworks") {
+    visibility = [ ":*" ]
+    libs = [
+      # Needed for CoreGraphics:
+      "ApplicationServices.framework",
+
+      "AudioToolbox.framework",
+      "CoreAudio.framework",
+
+      # Needed for CGEventSourceKeyState in audio_device_mac.cc:
+      "CoreGraphics.framework",
     ]
   }
 }
@@ -383,7 +391,6 @@ if (rtc_include_tests) {
     ]
     if (is_linux || is_mac || is_win) {
       sources += [ "audio_device_unittest.cc" ]
-      deps += [ "//third_party/abseil-cpp/absl/memory" ]
     }
     if (is_win) {
       sources += [ "win/core_audio_utility_win_unittest.cc" ]

@@ -8,12 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "api/video/video_frame.h"
+
 #include <math.h>
 #include <string.h>
 
 #include "api/video/i010_buffer.h"
 #include "api/video/i420_buffer.h"
-#include "api/video/video_frame.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/time_utils.h"
 #include "test/fake_texture_frame.h"
@@ -489,7 +490,7 @@ TEST_P(TestPlanarYuvBuffer, PastesIntoBuffer) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          TestPlanarYuvBuffer,
                          ::testing::Values(VideoFrameBuffer::Type::kI420,
                                            VideoFrameBuffer::Type::kI010));

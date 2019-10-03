@@ -18,6 +18,8 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/array_view.h"
+#include "api/video/video_frame_type.h"
+#include "modules/include/module_common_types.h"
 #include "modules/rtp_rtcp/include/flexfec_sender.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/playout_delay_oracle.h"
@@ -45,7 +47,8 @@ enum RetransmissionMode : uint8_t {
   kRetransmitOff = 0x0,
   kRetransmitBaseLayer = 0x2,
   kRetransmitHigherLayers = 0x4,
-  kConditionallyRetransmitHigherLayers = 0x8,
+  kRetransmitAllLayers = 0x6,
+  kConditionallyRetransmitHigherLayers = 0x8
 };
 
 class RTPSenderVideo {
@@ -59,6 +62,7 @@ class RTPSenderVideo {
                  FrameEncryptorInterface* frame_encryptor,
                  bool require_frame_encryption,
                  bool need_rtp_packet_infos,
+                 bool enable_retransmit_all_layers,
                  const WebRtcKeyValueConfig& field_trials);
   virtual ~RTPSenderVideo();
 
@@ -110,9 +114,9 @@ class RTPSenderVideo {
 
  protected:
   static uint8_t GetTemporalId(const RTPVideoHeader& header);
-  StorageType GetStorageType(uint8_t temporal_id,
-                             int32_t retransmission_settings,
-                             int64_t expected_retransmission_time_ms);
+  bool AllowRetransmission(uint8_t temporal_id,
+                           int32_t retransmission_settings,
+                           int64_t expected_retransmission_time_ms);
 
  private:
   struct TemporalLayerStats {
@@ -128,23 +132,19 @@ class RTPSenderVideo {
 
   size_t CalculateFecPacketOverhead() const RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
-  void SendVideoPacket(std::unique_ptr<RtpPacketToSend> packet,
-                       StorageType storage);
-
-  void SendVideoPacketAsRedMaybeWithUlpfec(
+  void AppendAsRedMaybeWithUlpfec(
       std::unique_ptr<RtpPacketToSend> media_packet,
-      StorageType media_packet_storage,
-      bool protect_media_packet);
+      bool protect_media_packet,
+      std::vector<std::unique_ptr<RtpPacketToSend>>* packets);
 
   // TODO(brandtr): Remove the FlexFEC functions when FlexfecSender has been
   // moved to PacedSender.
-  void SendVideoPacketWithFlexfec(std::unique_ptr<RtpPacketToSend> media_packet,
-                                  StorageType media_packet_storage,
-                                  bool protect_media_packet);
+  void GenerateAndAppendFlexfec(
+      std::vector<std::unique_ptr<RtpPacketToSend>>* packets);
 
-  bool LogAndSendToNetwork(std::unique_ptr<RtpPacketToSend> packet,
-                           StorageType storage,
-                           RtpPacketSender::Priority priority);
+  void LogAndSendToNetwork(
+      std::vector<std::unique_ptr<RtpPacketToSend>> packets,
+      size_t unpacketized_payload_size);
 
   bool red_enabled() const RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_) {
     return red_payload_type_ >= 0;
@@ -221,6 +221,8 @@ class RTPSenderVideo {
   bool require_frame_encryption_;
   // Set to true if the generic descriptor should be authenticated.
   const bool generic_descriptor_auth_experiment_;
+
+  const bool exclude_transport_sequence_number_from_fec_experiment_;
 };
 
 }  // namespace webrtc

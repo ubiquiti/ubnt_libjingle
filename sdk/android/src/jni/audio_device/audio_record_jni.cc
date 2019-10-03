@@ -19,7 +19,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/time_utils.h"
-#include "sdk/android/generated_java_audio_device_module_native_jni/jni/WebRtcAudioRecord_jni.h"
+#include "sdk/android/generated_java_audio_device_module_native_jni/WebRtcAudioRecord_jni.h"
 #include "sdk/android/src/jni/audio_device/audio_common.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "system_wrappers/include/metrics.h"
@@ -157,6 +157,17 @@ int32_t AudioRecordJni::StopRecording() {
   RTC_DCHECK(thread_checker_.IsCurrent());
   if (!initialized_ || !recording_) {
     return 0;
+  }
+  // Check if the audio source matched the activated recording session but only
+  // if a valid results exists to avoid invalid statistics.
+  if (Java_WebRtcAudioRecord_isAudioConfigVerified(env_, j_audio_record_)) {
+    const bool session_was_ok =
+        Java_WebRtcAudioRecord_isAudioSourceMatchingRecordingSession(
+            env_, j_audio_record_);
+    RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.SourceMatchesRecordingSession",
+                          session_was_ok);
+    RTC_LOG(INFO) << "HISTOGRAM(WebRTC.Audio.SourceMatchesRecordingSession): "
+                  << session_was_ok;
   }
   if (!Java_WebRtcAudioRecord_stopRecording(env_, j_audio_record_)) {
     RTC_LOG(LS_ERROR) << "StopRecording failed";

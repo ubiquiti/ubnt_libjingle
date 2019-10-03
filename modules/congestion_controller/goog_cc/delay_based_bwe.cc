@@ -13,13 +13,13 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
-#include "logging/rtc_event_log/events/rtc_event.h"
+#include "api/rtc_event_log/rtc_event.h"
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
 #include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "rtc_base/checks.h"
@@ -71,6 +71,7 @@ DelayBasedBwe::DelayBasedBwe(const WebRtcKeyValueConfig* key_value_config,
       uma_recorded_(false),
       rate_control_(key_value_config, /*send_side=*/true),
       prev_bitrate_(DataRate::Zero()),
+      has_once_detected_overuse_(false),
       prev_state_(BandwidthUsage::kBwNormal),
       alr_limited_backoff_enabled_(
           key_value_config->Lookup("WebRTC-Bwe-AlrLimitedBackoff")
@@ -79,17 +80,14 @@ DelayBasedBwe::DelayBasedBwe(const WebRtcKeyValueConfig* key_value_config,
 DelayBasedBwe::~DelayBasedBwe() {}
 
 DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
-    const std::vector<PacketFeedback>& packet_feedback_vector,
+    const TransportPacketsFeedback& msg,
     absl::optional<DataRate> acked_bitrate,
     absl::optional<DataRate> probe_bitrate,
     absl::optional<NetworkStateEstimate> network_estimate,
-    bool in_alr,
-    Timestamp at_time) {
-  RTC_DCHECK(std::is_sorted(packet_feedback_vector.begin(),
-                            packet_feedback_vector.end(),
-                            PacketFeedbackComparator()));
+    bool in_alr) {
   RTC_DCHECK_RUNS_SERIALIZED(&network_race_);
 
+  auto packet_feedback_vector = msg.SortedByReceiveTime();
   // TODO(holmer): An empty feedback vector here likely means that
   // all acks were too late and that the send time history had
   // timed out. We should reduce the rate when this occurs.
@@ -108,10 +106,8 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
   bool recovered_from_overuse = false;
   BandwidthUsage prev_detector_state = delay_detector_->State();
   for (const auto& packet_feedback : packet_feedback_vector) {
-    if (packet_feedback.send_time_ms < 0)
-      continue;
     delayed_feedback = false;
-    IncomingPacketFeedback(packet_feedback, at_time);
+    IncomingPacketFeedback(packet_feedback, msg.feedback_time);
     if (prev_detector_state == BandwidthUsage::kBwUnderusing &&
         delay_detector_->State() == BandwidthUsage::kBwNormal) {
       recovered_from_overuse = true;
@@ -128,12 +124,11 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
   rate_control_.SetNetworkStateEstimate(network_estimate);
   return MaybeUpdateEstimate(acked_bitrate, probe_bitrate,
                              std::move(network_estimate),
-                             recovered_from_overuse, in_alr, at_time);
+                             recovered_from_overuse, in_alr, msg.feedback_time);
 }
 
-void DelayBasedBwe::IncomingPacketFeedback(
-    const PacketFeedback& packet_feedback,
-    Timestamp at_time) {
+void DelayBasedBwe::IncomingPacketFeedback(const PacketResult& packet_feedback,
+                                           Timestamp at_time) {
   // Reset if the stream has timed out.
   if (last_seen_packet_.IsInfinite() ||
       at_time - last_seen_packet_ > kStreamTimeOut) {
@@ -147,7 +142,7 @@ void DelayBasedBwe::IncomingPacketFeedback(
 
   uint32_t send_time_24bits =
       static_cast<uint32_t>(
-          ((static_cast<uint64_t>(packet_feedback.send_time_ms)
+          ((static_cast<uint64_t>(packet_feedback.sent_packet.send_time.ms())
             << kAbsSendTimeFraction) +
            500) /
           1000) &
@@ -160,11 +155,14 @@ void DelayBasedBwe::IncomingPacketFeedback(
   int64_t t_delta = 0;
   int size_delta = 0;
   bool calculated_deltas = inter_arrival_->ComputeDeltas(
-      timestamp, packet_feedback.arrival_time_ms, at_time.ms(),
-      packet_feedback.payload_size, &ts_delta, &t_delta, &size_delta);
+      timestamp, packet_feedback.receive_time.ms(), at_time.ms(),
+      packet_feedback.sent_packet.size.bytes(), &ts_delta, &t_delta,
+      &size_delta);
   double ts_delta_ms = (1000.0 * ts_delta) / (1 << kInterArrivalShift);
-  delay_detector_->Update(t_delta, ts_delta_ms, packet_feedback.send_time_ms,
-                          packet_feedback.arrival_time_ms, calculated_deltas);
+  delay_detector_->Update(
+      t_delta, ts_delta_ms, packet_feedback.sent_packet.send_time.ms(),
+      packet_feedback.receive_time.ms(),
+      packet_feedback.sent_packet.size.bytes(), calculated_deltas);
 }
 
 DataRate DelayBasedBwe::TriggerOveruse(Timestamp at_time,
@@ -184,7 +182,7 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
 
   // Currently overusing the bandwidth.
   if (delay_detector_->State() == BandwidthUsage::kBwOverusing) {
-    if (in_alr && alr_limited_backoff_enabled_) {
+    if (has_once_detected_overuse_ && in_alr && alr_limited_backoff_enabled_) {
       if (rate_control_.TimeToReduceFurther(at_time, prev_bitrate_)) {
         result.updated =
             UpdateEstimate(at_time, prev_bitrate_, &result.target_bitrate);
@@ -205,6 +203,7 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
       result.probe = false;
       result.target_bitrate = rate_control_.LatestEstimate();
     }
+    has_once_detected_overuse_ = true;
   } else {
     if (probe_bitrate) {
       result.probe = true;
@@ -225,7 +224,7 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
     BWE_TEST_LOGGING_PLOT(1, "target_bitrate_bps", at_time.ms(), bitrate.bps());
 
     if (event_log_) {
-      event_log_->Log(absl::make_unique<RtcEventBweUpdateDelayBased>(
+      event_log_->Log(std::make_unique<RtcEventBweUpdateDelayBased>(
           bitrate.bps(), detector_state));
     }
 

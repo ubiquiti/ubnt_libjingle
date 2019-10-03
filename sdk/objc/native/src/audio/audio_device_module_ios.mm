@@ -10,7 +10,7 @@
 
 #include "audio_device_module_ios.h"
 
-#include "api/task_queue/global_task_queue_factory.h"
+#include "api/task_queue/default_task_queue_factory.h"
 #include "modules/audio_device/audio_device_config.h"
 #include "modules/audio_device/audio_device_generic.h"
 #include "rtc_base/checks.h"
@@ -40,10 +40,11 @@
 namespace webrtc {
 namespace ios_adm {
 
-  AudioDeviceModuleIOS::AudioDeviceModuleIOS() {
-    RTC_LOG(INFO) << "current platform is IOS";
-    RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
-  }
+AudioDeviceModuleIOS::AudioDeviceModuleIOS()
+    : task_queue_factory_(CreateDefaultTaskQueueFactory()) {
+  RTC_LOG(INFO) << "current platform is IOS";
+  RTC_LOG(INFO) << "iPhone Audio APIs will be utilized.";
+}
 
   int32_t AudioDeviceModuleIOS::AttachAudioBuffer() {
     RTC_LOG(INFO) << __FUNCTION__;
@@ -70,7 +71,7 @@ namespace ios_adm {
     if (initialized_)
       return 0;
 
-    audio_device_buffer_.reset(new webrtc::AudioDeviceBuffer(&GlobalTaskQueueFactory()));
+    audio_device_buffer_.reset(new webrtc::AudioDeviceBuffer(task_queue_factory_.get()));
     audio_device_.reset(new ios_adm::AudioDeviceIOS());
     RTC_CHECK(audio_device_);
 
@@ -637,6 +638,14 @@ namespace ios_adm {
     RTC_LOG(INFO) << __FUNCTION__ << "(" << enable << ")";
     CHECKinitialized_();
     int32_t ok = audio_device_->EnableBuiltInNS(enable);
+    RTC_LOG(INFO) << "output: " << ok;
+    return ok;
+  }
+
+  int32_t AudioDeviceModuleIOS::GetPlayoutUnderrunCount() const {
+    RTC_LOG(INFO) << __FUNCTION__;
+    CHECKinitialized_();
+    int32_t ok = audio_device_->GetPlayoutUnderrunCount();
     RTC_LOG(INFO) << "output: " << ok;
     return ok;
   }

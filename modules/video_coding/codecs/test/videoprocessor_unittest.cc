@@ -8,9 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "modules/video_coding/codecs/test/videoprocessor.h"
+
 #include <memory>
 
-#include "absl/memory/memory.h"
 #include "api/scoped_refptr.h"
 #include "api/test/mock_video_decoder.h"
 #include "api/test/mock_video_encoder.h"
@@ -18,7 +19,6 @@
 #include "api/video/i420_buffer.h"
 #include "media/base/media_constants.h"
 #include "modules/video_coding/codecs/test/videocodec_test_stats_impl.h"
-#include "modules/video_coding/codecs/test/videoprocessor.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -55,7 +55,7 @@ class VideoProcessorTest : public ::testing::Test {
     EXPECT_CALL(frame_reader_mock_, FrameLength())
         .WillRepeatedly(Return(kFrameSize));
     q_.SendTask([this] {
-      video_processor_ = absl::make_unique<VideoProcessor>(
+      video_processor_ = std::make_unique<VideoProcessor>(
           &encoder_mock_, &decoders_, &frame_reader_mock_, config_, &stats_,
           &encoded_frame_writers_, /*decoded_frame_writers=*/nullptr);
     });

@@ -50,7 +50,6 @@ class VideoEncoderWrapper : public VideoEncoder {
 
   // Should only be called by JNI.
   void OnEncodedFrame(JNIEnv* jni,
-                      const JavaRef<jobject>& j_caller,
                       const JavaRef<jobject>& j_encoded_image);
 
  private:
@@ -78,6 +77,9 @@ class VideoEncoderWrapper : public VideoEncoder {
   std::string GetImplementationName(JNIEnv* jni) const;
 
   ScalingSettings GetScalingSettingsInternal(JNIEnv* jni) const;
+
+  std::vector<ResolutionBitrateLimits> GetResolutionBitrateLimits(
+      JNIEnv* jni) const;
 
   const ScopedJavaGlobalRef<jobject> encoder_;
   const ScopedJavaGlobalRef<jclass> int_array_class_;

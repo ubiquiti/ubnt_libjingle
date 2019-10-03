@@ -20,8 +20,8 @@
 
 #include "api/call/audio_sink.h"
 #include "api/jsep.h"
-#include "api/media_transport_config.h"
 #include "api/rtp_receiver_interface.h"
+#include "api/transport/media/media_transport_config.h"
 #include "api/video/video_sink_interface.h"
 #include "api/video/video_source_interface.h"
 #include "call/rtp_packet_sink_interface.h"
@@ -221,16 +221,6 @@ class BaseChannel : public ChannelInterface,
                   rtc::CopyOnWriteBuffer* packet,
                   const rtc::PacketOptions& options);
 
-  void OnRtcpPacketReceived(rtc::CopyOnWriteBuffer* packet,
-                            int64_t packet_time_us);
-
-  void OnPacketReceived(bool rtcp,
-                        const rtc::CopyOnWriteBuffer& packet,
-                        int64_t packet_time_us);
-  void ProcessPacket(bool rtcp,
-                     const rtc::CopyOnWriteBuffer& packet,
-                     int64_t packet_time_us);
-
   void EnableMedia_w();
   void DisableMedia_w();
 
@@ -281,6 +271,8 @@ class BaseChannel : public ChannelInterface,
 
   void AddHandledPayloadType(int payload_type);
 
+  void ClearHandledPayloadTypes();
+
   void UpdateRtpHeaderExtensionMap(
       const RtpHeaderExtensions& header_extensions);
 
@@ -292,7 +284,6 @@ class BaseChannel : public ChannelInterface,
   bool ConnectToRtpTransport();
   void DisconnectFromRtpTransport();
   void SignalSentPacket_n(const rtc::SentPacket& sent_packet);
-  void SignalSentPacket_w(const rtc::SentPacket& sent_packet);
   bool IsReadyToSendMedia_n() const;
 
   // MediaTransportNetworkChangeCallback override.

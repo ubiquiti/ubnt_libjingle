@@ -12,7 +12,6 @@
 
 #include <memory>
 
-#include "absl/memory/memory.h"
 #include "api/scoped_refptr.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "modules/audio_processing/test/echo_control_mock.h"
@@ -51,12 +50,12 @@ class MockInitialize : public AudioProcessingImpl {
 // to the creation of a new EchoControl object.
 class MockEchoControlFactory : public EchoControlFactory {
  public:
-  MockEchoControlFactory() : next_mock_(absl::make_unique<MockEchoControl>()) {}
+  MockEchoControlFactory() : next_mock_(std::make_unique<MockEchoControl>()) {}
   // Returns a pointer to the next MockEchoControl that this factory creates.
   MockEchoControl* GetNext() const { return next_mock_.get(); }
   std::unique_ptr<EchoControl> Create(int sample_rate_hz) override {
     std::unique_ptr<EchoControl> mock = std::move(next_mock_);
-    next_mock_ = absl::make_unique<MockEchoControl>();
+    next_mock_ = std::make_unique<MockEchoControl>();
     return mock;
   }
 
@@ -128,7 +127,7 @@ class TestRenderPreProcessor : public CustomProcessing {
   void Initialize(int sample_rate_hz, int num_channels) override {}
   void Process(AudioBuffer* audio) override {
     for (size_t k = 0; k < audio->num_channels(); ++k) {
-      rtc::ArrayView<float> channel_view(audio->channels_f()[k],
+      rtc::ArrayView<float> channel_view(audio->channels()[k],
                                          audio->num_frames());
       std::transform(channel_view.begin(), channel_view.end(),
                      channel_view.begin(), ProcessSample);
@@ -215,7 +214,7 @@ TEST(AudioProcessingImplTest,
      EchoControllerObservesPreAmplifierEchoPathGainChange) {
   // Tests that the echo controller observes an echo path gain change when the
   // pre-amplifier submodule changes the gain.
-  auto echo_control_factory = absl::make_unique<MockEchoControlFactory>();
+  auto echo_control_factory = std::make_unique<MockEchoControlFactory>();
   const auto* echo_control_factory_ptr = echo_control_factory.get();
 
   std::unique_ptr<AudioProcessing> apm(
@@ -239,13 +238,13 @@ TEST(AudioProcessingImplTest,
 
   MockEchoControl* echo_control_mock = echo_control_factory_ptr->GetNext();
 
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock,
               ProcessCapture(NotNull(), /*echo_path_change=*/false))
       .Times(1);
   apm->ProcessStream(&frame);
 
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock,
               ProcessCapture(NotNull(), /*echo_path_change=*/true))
       .Times(1);
@@ -258,7 +257,7 @@ TEST(AudioProcessingImplTest,
      EchoControllerObservesAnalogAgc1EchoPathGainChange) {
   // Tests that the echo controller observes an echo path gain change when the
   // AGC1 analog adaptive submodule changes the analog gain.
-  auto echo_control_factory = absl::make_unique<MockEchoControlFactory>();
+  auto echo_control_factory = std::make_unique<MockEchoControlFactory>();
   const auto* echo_control_factory_ptr = echo_control_factory.get();
 
   std::unique_ptr<AudioProcessing> apm(
@@ -282,7 +281,7 @@ TEST(AudioProcessingImplTest,
   MockEchoControl* echo_control_mock = echo_control_factory_ptr->GetNext();
 
   const int initial_analog_gain = apm->gain_control()->stream_analog_level();
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock, ProcessCapture(NotNull(), false)).Times(1);
   apm->ProcessStream(&frame);
 
@@ -291,7 +290,7 @@ TEST(AudioProcessingImplTest,
     apm->gain_control()->set_stream_analog_level(initial_analog_gain + 1);
   }
 
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock, ProcessCapture(NotNull(), true)).Times(1);
   apm->ProcessStream(&frame);
 }
@@ -299,7 +298,7 @@ TEST(AudioProcessingImplTest,
 TEST(AudioProcessingImplTest, EchoControllerObservesPlayoutVolumeChange) {
   // Tests that the echo controller observes an echo path gain change when a
   // playout volume change is reported.
-  auto echo_control_factory = absl::make_unique<MockEchoControlFactory>();
+  auto echo_control_factory = std::make_unique<MockEchoControlFactory>();
   const auto* echo_control_factory_ptr = echo_control_factory.get();
 
   std::unique_ptr<AudioProcessing> apm(
@@ -318,21 +317,13 @@ TEST(AudioProcessingImplTest, EchoControllerObservesPlayoutVolumeChange) {
 
   MockEchoControl* echo_control_mock = echo_control_factory_ptr->GetNext();
 
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock,
               ProcessCapture(NotNull(), /*echo_path_change=*/false))
       .Times(1);
   apm->ProcessStream(&frame);
 
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
-  EXPECT_CALL(*echo_control_mock,
-              ProcessCapture(NotNull(), /*echo_path_change=*/false))
-      .Times(1);
-  apm->SetRuntimeSetting(
-      AudioProcessing::RuntimeSetting::CreatePlayoutVolumeChange(50));
-  apm->ProcessStream(&frame);
-
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock,
               ProcessCapture(NotNull(), /*echo_path_change=*/false))
       .Times(1);
@@ -340,7 +331,15 @@ TEST(AudioProcessingImplTest, EchoControllerObservesPlayoutVolumeChange) {
       AudioProcessing::RuntimeSetting::CreatePlayoutVolumeChange(50));
   apm->ProcessStream(&frame);
 
-  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(NotNull())).Times(1);
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
+  EXPECT_CALL(*echo_control_mock,
+              ProcessCapture(NotNull(), /*echo_path_change=*/false))
+      .Times(1);
+  apm->SetRuntimeSetting(
+      AudioProcessing::RuntimeSetting::CreatePlayoutVolumeChange(50));
+  apm->ProcessStream(&frame);
+
+  EXPECT_CALL(*echo_control_mock, AnalyzeCapture(testing::_)).Times(1);
   EXPECT_CALL(*echo_control_mock,
               ProcessCapture(NotNull(), /*echo_path_change=*/true))
       .Times(1);

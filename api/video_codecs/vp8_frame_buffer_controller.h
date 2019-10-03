@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "absl/types/optional.h"
+#include "api/fec_controller_override.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/vp8_frame_config.h"
@@ -176,18 +177,14 @@ class Vp8FrameBufferControllerFactory {
  public:
   virtual ~Vp8FrameBufferControllerFactory() = default;
 
-  // TODO(bugs.webrtc.org/10720): Update downstream and remove.
-  virtual std::unique_ptr<Vp8FrameBufferController> Create(
-      const VideoCodec& codec) {
-    return nullptr;
-  }
+  // Clones oneself. (Avoids Vp8FrameBufferControllerFactoryFactory.)
+  virtual std::unique_ptr<Vp8FrameBufferControllerFactory> Clone() const = 0;
 
-  // TODO(bugs.webrtc.org/10720): Update downstream and make pure-virtual.
+  // Create a Vp8FrameBufferController instance.
   virtual std::unique_ptr<Vp8FrameBufferController> Create(
       const VideoCodec& codec,
-      const VideoEncoder::Settings& settings) {
-    return nullptr;
-  }
+      const VideoEncoder::Settings& settings,
+      FecControllerOverride* fec_controller_override) = 0;
 };
 
 }  // namespace webrtc

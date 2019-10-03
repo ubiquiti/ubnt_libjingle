@@ -13,11 +13,11 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "api/audio/echo_canceller3_config_json.h"
 #include "api/audio/echo_canceller3_factory.h"
 #include "common_audio/include/audio_util.h"
@@ -139,7 +139,7 @@ AudioProcessingSimulator::AudioProcessingSimulator(
     std::unique_ptr<AudioProcessingBuilder> ap_builder)
     : settings_(settings),
       ap_builder_(ap_builder ? std::move(ap_builder)
-                             : absl::make_unique<AudioProcessingBuilder>()),
+                             : std::make_unique<AudioProcessingBuilder>()),
       analog_mic_level_(settings.initial_mic_level),
       fake_recording_device_(
           settings.initial_mic_level,
@@ -222,9 +222,12 @@ void AudioProcessingSimulator::ProcessStream(bool fixed_interface) {
   if (settings_.simulate_mic_gain) {
     fake_recording_device_.SetMicLevel(analog_mic_level_);
   }
-
-  if (buffer_writer_) {
-    buffer_writer_->Write(*out_buf_);
+  if (buffer_memory_writer_) {
+    RTC_CHECK(!buffer_file_writer_);
+    buffer_memory_writer_->Write(*out_buf_);
+  } else if (buffer_file_writer_) {
+    RTC_CHECK(!buffer_memory_writer_);
+    buffer_file_writer_->Write(*out_buf_);
   }
 
   if (residual_echo_likelihood_graph_writer_.is_open()) {
@@ -254,8 +257,8 @@ void AudioProcessingSimulator::ProcessReverseStream(bool fixed_interface) {
                      reverse_out_config_, reverse_out_buf_->channels()));
   }
 
-  if (reverse_buffer_writer_) {
-    reverse_buffer_writer_->Write(*reverse_out_buf_);
+  if (reverse_buffer_file_writer_) {
+    reverse_buffer_file_writer_->Write(*reverse_out_buf_);
   }
 
   ++num_reverse_process_stream_calls_;
@@ -336,7 +339,10 @@ void AudioProcessingSimulator::SetupOutput() {
     std::unique_ptr<WavWriter> out_file(
         new WavWriter(filename, out_config_.sample_rate_hz(),
                       static_cast<size_t>(out_config_.num_channels())));
-    buffer_writer_.reset(new ChannelBufferWavWriter(std::move(out_file)));
+    buffer_file_writer_.reset(new ChannelBufferWavWriter(std::move(out_file)));
+  } else if (settings_.aec_dump_input_string.has_value()) {
+    buffer_memory_writer_ = std::make_unique<ChannelBufferVectorWriter>(
+        settings_.processed_capture_samples);
   }
 
   if (settings_.reverse_output_filename) {
@@ -351,7 +357,7 @@ void AudioProcessingSimulator::SetupOutput() {
     std::unique_ptr<WavWriter> reverse_out_file(
         new WavWriter(filename, reverse_out_config_.sample_rate_hz(),
                       static_cast<size_t>(reverse_out_config_.num_channels())));
-    reverse_buffer_writer_.reset(
+    reverse_buffer_file_writer_.reset(
         new ChannelBufferWavWriter(std::move(reverse_out_file)));
   }
 
@@ -371,6 +377,11 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
   if (settings_.use_ts) {
     config.Set<ExperimentalNs>(new ExperimentalNs(*settings_.use_ts));
   }
+  if (settings_.experimental_multi_channel) {
+    apm_config.pipeline.experimental_multi_channel =
+        *settings_.experimental_multi_channel;
+  }
+
   if (settings_.use_agc2) {
     apm_config.gain_controller2.enabled = *settings_.use_agc2;
     if (settings_.agc2_fixed_gain_db) {
@@ -462,6 +473,11 @@ void AudioProcessingSimulator::CreateAudioProcessor() {
           *settings_.experimental_agc_analyze_before_aec));
   if (settings_.use_ed) {
     apm_config.residual_echo_detector.enabled = *settings_.use_ed;
+  }
+
+  if (settings_.maximum_internal_processing_rate) {
+    apm_config.pipeline.maximum_internal_processing_rate =
+        *settings_.maximum_internal_processing_rate;
   }
 
   RTC_CHECK(ap_builder_);

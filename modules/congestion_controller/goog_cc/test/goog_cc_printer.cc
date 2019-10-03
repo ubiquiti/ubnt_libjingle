@@ -91,7 +91,6 @@ std::deque<FieldLogger*> GoogCcStatePrinter::CreateLoggers() {
   };
   std::deque<FieldLogger*> loggers({
       Log("time", [=] { return target_.at_time; }),
-      Log("bandwidth", [=] { return target_.network_estimate.bandwidth; }),
       Log("rtt", [=] { return target_.network_estimate.round_trip_time; }),
       Log("target", [=] { return target_.target_rate; }),
       Log("pacing", [=] { return pacing_.data_rate(); }),
@@ -124,6 +123,9 @@ std::deque<FieldLogger*> GoogCcStatePrinter::CreateLoggers() {
       Log("loss_based_rate", [=] { return loss_cont()->loss_based_bitrate_; }),
       Log("loss_ack_rate",
           [=] { return loss_cont()->acknowledged_bitrate_max_; }),
+      Log("data_window", [=] { return controller_->current_data_window_; }),
+      Log("pushback_target",
+          [=] { return controller_->last_pushback_target_rate_; }),
   });
   return loggers;
 }

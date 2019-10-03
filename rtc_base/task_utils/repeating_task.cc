@@ -10,6 +10,7 @@
 
 #include "rtc_base/task_utils/repeating_task.h"
 
+#include "absl/memory/memory.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/time_utils.h"
@@ -35,7 +36,7 @@ bool RepeatingTaskBase::Run() {
   // destruct this object.
   if (next_run_time_.IsPlusInfinity())
     return true;
-  
+
   RTC_DCHECK(delay.IsFinite());
   TimeDelta lost_time = Timestamp::us(rtc::TimeMicros()) - next_run_time_;
   next_run_time_ += delay;
