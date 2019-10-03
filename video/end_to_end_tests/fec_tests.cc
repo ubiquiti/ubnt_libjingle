@@ -8,7 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "absl/memory/memory.h"
+#include <memory>
+
+#include "api/task_queue/task_queue_base.h"
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_encoder_factory.h"
 #include "call/fake_network_pipe.h"
@@ -245,19 +247,19 @@ class FlexfecRenderObserver : public test::EndToEndTest,
     return SEND_PACKET;
   }
 
-  test::PacketTransport* CreateSendTransport(
-      test::SingleThreadedTaskQueueForTesting* task_queue,
+  std::unique_ptr<test::PacketTransport> CreateSendTransport(
+      TaskQueueBase* task_queue,
       Call* sender_call) override {
     // At low RTT (< kLowRttNackMs) -> NACK only, no FEC.
     const int kNetworkDelayMs = 100;
     BuiltInNetworkBehaviorConfig config;
     config.queue_delay_ms = kNetworkDelayMs;
-    return new test::PacketTransport(
+    return std::make_unique<test::PacketTransport>(
         task_queue, sender_call, this, test::PacketTransport::kSender,
         test::CallTest::payload_type_map_,
-        absl::make_unique<FakeNetworkPipe>(
+        std::make_unique<FakeNetworkPipe>(
             Clock::GetRealTimeClock(),
-            absl::make_unique<SimulatedNetwork>(config)));
+            std::make_unique<SimulatedNetwork>(config)));
   }
 
   void OnFrame(const VideoFrame& video_frame) override {
@@ -430,20 +432,20 @@ TEST_F(FecEndToEndTest, ReceivedUlpfecPacketsNotNacked) {
       return SEND_PACKET;
     }
 
-    test::PacketTransport* CreateSendTransport(
-        test::SingleThreadedTaskQueueForTesting* task_queue,
+    std::unique_ptr<test::PacketTransport> CreateSendTransport(
+        TaskQueueBase* task_queue,
         Call* sender_call) override {
       // At low RTT (< kLowRttNackMs) -> NACK only, no FEC.
       // Configure some network delay.
       const int kNetworkDelayMs = 50;
       BuiltInNetworkBehaviorConfig config;
       config.queue_delay_ms = kNetworkDelayMs;
-      return new test::PacketTransport(
+      return std::make_unique<test::PacketTransport>(
           task_queue, sender_call, this, test::PacketTransport::kSender,
           payload_type_map_,
-          absl::make_unique<FakeNetworkPipe>(
+          std::make_unique<FakeNetworkPipe>(
               Clock::GetRealTimeClock(),
-              absl::make_unique<SimulatedNetwork>(config)));
+              std::make_unique<SimulatedNetwork>(config)));
     }
 
     // TODO(holmer): Investigate why we don't send FEC packets when the bitrate

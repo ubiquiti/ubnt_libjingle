@@ -11,6 +11,7 @@
 #include "modules/rtp_rtcp/source/rtp_sender_audio.h"
 
 #include <string.h>
+
 #include <memory>
 #include <utility>
 
@@ -255,8 +256,9 @@ bool RTPSenderAudio::SendAudio(AudioFrameType frame_type,
   TRACE_EVENT_ASYNC_END2("webrtc", "Audio", rtp_timestamp, "timestamp",
                          packet->Timestamp(), "seqnum",
                          packet->SequenceNumber());
-  bool send_result = LogAndSendToNetwork(
-      std::move(packet), kAllowRetransmission, RtpPacketSender::kHighPriority);
+  packet->set_packet_type(RtpPacketToSend::Type::kAudio);
+  packet->set_allow_retransmission(true);
+  bool send_result = LogAndSendToNetwork(std::move(packet));
   if (first_packet_sent_()) {
     RTC_LOG(LS_INFO) << "First audio RTP packet sent to pacer";
   }
@@ -339,8 +341,9 @@ bool RTPSenderAudio::SendTelephoneEventPacket(bool ended,
     dtmfbuffer[1] = E | R | volume;
     ByteWriter<uint16_t>::WriteBigEndian(dtmfbuffer + 2, duration);
 
-    result = LogAndSendToNetwork(std::move(packet), kAllowRetransmission,
-                                 RtpPacketSender::kHighPriority);
+    packet->set_packet_type(RtpPacketToSend::Type::kAudio);
+    packet->set_allow_retransmission(true);
+    result = LogAndSendToNetwork(std::move(packet));
     send_count--;
   } while (send_count > 0 && result);
 
@@ -348,9 +351,7 @@ bool RTPSenderAudio::SendTelephoneEventPacket(bool ended,
 }
 
 bool RTPSenderAudio::LogAndSendToNetwork(
-    std::unique_ptr<RtpPacketToSend> packet,
-    StorageType storage,
-    RtpPacketSender::Priority priority) {
+    std::unique_ptr<RtpPacketToSend> packet) {
 #if BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
   int64_t now_ms = clock_->TimeInMilliseconds();
   BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "AudioTotBitrate_kbps", now_ms,
@@ -360,8 +361,7 @@ bool RTPSenderAudio::LogAndSendToNetwork(
                                   rtp_sender_->NackOverheadRate() / 1000,
                                   packet->Ssrc());
 #endif
-
-  return rtp_sender_->SendToNetwork(std::move(packet), storage, priority);
+  return rtp_sender_->SendToNetwork(std::move(packet));
 }
 
 }  // namespace webrtc

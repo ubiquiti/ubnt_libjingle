@@ -15,10 +15,12 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "api/media_transport_interface.h"
 #include "api/peer_connection_interface.h"
+#include "api/transport/data_channel_transport_interface.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "api/turn_customizer.h"
 #include "pc/ice_server_parsing.h"
 #include "pc/jsep_transport_controller.h"
@@ -31,6 +33,7 @@
 #include "pc/stats_collector.h"
 #include "pc/stream_collection.h"
 #include "pc/webrtc_session_description_factory.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/unique_id_generator.h"
 
@@ -62,23 +65,51 @@ class PeerConnection : public PeerConnectionInternal,
                        public rtc::MessageHandler,
                        public sigslot::has_slots<> {
  public:
+  // A bit in the usage pattern is registered when its defining event occurs at
+  // least once.
   enum class UsageEvent : int {
     TURN_SERVER_ADDED = 0x01,
     STUN_SERVER_ADDED = 0x02,
     DATA_ADDED = 0x04,
     AUDIO_ADDED = 0x08,
     VIDEO_ADDED = 0x10,
-    SET_LOCAL_DESCRIPTION_CALLED = 0x20,
-    SET_REMOTE_DESCRIPTION_CALLED = 0x40,
+    // |SetLocalDescription| returns successfully.
+    SET_LOCAL_DESCRIPTION_SUCCEEDED = 0x20,
+    // |SetRemoteDescription| returns successfully.
+    SET_REMOTE_DESCRIPTION_SUCCEEDED = 0x40,
+    // A local candidate (with type host, server-reflexive, or relay) is
+    // collected.
     CANDIDATE_COLLECTED = 0x80,
-    REMOTE_CANDIDATE_ADDED = 0x100,
+    // A remote candidate is successfully added via |AddIceCandidate|.
+    ADD_ICE_CANDIDATE_SUCCEEDED = 0x100,
     ICE_STATE_CONNECTED = 0x200,
     CLOSE_CALLED = 0x400,
+    // A local candidate with private IP is collected.
     PRIVATE_CANDIDATE_COLLECTED = 0x800,
+    // A remote candidate with private IP is added, either via AddiceCandidate
+    // or from the remote description.
     REMOTE_PRIVATE_CANDIDATE_ADDED = 0x1000,
+    // A local mDNS candidate is collected.
     MDNS_CANDIDATE_COLLECTED = 0x2000,
+    // A remote mDNS candidate is added, either via AddIceCandidate or from the
+    // remote description.
     REMOTE_MDNS_CANDIDATE_ADDED = 0x4000,
-    MAX_VALUE = 0x8000,
+    // A local candidate with IPv6 address is collected.
+    IPV6_CANDIDATE_COLLECTED = 0x8000,
+    // A remote candidate with IPv6 address is added, either via AddIceCandidate
+    // or from the remote description.
+    REMOTE_IPV6_CANDIDATE_ADDED = 0x10000,
+    // A remote candidate (with type host, server-reflexive, or relay) is
+    // successfully added, either via AddIceCandidate or from the remote
+    // description.
+    REMOTE_CANDIDATE_ADDED = 0x20000,
+    // An explicit host-host candidate pair is selected, i.e. both the local and
+    // the remote candidates have the host type. This does not include candidate
+    // pairs formed with equivalent prflx remote candidates, e.g. a host-prflx
+    // pair where the prflx candidate has the same base as a host candidate of
+    // the remote peer.
+    DIRECT_CONNECTION_SELECTED = 0x40000,
+    MAX_VALUE = 0x80000,
   };
 
   explicit PeerConnection(PeerConnectionFactory* factory,
@@ -168,6 +199,8 @@ class PeerConnection : public PeerConnectionInternal,
   const SessionDescriptionInterface* pending_remote_description()
       const override;
 
+  void RestartIce() override;
+
   // JSEP01
   void CreateOffer(CreateSessionDescriptionObserver* observer,
                    const RTCOfferAnswerOptions& options) override;
@@ -182,22 +215,13 @@ class PeerConnection : public PeerConnectionInternal,
       rtc::scoped_refptr<SetRemoteDescriptionObserverInterface> observer)
       override;
   PeerConnectionInterface::RTCConfiguration GetConfiguration() override;
-  bool SetConfiguration(
-      const PeerConnectionInterface::RTCConfiguration& configuration,
-      RTCError* error) override;
-  bool SetConfiguration(
-      const PeerConnectionInterface::RTCConfiguration& configuration) override {
-    return SetConfiguration(configuration, nullptr);
-  }
+  RTCError SetConfiguration(
+      const PeerConnectionInterface::RTCConfiguration& configuration) override;
   bool AddIceCandidate(const IceCandidateInterface* candidate) override;
   bool RemoveIceCandidates(
       const std::vector<cricket::Candidate>& candidates) override;
 
   RTCError SetBitrate(const BitrateSettings& bitrate) override;
-
-  void SetBitrateAllocationStrategy(
-      std::unique_ptr<rtc::BitrateAllocationStrategy>
-          bitrate_allocation_strategy) override;
 
   void SetAudioPlayout(bool playout) override;
   void SetAudioRecording(bool recording) override;
@@ -290,6 +314,13 @@ class PeerConnection : public PeerConnectionInternal,
  private:
   class SetRemoteDescriptionObserverAdapter;
   friend class SetRemoteDescriptionObserverAdapter;
+  // Represents the [[LocalIceCredentialsToReplace]] internal slot in the spec.
+  // It makes the next CreateOffer() produce new ICE credentials even if
+  // RTCOfferAnswerOptions::ice_restart is false.
+  // https://w3c.github.io/webrtc-pc/#dfn-localufragstoreplace
+  // TODO(hbos): When JsepTransportController/JsepTransport supports rollback,
+  // move this type of logic to JsepTransportController/JsepTransport.
+  class LocalIceCredentialsToReplace;
 
   struct RtpSenderInfo {
     RtpSenderInfo() : first_ssrc(0) {}
@@ -307,6 +338,57 @@ class PeerConnection : public PeerConnectionInternal,
     // An RtpSender can have many SSRCs. The first one is used as a sort of ID
     // for communicating with the lower layers.
     uint32_t first_ssrc;
+  };
+
+  // Field-trial based configuration for datagram transport.
+  struct DatagramTransportConfig {
+    explicit DatagramTransportConfig(const std::string& field_trial)
+        : enabled("enabled", true), default_value("default_value", false) {
+      ParseFieldTrial({&enabled, &default_value}, field_trial);
+    }
+
+    // Whether datagram transport support is enabled at all.  Defaults to true,
+    // allowing datagram transport to be used if (a) the application provides a
+    // factory for it and (b) the configuration specifies its use.  This flag
+    // provides a kill-switch to force-disable datagram transport across all
+    // applications, without code changes.
+    FieldTrialFlag enabled;
+
+    // Whether the datagram transport is enabled or disabled by default.
+    // Defaults to false, meaning that applications must configure use of
+    // datagram transport through RTCConfiguration.  If set to true,
+    // applications will use the datagram transport by default (but may still
+    // explicitly configure themselves not to use it through RTCConfiguration).
+    FieldTrialFlag default_value;
+  };
+
+  // Field-trial based configuration for datagram transport data channels.
+  struct DatagramTransportDataChannelConfig {
+    explicit DatagramTransportDataChannelConfig(const std::string& field_trial)
+        : enabled("enabled", true),
+          default_value("default_value", false),
+          receive_only("receive_only", false) {
+      ParseFieldTrial({&enabled, &default_value, &receive_only}, field_trial);
+    }
+
+    // Whether datagram transport data channel support is enabled at all.
+    // Defaults to true, allowing datagram transport to be used if (a) the
+    // application provides a factory for it and (b) the configuration specifies
+    // its use.  This flag provides a kill-switch to force-disable datagram
+    // transport across all applications, without code changes.
+    FieldTrialFlag enabled;
+
+    // Whether the datagram transport data channels are enabled or disabled by
+    // default. Defaults to false, meaning that applications must configure use
+    // of datagram transport through RTCConfiguration.  If set to true,
+    // applications will use the datagram transport by default (but may still
+    // explicitly configure themselves not to use it through RTCConfiguration).
+    FieldTrialFlag default_value;
+
+    // Whether the datagram transport is enabled in receive-only mode.  If true,
+    // and if the datagram transport is enabled, it will only be used when
+    // receiving incoming calls, not when placing outgoing calls.
+    FieldTrialFlag receive_only;
   };
 
   // Implements MessageHandler.
@@ -427,6 +509,10 @@ class PeerConnection : public PeerConnectionInternal,
       RTC_RUN_ON(signaling_thread());
   // Some local ICE candidates have been removed.
   void OnIceCandidatesRemoved(const std::vector<cricket::Candidate>& candidates)
+      RTC_RUN_ON(signaling_thread());
+
+  void OnSelectedCandidatePairChanged(
+      const cricket::CandidatePairChangeEvent& event)
       RTC_RUN_ON(signaling_thread());
 
   // Update the state, signaling if necessary.
@@ -853,6 +939,7 @@ class PeerConnection : public PeerConnectionInternal,
                       const rtc::CopyOnWriteBuffer& buffer) override;
   void OnChannelClosing(int channel_id) override;
   void OnChannelClosed(int channel_id) override;
+  void OnReadyToSend() override;
 
   // Called when an RTCCertificate is generated or retrieved by
   // WebRTCSessionDescriptionFactory. Should happen before setLocalDescription.
@@ -945,28 +1032,9 @@ class PeerConnection : public PeerConnectionInternal,
       RTC_RUN_ON(signaling_thread());
   bool CreateDataChannel(const std::string& mid) RTC_RUN_ON(signaling_thread());
 
-  bool CreateSctpTransport_n(const std::string& mid);
-  // For bundling.
-  void DestroySctpTransport_n();
-  // SctpTransport signal handlers. Needed to marshal signals from the network
-  // to signaling thread.
-  void OnSctpTransportReadyToSendData_n();
-  // This may be called with "false" if the direction of the m= section causes
-  // us to tear down the SCTP connection.
-  void OnSctpTransportReadyToSendData_s(bool ready);
-  void OnSctpTransportDataReceived_n(const cricket::ReceiveDataParams& params,
-                                     const rtc::CopyOnWriteBuffer& payload);
-  // Beyond just firing the signal to the signaling thread, listens to SCTP
-  // CONTROL messages on unused SIDs and processes them as OPEN messages.
-  void OnSctpTransportDataReceived_s(const cricket::ReceiveDataParams& params,
-                                     const rtc::CopyOnWriteBuffer& payload);
-  void OnSctpClosingProcedureStartedRemotely_n(int sid);
-  void OnSctpClosingProcedureComplete_n(int sid);
-
-  bool SetupMediaTransportForDataChannels_n(const std::string& mid)
+  bool SetupDataChannelTransport_n(const std::string& mid)
       RTC_RUN_ON(network_thread());
-  void OnMediaTransportStateChanged_n() RTC_RUN_ON(network_thread());
-  void TeardownMediaTransportForDataChannels_n() RTC_RUN_ON(network_thread());
+  void TeardownDataChannelTransport_n() RTC_RUN_ON(network_thread());
 
   bool ValidateBundleSettings(const cricket::SessionDescription* desc);
   bool HasRtcpMuxEnabled(const cricket::ContentInfo* content);
@@ -1012,6 +1080,9 @@ class PeerConnection : public PeerConnectionInternal,
   void OnTransportControllerCandidatesRemoved(
       const std::vector<cricket::Candidate>& candidates)
       RTC_RUN_ON(signaling_thread());
+  void OnTransportControllerCandidateChanged(
+      const cricket::CandidatePairChangeEvent& event)
+      RTC_RUN_ON(signaling_thread());
   void OnTransportControllerDtlsHandshakeError(rtc::SSLHandshakeError error);
 
   const char* SessionErrorToString(SessionError error) const;
@@ -1033,6 +1104,10 @@ class PeerConnection : public PeerConnectionInternal,
 
   void ReportNegotiatedCiphers(const cricket::TransportStats& stats,
                                const std::set<cricket::MediaType>& media_types)
+      RTC_RUN_ON(signaling_thread());
+  void ReportIceCandidateCollected(const cricket::Candidate& candidate)
+      RTC_RUN_ON(signaling_thread());
+  void ReportRemoteIceCandidateAdded(const cricket::Candidate& candidate)
       RTC_RUN_ON(signaling_thread());
 
   void NoteUsageEvent(UsageEvent event);
@@ -1062,10 +1137,12 @@ class PeerConnection : public PeerConnectionInternal,
   // from a session description, and the mapping from m= sections to transports
   // changed (as a result of BUNDLE negotiation, or m= sections being
   // rejected).
-  bool OnTransportChanged(const std::string& mid,
-                          RtpTransportInternal* rtp_transport,
-                          rtc::scoped_refptr<DtlsTransport> dtls_transport,
-                          MediaTransportInterface* media_transport) override;
+  bool OnTransportChanged(
+      const std::string& mid,
+      RtpTransportInternal* rtp_transport,
+      rtc::scoped_refptr<DtlsTransport> dtls_transport,
+      MediaTransportInterface* media_transport,
+      DataChannelTransportInterface* data_channel_transport) override;
 
   // RtpSenderBase::SetStreamsObserver override.
   void OnSetStreams() override;
@@ -1121,6 +1198,25 @@ class PeerConnection : public PeerConnectionInternal,
       kIceGatheringNew;
   PeerConnectionInterface::RTCConfiguration configuration_
       RTC_GUARDED_BY(signaling_thread());
+
+  // Field-trial based configuration for datagram transport.
+  const DatagramTransportConfig datagram_transport_config_;
+
+  // Field-trial based configuration for datagram transport data channels.
+  const DatagramTransportDataChannelConfig
+      datagram_transport_data_channel_config_;
+
+  // Final, resolved value for whether datagram transport is in use.
+  bool use_datagram_transport_ RTC_GUARDED_BY(signaling_thread()) = false;
+
+  // Equivalent of |use_datagram_transport_|, but for its use with data
+  // channels.
+  bool use_datagram_transport_for_data_channels_
+      RTC_GUARDED_BY(signaling_thread()) = false;
+
+  // Resolved value of whether to use data channels only for incoming calls.
+  bool use_datagram_transport_for_data_channels_receive_only_
+      RTC_GUARDED_BY(signaling_thread()) = false;
 
   // Cache configuration_.use_media_transport so that we can access it from
   // other threads.
@@ -1180,6 +1276,8 @@ class PeerConnection : public PeerConnectionInternal,
   // its own thread safety.
   std::unique_ptr<Call> call_ RTC_GUARDED_BY(worker_thread());
 
+  rtc::AsyncInvoker rtcp_invoker_ RTC_GUARDED_BY(network_thread());
+
   // Points to the same thing as `call_`. Since it's const, we may read the
   // pointer from any thread.
   Call* const call_ptr_;
@@ -1222,73 +1320,42 @@ class PeerConnection : public PeerConnectionInternal,
       nullptr;  // TODO(bugs.webrtc.org/9987): Accessed on both
                 // signaling and some other thread.
 
-  cricket::SctpTransportInternal* cricket_sctp_transport() {
-    return sctp_transport_->internal();
-  }
-  rtc::scoped_refptr<SctpTransport>
-      sctp_transport_;  // TODO(bugs.webrtc.org/9987): Accessed on both
-                        // signaling and network thread.
-
   // |sctp_mid_| is the content name (MID) in SDP.
+  // Note: this is used as the data channel MID by both SCTP and data channel
+  // transports.  It is set when either transport is initialized and unset when
+  // both transports are deleted.
   absl::optional<std::string>
       sctp_mid_;  // TODO(bugs.webrtc.org/9987): Accessed on both signaling
                   // and network thread.
 
-  // Value cached on signaling thread. Only updated when SctpReadyToSendData
-  // fires on the signaling thread.
-  bool sctp_ready_to_send_data_ RTC_GUARDED_BY(signaling_thread()) = false;
-
-  // Same as signals provided by SctpTransport, but these are guaranteed to
-  // fire on the signaling thread, whereas SctpTransport fires on the networking
-  // thread.
-  // |sctp_invoker_| is used so that any signals queued on the signaling thread
-  // from the network thread are immediately discarded if the SctpTransport is
-  // destroyed (due to m= section being rejected).
-  // TODO(deadbeef): Use a proxy object to ensure that method calls/signals
-  // are marshalled to the right thread. Could almost use proxy.h for this,
-  // but it doesn't have a mechanism for marshalling sigslot::signals
-  std::unique_ptr<rtc::AsyncInvoker> sctp_invoker_
-      RTC_GUARDED_BY(network_thread());
-  sigslot::signal1<bool> SignalSctpReadyToSendData
-      RTC_GUARDED_BY(signaling_thread());
-  sigslot::signal2<const cricket::ReceiveDataParams&,
-                   const rtc::CopyOnWriteBuffer&>
-      SignalSctpDataReceived RTC_GUARDED_BY(signaling_thread());
-  sigslot::signal1<int> SignalSctpClosingProcedureStartedRemotely
-      RTC_GUARDED_BY(signaling_thread());
-  sigslot::signal1<int> SignalSctpClosingProcedureComplete
-      RTC_GUARDED_BY(signaling_thread());
-
   // Whether this peer is the caller. Set when the local description is applied.
   absl::optional<bool> is_caller_ RTC_GUARDED_BY(signaling_thread());
 
-  // Content name (MID) for media transport data channels in SDP.
-  absl::optional<std::string>
-      media_transport_data_mid_;  // TODO(bugs.webrtc.org/9987): Accessed on
-                                  // both signaling and network thread.
+  // Plugin transport used for data channels.  Pointer may be accessed and
+  // checked from any thread, but the object may only be touched on the
+  // network thread.
+  // TODO(bugs.webrtc.org/9987): Accessed on both signaling and network thread.
+  DataChannelTransportInterface* data_channel_transport_;
 
-  // Media transport used for data channels.  Thread-safe.
-  MediaTransportInterface* media_transport_ =
-      nullptr;  // TODO(bugs.webrtc.org/9987): Object is thread safe, but
-                // pointer accessed on both signaling and network thread.
+  // Cached value of whether the data channel transport is ready to send.
+  bool data_channel_transport_ready_to_send_
+      RTC_GUARDED_BY(signaling_thread()) = false;
 
-  // Cached value of whether the media transport is ready to send.
-  bool media_transport_ready_to_send_data_ RTC_GUARDED_BY(signaling_thread()) =
-      false;
-
-  // Used to invoke media transport signals on the signaling thread.
-  std::unique_ptr<rtc::AsyncInvoker> media_transport_invoker_
+  // Used to invoke data channel transport signals on the signaling thread.
+  std::unique_ptr<rtc::AsyncInvoker> data_channel_transport_invoker_
       RTC_GUARDED_BY(network_thread());
 
-  // Identical to the signals for SCTP, but from media transport:
-  sigslot::signal1<bool> SignalMediaTransportWritable_s
+  // Signals from |data_channel_transport_|.  These are invoked on the signaling
+  // thread.
+  sigslot::signal1<bool> SignalDataChannelTransportWritable_s
       RTC_GUARDED_BY(signaling_thread());
   sigslot::signal2<const cricket::ReceiveDataParams&,
                    const rtc::CopyOnWriteBuffer&>
-      SignalMediaTransportReceivedData_s RTC_GUARDED_BY(signaling_thread());
-  sigslot::signal1<int> SignalMediaTransportChannelClosing_s
+      SignalDataChannelTransportReceivedData_s
+          RTC_GUARDED_BY(signaling_thread());
+  sigslot::signal1<int> SignalDataChannelTransportChannelClosing_s
       RTC_GUARDED_BY(signaling_thread());
-  sigslot::signal1<int> SignalMediaTransportChannelClosed_s
+  sigslot::signal1<int> SignalDataChannelTransportChannelClosed_s
       RTC_GUARDED_BY(signaling_thread());
 
   std::unique_ptr<SessionDescriptionInterface> current_local_description_
@@ -1341,6 +1408,8 @@ class PeerConnection : public PeerConnectionInternal,
   std::unique_ptr<webrtc::VideoBitrateAllocatorFactory>
       video_bitrate_allocator_factory_;
 
+  std::unique_ptr<LocalIceCredentialsToReplace>
+      local_ice_credentials_to_replace_ RTC_GUARDED_BY(signaling_thread());
   bool is_negotiation_needed_ RTC_GUARDED_BY(signaling_thread()) = false;
 };
 

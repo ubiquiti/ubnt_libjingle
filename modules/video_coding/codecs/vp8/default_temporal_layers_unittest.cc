@@ -11,8 +11,8 @@
 #include "modules/video_coding/codecs/vp8/default_temporal_layers.h"
 
 #include <cstdint>
+#include <memory>
 
-#include "absl/memory/memory.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/vp8_frame_config.h"
@@ -67,6 +67,7 @@ constexpr uint8_t kNone = static_cast<uint8_t>(Vp8BufferReference::kNone);
 constexpr uint8_t kLast = static_cast<uint8_t>(Vp8BufferReference::kLast);
 constexpr uint8_t kGolden = static_cast<uint8_t>(Vp8BufferReference::kGolden);
 constexpr uint8_t kAltref = static_cast<uint8_t>(Vp8BufferReference::kAltref);
+constexpr uint8_t kAll = kLast | kGolden | kAltref;
 
 constexpr int ToVp8CodecFlags(uint8_t referenced_buffers,
                               uint8_t updated_buffers,
@@ -79,6 +80,8 @@ constexpr int ToVp8CodecFlags(uint8_t referenced_buffers,
          (((updated_buffers & kAltref) == 0) ? VP8_EFLAG_NO_UPD_ARF : 0) |
          (update_entropy ? 0 : VP8_EFLAG_NO_UPD_ENTROPY);
 }
+
+constexpr int kKeyFrameFlags = ToVp8CodecFlags(kNone, kAll, true);
 
 std::vector<uint32_t> GetTemporalLayerRates(int target_bitrate_kbps,
                                             int framerate_fps,
@@ -93,7 +96,9 @@ std::vector<uint32_t> GetTemporalLayerRates(int target_bitrate_kbps,
   codec.simulcastStream[0].numberOfTemporalLayers = num_temporal_layers;
   codec.simulcastStream[0].active = true;
   SimulcastRateAllocator allocator(codec);
-  return allocator.GetAllocation(target_bitrate_kbps, framerate_fps)
+  return allocator
+      .Allocate(
+          VideoBitrateAllocationParameters(target_bitrate_kbps, framerate_fps))
       .GetTemporalLayerAllocation(0);
 }
 
@@ -109,7 +114,7 @@ class TemporalLayersTest : public ::testing::Test {
   ~TemporalLayersTest() override = default;
 
   CodecSpecificInfo* IgnoredCodecSpecificInfo() {
-    codec_specific_info_ = absl::make_unique<CodecSpecificInfo>();
+    codec_specific_info_ = std::make_unique<CodecSpecificInfo>();
     return codec_specific_info_.get();
   }
 
@@ -142,17 +147,19 @@ TEST_F(TemporalLayersTest, 2Layers) {
   uint32_t timestamp = 0;
   for (size_t i = 0; i < kPatternSize * kRepetitions; ++i) {
     const size_t ind = i % kPatternSize;
+    const bool is_keyframe = (i == 0);
     CodecSpecificInfo info;
     Vp8FrameConfig tl_config = tl.NextFrameConfig(0, timestamp);
-    EXPECT_EQ(expected_flags[ind], LibvpxVp8Encoder::EncodeFlags(tl_config))
+    EXPECT_EQ(is_keyframe ? kKeyFrameFlags : expected_flags[ind],
+              LibvpxVp8Encoder::EncodeFlags(tl_config))
         << i;
-    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, i == 0, kDefaultQp,
-                    &info);
-    EXPECT_TRUE(checker.CheckTemporalConfig(i == 0, tl_config));
+    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, is_keyframe,
+                    kDefaultQp, &info);
+    EXPECT_TRUE(checker.CheckTemporalConfig(is_keyframe, tl_config));
     EXPECT_EQ(expected_temporal_idx[ind], info.codecSpecific.VP8.temporalIdx);
     EXPECT_EQ(expected_temporal_idx[ind], tl_config.packetizer_temporal_idx);
     EXPECT_EQ(expected_temporal_idx[ind], tl_config.encoder_layer_id);
-    EXPECT_EQ(i == 0 || expected_layer_sync[ind],
+    EXPECT_EQ(is_keyframe || expected_layer_sync[ind],
               info.codecSpecific.VP8.layerSync);
     EXPECT_EQ(expected_layer_sync[ind], tl_config.layer_sync);
     timestamp += 3000;
@@ -196,16 +203,19 @@ TEST_F(TemporalLayersTest, 3Layers) {
 
   unsigned int timestamp = 0;
   for (int i = 0; i < 16; ++i) {
+    const bool is_keyframe = (i == 0);
     CodecSpecificInfo info;
     Vp8FrameConfig tl_config = tl.NextFrameConfig(0, timestamp);
-    EXPECT_EQ(expected_flags[i], LibvpxVp8Encoder::EncodeFlags(tl_config)) << i;
-    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, i == 0, kDefaultQp,
-                    &info);
-    EXPECT_TRUE(checker.CheckTemporalConfig(i == 0, tl_config));
+    EXPECT_EQ(is_keyframe ? kKeyFrameFlags : expected_flags[i],
+              LibvpxVp8Encoder::EncodeFlags(tl_config))
+        << i;
+    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, is_keyframe,
+                    kDefaultQp, &info);
+    EXPECT_TRUE(checker.CheckTemporalConfig(is_keyframe, tl_config));
     EXPECT_EQ(expected_temporal_idx[i], info.codecSpecific.VP8.temporalIdx);
     EXPECT_EQ(expected_temporal_idx[i], tl_config.packetizer_temporal_idx);
     EXPECT_EQ(expected_temporal_idx[i], tl_config.encoder_layer_id);
-    EXPECT_EQ(i == 0 || expected_layer_sync[i],
+    EXPECT_EQ(is_keyframe || expected_layer_sync[i],
               info.codecSpecific.VP8.layerSync);
     EXPECT_EQ(expected_layer_sync[i], tl_config.layer_sync);
     timestamp += 3000;
@@ -238,16 +248,19 @@ TEST_F(TemporalLayersTest, Alternative3Layers) {
 
   unsigned int timestamp = 0;
   for (int i = 0; i < 8; ++i) {
+    const bool is_keyframe = (i == 0);
     CodecSpecificInfo info;
     Vp8FrameConfig tl_config = tl.NextFrameConfig(0, timestamp);
-    EXPECT_EQ(expected_flags[i], LibvpxVp8Encoder::EncodeFlags(tl_config)) << i;
-    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, i == 0, kDefaultQp,
-                    &info);
-    EXPECT_TRUE(checker.CheckTemporalConfig(i == 0, tl_config));
+    EXPECT_EQ(is_keyframe ? kKeyFrameFlags : expected_flags[i],
+              LibvpxVp8Encoder::EncodeFlags(tl_config))
+        << i;
+    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, is_keyframe,
+                    kDefaultQp, &info);
+    EXPECT_TRUE(checker.CheckTemporalConfig(is_keyframe, tl_config));
     EXPECT_EQ(expected_temporal_idx[i], info.codecSpecific.VP8.temporalIdx);
     EXPECT_EQ(expected_temporal_idx[i], tl_config.packetizer_temporal_idx);
     EXPECT_EQ(expected_temporal_idx[i], tl_config.encoder_layer_id);
-    EXPECT_EQ(i == 0 || expected_layer_sync[i],
+    EXPECT_EQ(is_keyframe || expected_layer_sync[i],
               info.codecSpecific.VP8.layerSync);
     EXPECT_EQ(expected_layer_sync[i], tl_config.layer_sync);
     timestamp += 3000;
@@ -373,16 +386,19 @@ TEST_F(TemporalLayersTest, 4Layers) {
 
   uint32_t timestamp = 0;
   for (int i = 0; i < 16; ++i) {
+    const bool is_keyframe = (i == 0);
     CodecSpecificInfo info;
     Vp8FrameConfig tl_config = tl.NextFrameConfig(0, timestamp);
-    EXPECT_EQ(expected_flags[i], LibvpxVp8Encoder::EncodeFlags(tl_config)) << i;
-    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, i == 0, kDefaultQp,
-                    &info);
-    EXPECT_TRUE(checker.CheckTemporalConfig(i == 0, tl_config));
+    EXPECT_EQ(is_keyframe ? kKeyFrameFlags : expected_flags[i],
+              LibvpxVp8Encoder::EncodeFlags(tl_config))
+        << i;
+    tl.OnEncodeDone(0, timestamp, kDefaultBytesPerFrame, is_keyframe,
+                    kDefaultQp, &info);
+    EXPECT_TRUE(checker.CheckTemporalConfig(is_keyframe, tl_config));
     EXPECT_EQ(expected_temporal_idx[i], info.codecSpecific.VP8.temporalIdx);
     EXPECT_EQ(expected_temporal_idx[i], tl_config.packetizer_temporal_idx);
     EXPECT_EQ(expected_temporal_idx[i], tl_config.encoder_layer_id);
-    EXPECT_EQ(i == 0 || expected_layer_sync[i],
+    EXPECT_EQ(is_keyframe || expected_layer_sync[i],
               info.codecSpecific.VP8.layerSync);
     EXPECT_EQ(expected_layer_sync[i], tl_config.layer_sync);
     timestamp += 3000;

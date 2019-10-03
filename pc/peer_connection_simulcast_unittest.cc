@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <ostream>  // no-presubmit-check TODO(webrtc:8982)
 
 #include "absl/algorithm/container.h"
-#include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/create_peerconnection_factory.h"
@@ -116,10 +116,10 @@ class PeerConnectionSimulcastTests : public ::testing::Test {
   }
 
   std::unique_ptr<PeerConnectionWrapper> CreatePeerConnectionWrapper() {
-    auto observer = absl::make_unique<MockPeerConnectionObserver>();
+    auto observer = std::make_unique<MockPeerConnectionObserver>();
     auto pc = CreatePeerConnection(observer.get());
-    return absl::make_unique<PeerConnectionWrapper>(pc_factory_, pc,
-                                                    std::move(observer));
+    return std::make_unique<PeerConnectionWrapper>(pc_factory_, pc,
+                                                   std::move(observer));
   }
 
   void ExchangeOfferAnswer(PeerConnectionWrapper* local,
@@ -406,8 +406,8 @@ TEST_F(PeerConnectionSimulcastTests, SimulcastRejectedRemovesExtraLayers) {
 TEST_F(PeerConnectionSimulcastTests, RejectedSimulcastLayersAreDeactivated) {
   auto local = CreatePeerConnectionWrapper();
   auto remote = CreatePeerConnectionWrapper();
-  auto layers = CreateLayers({"1", "2", "3", "4"}, true);
-  auto expected_layers = CreateLayers({"2", "3", "4"}, true);
+  auto layers = CreateLayers({"1", "2", "3"}, true);
+  auto expected_layers = CreateLayers({"2", "3"}, true);
   auto transceiver = AddTransceiver(local.get(), layers);
   auto offer = local->CreateOfferAndSetAsLocal();
   {

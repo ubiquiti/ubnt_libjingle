@@ -17,8 +17,8 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/time_utils.h"
-#include "sdk/android/generated_video_jni/jni/VideoDecoderWrapper_jni.h"
-#include "sdk/android/generated_video_jni/jni/VideoDecoder_jni.h"
+#include "sdk/android/generated_video_jni/VideoDecoderWrapper_jni.h"
+#include "sdk/android/generated_video_jni/VideoDecoder_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/encoded_image.h"
 #include "sdk/android/src/jni/video_codec_status.h"
@@ -155,7 +155,6 @@ const char* VideoDecoderWrapper::ImplementationName() const {
 
 void VideoDecoderWrapper::OnDecodedFrame(
     JNIEnv* env,
-    const JavaRef<jobject>& j_caller,
     const JavaRef<jobject>& j_frame,
     const JavaRef<jobject>& j_decode_time_ms,
     const JavaRef<jobject>& j_qp) {

@@ -12,6 +12,7 @@
 #define CALL_VIDEO_SEND_STREAM_H_
 
 #include <stdint.h>
+
 #include <map>
 #include <string>
 #include <vector>
@@ -19,8 +20,8 @@
 #include "absl/types/optional.h"
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
-#include "api/media_transport_interface.h"
 #include "api/rtp_parameters.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_sink_interface.h"
@@ -98,6 +99,8 @@ class VideoSendStream {
         QualityLimitationReason::kNone;
     // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-qualitylimitationdurations
     std::map<QualityLimitationReason, int64_t> quality_limitation_durations_ms;
+    // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-qualitylimitationresolutionchanges
+    uint32_t quality_limitation_resolution_changes = 0;
     // Total number of times resolution as been requested to be changed due to
     // CPU/quality adaptation.
     int number_of_cpu_adapt_changes = 0;
@@ -154,9 +157,6 @@ class VideoSendStream {
 
     // Enables periodic bandwidth probing in application-limited region.
     bool periodic_alr_bandwidth_probing = false;
-
-    // Track ID as specified during track creation.
-    std::string track_id;
 
     // An optional custom frame encryptor that allows the entire frame to be
     // encrypted in whatever way the caller chooses. This is not required by

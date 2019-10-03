@@ -52,11 +52,12 @@ if (!build_with_chromium) {
         "modules:modules_unittests",
         "modules/audio_coding:audio_coding_tests",
         "modules/audio_processing:audio_processing_tests",
-        "modules/remote_bitrate_estimator:bwe_simulations_tests",
+        "modules/remote_bitrate_estimator:rtp_to_text",
         "modules/rtp_rtcp:test_packet_masks_metrics",
         "modules/video_capture:video_capture_internal_impl",
         "pc:peerconnection_unittests",
         "pc:rtc_pc_unittests",
+        "rtc_tools:rtp_generator",
         "stats:rtc_stats_unittests",
         "system_wrappers:system_wrappers_unittests",
         "test",
@@ -75,11 +76,18 @@ if (!build_with_chromium) {
       if (rtc_enable_protobuf) {
         deps += [
           "audio:low_bandwidth_audio_test",
-          "logging:rtc_event_log2rtp_dump",
+          "logging:rtc_event_log_rtp_dump",
         ]
       }
     }
   }
+}
+
+# Abseil Flags by default doesn't register command line flags on mobile
+# platforms, WebRTC tests requires them (e.g. on simualtors) so this
+# config will be applied to testonly targets globally (see webrtc.gni).
+config("absl_flags_configs") {
+  defines = [ "ABSL_FLAGS_STRIP_NAMES=0" ]
 }
 
 config("library_impl_config") {
@@ -392,13 +400,15 @@ if (!build_with_chromium) {
     deps = [
       ":webrtc_common",
       "api:libjingle_peerconnection_api",
+      "api:rtc_error",
       "api:transport_api",
+      "api/crypto",
+      "api/rtc_event_log:rtc_event_log_factory",
       "audio",
       "call",
       "common_audio",
       "common_video",
       "logging:rtc_event_log_api",
-      "logging:rtc_event_log_impl_base",
       "media",
       "modules",
       "modules/video_capture:video_capture_internal_impl",
@@ -480,7 +490,6 @@ if (rtc_include_tests) {
       "api:rtc_api_unittests",
       "api/audio/test:audio_api_unittests",
       "api/audio_codecs/test:audio_codecs_api_unittests",
-      "api/task_queue:global_task_queue_factory",
       "api/video/test:rtc_api_video_unittests",
       "api/video_codecs/test:video_codecs_api_unittests",
       "call:fake_network_pipe_unittests",
@@ -497,8 +506,9 @@ if (rtc_include_tests) {
       "rtc_base/synchronization:sequence_checker_unittests",
       "rtc_base/task_utils:to_queued_task_unittests",
       "sdk:sdk_tests",
+      "test:rtp_test_utils",
       "test:test_main",
-      "test/scenario/network:network_emulation_unittests",
+      "test/network:network_emulation_unittests",
     ]
 
     if (rtc_enable_protobuf) {
@@ -580,11 +590,9 @@ if (rtc_include_tests) {
     "resources/ConferenceMotion_1280_720_50.yuv",
     "resources/difficult_photo_1850_1110.yuv",
     "resources/foreman_cif.yuv",
-    "resources/google-wifi-3mbps.rx",
     "resources/paris_qcif.yuv",
     "resources/photo_1850_1110.yuv",
     "resources/presentation_1850_1110.yuv",
-    "resources/verizon4g-downlink.rx",
     "resources/voice_engine/audio_long16.pcm",
     "resources/web_screenshot_1850_1110.yuv",
   ]
@@ -606,7 +614,6 @@ if (rtc_include_tests) {
       "call:call_perf_tests",
       "modules/audio_coding:audio_coding_perf_tests",
       "modules/audio_processing:audio_processing_perf_tests",
-      "modules/remote_bitrate_estimator:remote_bitrate_estimator_perf_tests",
       "pc:peerconnection_perf_tests",
       "test:test_main",
       "video:video_full_stack_tests",
@@ -678,4 +685,7 @@ group("poison_audio_codecs") {
 }
 
 group("poison_software_video_codecs") {
+}
+
+group("poison_default_task_queue") {
 }

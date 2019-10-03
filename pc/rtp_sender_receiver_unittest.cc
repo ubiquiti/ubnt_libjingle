@@ -9,6 +9,7 @@
  */
 
 #include <stddef.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -25,12 +26,12 @@
 #include "api/dtmf_sender_interface.h"
 #include "api/media_stream_interface.h"
 #include "api/rtc_error.h"
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
 #include "api/test/fake_frame_decryptor.h"
 #include "api/test/fake_frame_encryptor.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "media/base/codec.h"
 #include "media/base/fake_media_engine.h"
 #include "media/base/media_channel.h"
@@ -108,7 +109,7 @@ class RtpSenderReceiverTest
         // test RtpSenders/RtpReceivers.
         media_engine_(new cricket::FakeMediaEngine()),
         channel_manager_(absl::WrapUnique(media_engine_),
-                         absl::make_unique<cricket::RtpDataEngine>(),
+                         std::make_unique<cricket::RtpDataEngine>(),
                          worker_thread_,
                          network_thread_),
         fake_call_(),
@@ -116,7 +117,7 @@ class RtpSenderReceiverTest
     // Create channels to be used by the RtpSenders and RtpReceivers.
     channel_manager_.Init();
     bool srtp_required = true;
-    rtp_dtls_transport_ = absl::make_unique<cricket::FakeDtlsTransport>(
+    rtp_dtls_transport_ = std::make_unique<cricket::FakeDtlsTransport>(
         "fake_dtls_transport", cricket::ICE_CANDIDATE_COMPONENT_RTP);
     rtp_transport_ = CreateDtlsSrtpTransport();
 
@@ -162,7 +163,7 @@ class RtpSenderReceiverTest
   }
 
   std::unique_ptr<webrtc::RtpTransportInternal> CreateDtlsSrtpTransport() {
-    auto dtls_srtp_transport = absl::make_unique<webrtc::DtlsSrtpTransport>(
+    auto dtls_srtp_transport = std::make_unique<webrtc::DtlsSrtpTransport>(
         /*rtcp_mux_required=*/true);
     dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport_.get(),
                                            /*rtcp_dtls_transport=*/nullptr);
@@ -195,7 +196,7 @@ class RtpSenderReceiverTest
     audio_track_ = AudioTrack::Create(kAudioTrackId, source);
     EXPECT_TRUE(local_stream_->AddTrack(audio_track_));
     std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
-        absl::make_unique<MockSetStreamsObserver>();
+        std::make_unique<MockSetStreamsObserver>();
     audio_rtp_sender_ =
         AudioRtpSender::Create(worker_thread_, audio_track_->id(), nullptr,
                                set_streams_observer.get());
@@ -260,7 +261,7 @@ class RtpSenderReceiverTest
   void CreateVideoRtpSender(bool is_screencast, uint32_t ssrc = kVideoSsrc) {
     AddVideoTrack(is_screencast);
     std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
-        absl::make_unique<MockSetStreamsObserver>();
+        std::make_unique<MockSetStreamsObserver>();
     video_rtp_sender_ = VideoRtpSender::Create(
         worker_thread_, video_track_->id(), set_streams_observer.get());
     ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
@@ -488,7 +489,7 @@ class RtpSenderReceiverTest
  protected:
   rtc::Thread* const network_thread_;
   rtc::Thread* const worker_thread_;
-  webrtc::RtcEventLogNullImpl event_log_;
+  webrtc::RtcEventLogNull event_log_;
   // The |rtp_dtls_transport_| and |rtp_transport_| should be destroyed after
   // the |channel_manager|.
   std::unique_ptr<cricket::DtlsTransportInternal> rtp_dtls_transport_;
@@ -854,7 +855,7 @@ TEST_F(RtpSenderReceiverTest, AudioSenderInitParametersMovedAfterNegotiation) {
   EXPECT_TRUE(local_stream_->AddTrack(audio_track_));
 
   std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
-      absl::make_unique<MockSetStreamsObserver>();
+      std::make_unique<MockSetStreamsObserver>();
   audio_rtp_sender_ = AudioRtpSender::Create(
       worker_thread_, audio_track_->id(), nullptr, set_streams_observer.get());
   ASSERT_TRUE(audio_rtp_sender_->SetTrack(audio_track_));
@@ -1085,7 +1086,7 @@ TEST_F(RtpSenderReceiverTest, VideoSenderInitParametersMovedAfterNegotiation) {
   AddVideoTrack(false);
 
   std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
-      absl::make_unique<MockSetStreamsObserver>();
+      std::make_unique<MockSetStreamsObserver>();
   video_rtp_sender_ = VideoRtpSender::Create(worker_thread_, video_track_->id(),
                                              set_streams_observer.get());
   ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
@@ -1126,7 +1127,7 @@ TEST_F(RtpSenderReceiverTest,
   AddVideoTrack(false);
 
   std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
-      absl::make_unique<MockSetStreamsObserver>();
+      std::make_unique<MockSetStreamsObserver>();
   video_rtp_sender_ = VideoRtpSender::Create(worker_thread_, video_track_->id(),
                                              set_streams_observer.get());
   ASSERT_TRUE(video_rtp_sender_->SetTrack(video_track_));
@@ -1554,7 +1555,7 @@ TEST_F(RtpSenderReceiverTest,
        PropagatesVideoTrackContentHintSetBeforeEnabling) {
   AddVideoTrack();
   std::unique_ptr<MockSetStreamsObserver> set_streams_observer =
-      absl::make_unique<MockSetStreamsObserver>();
+      std::make_unique<MockSetStreamsObserver>();
   // Setting detailed overrides the default non-screencast mode. This should be
   // applied even if the track is set on construction.
   video_track_->set_content_hint(VideoTrackInterface::ContentHint::kDetailed);

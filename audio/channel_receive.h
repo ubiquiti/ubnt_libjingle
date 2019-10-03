@@ -22,12 +22,13 @@
 #include "api/call/audio_sink.h"
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
-#include "api/media_transport_config.h"
-#include "api/media_transport_interface.h"
-#include "api/rtp_receiver_interface.h"
+#include "api/transport/media/media_transport_config.h"
+#include "api/transport/media/media_transport_interface.h"
+#include "api/transport/rtp/rtp_source.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "call/syncable.h"
-#include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_coding/include/audio_coding_module_typedefs.h"
+#include "system_wrappers/include/clock.h"
 
 // TODO(solenberg, nisse): This file contains a few NOLINT marks, to silence
 // warnings about use of unsigned short.
@@ -50,9 +51,7 @@ class RtpPacketReceived;
 class RtpRtcp;
 
 struct CallReceiveStatistics {
-  unsigned short fractionLost;  // NOLINT
   unsigned int cumulativeLost;
-  unsigned int extendedMax;
   unsigned int jitterSamples;
   int64_t rttMs;
   size_t bytesReceived;
@@ -86,8 +85,8 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
   virtual void StopPlayout() = 0;
 
   // Payload type and format of last received RTP packet, if any.
-  virtual absl::optional<std::pair<int, SdpAudioFormat>>
-      GetReceiveCodec() const = 0;
+  virtual absl::optional<std::pair<int, SdpAudioFormat>> GetReceiveCodec()
+      const = 0;
 
   virtual void ReceivedRTCPPacket(const uint8_t* data, size_t length) = 0;
 
@@ -116,9 +115,6 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
   // Produces the transport-related timestamps; current_delay_ms is left unset.
   virtual absl::optional<Syncable::Info> GetSyncInfo() const = 0;
 
-  // RTP+RTCP
-  virtual void SetLocalSSRC(uint32_t ssrc) = 0;
-
   virtual void RegisterReceiverCongestionControlObjects(
       PacketRouter* packet_router) = 0;
   virtual void ResetReceiverCongestionControlObjects() = 0;
@@ -136,8 +132,6 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
   // Used for obtaining RTT for a receive-only channel.
   virtual void SetAssociatedSendChannel(
       const ChannelSendInterface* channel) = 0;
-
-  virtual std::vector<RtpSource> GetSources() const = 0;
 };
 
 std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
@@ -147,6 +141,7 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     const MediaTransportConfig& media_transport_config,
     Transport* rtcp_send_transport,
     RtcEventLog* rtc_event_log,
+    uint32_t local_ssrc,
     uint32_t remote_ssrc,
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,

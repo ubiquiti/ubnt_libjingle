@@ -303,9 +303,6 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
   int GetNumCreatedReceiveStreams() const;
   void SetStats(const webrtc::Call::Stats& stats);
 
-  void MediaTransportChange(
-      webrtc::MediaTransportInterface* media_transport_interface) override;
-
   void SetClientBitratePreferences(
       const webrtc::BitrateSettings& preferences) override {}
 
@@ -346,10 +343,6 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
   }
 
   webrtc::Call::Stats GetStats() const override;
-
-  void SetBitrateAllocationStrategy(
-      std::unique_ptr<rtc::BitrateAllocationStrategy>
-          bitrate_allocation_strategy) override;
 
   void SignalChannelNetworkState(webrtc::MediaType media,
                                  webrtc::NetworkState state) override;

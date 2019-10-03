@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "absl/memory/memory.h"
+#include <memory>
 #include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
@@ -41,7 +41,7 @@ SimulationNode::SimulationNode(NetworkSimulationConfig config,
 std::unique_ptr<SimulatedNetwork> SimulationNode::CreateBehavior(
     NetworkSimulationConfig config) {
   SimulatedNetwork::Config sim_config = CreateSimulationConfig(config);
-  return absl::make_unique<SimulatedNetwork>(sim_config);
+  return std::make_unique<SimulatedNetwork>(sim_config);
 }
 
 void SimulationNode::UpdateConfig(
@@ -63,7 +63,6 @@ ColumnPrinter SimulationNode::ConfigPrinter() const {
                         config_.bandwidth.bps() / 8.0, config_.loss_rate);
       });
 }
-
 
 NetworkNodeTransport::NetworkNodeTransport(Clock* sender_clock,
                                            Call* sender_call)
@@ -98,7 +97,7 @@ bool NetworkNodeTransport::SendRtp(const uint8_t* packet,
 
 bool NetworkNodeTransport::SendRtcp(const uint8_t* packet, size_t length) {
   rtc::CopyOnWriteBuffer buffer(packet, length);
-  Timestamp send_time = Timestamp::ms(sender_clock_->TimeInMilliseconds());
+  Timestamp send_time = sender_clock_->CurrentTime();
   rtc::CritScope crit(&crit_sect_);
   buffer.SetSize(length + packet_overhead_.bytes());
   if (!send_net_)

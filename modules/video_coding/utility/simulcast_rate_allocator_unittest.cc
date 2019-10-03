@@ -132,7 +132,26 @@ class SimulcastRateAllocatorTest : public ::testing::TestWithParam<bool> {
   }
 
   VideoBitrateAllocation GetAllocation(uint32_t target_bitrate) {
-    return allocator_->GetAllocation(target_bitrate * 1000U, kDefaultFrameRate);
+    return allocator_->Allocate(VideoBitrateAllocationParameters(
+        DataRate::kbps(target_bitrate), kDefaultFrameRate));
+  }
+
+  VideoBitrateAllocation GetAllocation(DataRate target_rate,
+                                       DataRate stable_rate) {
+    return allocator_->Allocate(VideoBitrateAllocationParameters(
+        target_rate, stable_rate, kDefaultFrameRate));
+  }
+
+  DataRate MinRate(size_t layer_index) const {
+    return DataRate::kbps(codec_.simulcastStream[layer_index].minBitrate);
+  }
+
+  DataRate TargetRate(size_t layer_index) const {
+    return DataRate::kbps(codec_.simulcastStream[layer_index].targetBitrate);
+  }
+
+  DataRate MaxRate(size_t layer_index) const {
+    return DataRate::kbps(codec_.simulcastStream[layer_index].maxBitrate);
   }
 
  protected:
@@ -507,6 +526,87 @@ TEST_F(SimulcastRateAllocatorTest, ThreeStreamsMiddleInactive) {
   }
 }
 
+TEST_F(SimulcastRateAllocatorTest, NonConferenceModeScreenshare) {
+  codec_.mode = VideoCodecMode::kScreensharing;
+  SetupCodec3SL3TL({true, true, true});
+  CreateAllocator();
+
+  // Make sure we have enough bitrate for all 3 simulcast layers
+  const uint32_t bitrate = codec_.simulcastStream[0].maxBitrate +
+                           codec_.simulcastStream[1].maxBitrate +
+                           codec_.simulcastStream[2].maxBitrate;
+  const VideoBitrateAllocation alloc = GetAllocation(bitrate);
+
+  EXPECT_EQ(alloc.GetTemporalLayerAllocation(0).size(), 3u);
+  EXPECT_EQ(alloc.GetTemporalLayerAllocation(1).size(), 3u);
+  EXPECT_EQ(alloc.GetTemporalLayerAllocation(2).size(), 3u);
+}
+
+TEST_F(SimulcastRateAllocatorTest, StableRate) {
+  webrtc::test::ScopedFieldTrials field_trials(
+      "WebRTC-StableTargetRate/"
+      "enabled:true,"
+      "video_hysteresis_factor:1.1/");
+
+  SetupCodec3SL3TL({true, true, true});
+  CreateAllocator();
+
+  // Let the volatile rate always be be enough for all streams, in this test we
+  // are only interested in how the stable rate affects enablement.
+  const DataRate volatile_rate =
+      (TargetRate(0) + TargetRate(1) + MinRate(2)) * 1.1;
+
+  {
+    // On the first call to a new SimulcastRateAllocator instance, hysteresis
+    // is disabled, but stable rate still caps layers.
+    uint32_t expected[] = {TargetRate(0).kbps<uint32_t>(),
+                           MaxRate(1).kbps<uint32_t>()};
+    ExpectEqual(expected,
+                GetAllocation(volatile_rate, TargetRate(0) + MinRate(1)));
+  }
+
+  {
+    // Let stable rate go to a bitrate below what is needed for two streams.
+    uint32_t expected[] = {MaxRate(0).kbps<uint32_t>(), 0};
+    ExpectEqual(expected,
+                GetAllocation(volatile_rate,
+                              TargetRate(0) + MinRate(1) - DataRate::bps(1)));
+  }
+
+  {
+    // Don't enable stream as we need to get up above hysteresis threshold.
+    uint32_t expected[] = {MaxRate(0).kbps<uint32_t>(), 0};
+    ExpectEqual(expected,
+                GetAllocation(volatile_rate, TargetRate(0) + MinRate(1)));
+  }
+
+  {
+    // Above threshold with hysteresis, enable second stream.
+    uint32_t expected[] = {TargetRate(0).kbps<uint32_t>(),
+                           MaxRate(1).kbps<uint32_t>()};
+    ExpectEqual(expected, GetAllocation(volatile_rate,
+                                        (TargetRate(0) + MinRate(1)) * 1.1));
+  }
+
+  {
+    // Enough to enable all thee layers.
+    uint32_t expected[] = {
+        TargetRate(0).kbps<uint32_t>(), TargetRate(1).kbps<uint32_t>(),
+        (volatile_rate - TargetRate(0) - TargetRate(1)).kbps<uint32_t>()};
+    ExpectEqual(expected, GetAllocation(volatile_rate, volatile_rate));
+  }
+
+  {
+    // Drop hysteresis, all three still on.
+    uint32_t expected[] = {
+        TargetRate(0).kbps<uint32_t>(), TargetRate(1).kbps<uint32_t>(),
+        (volatile_rate - TargetRate(0) - TargetRate(1)).kbps<uint32_t>()};
+    ExpectEqual(expected,
+                GetAllocation(volatile_rate,
+                              TargetRate(0) + TargetRate(1) + MinRate(2)));
+  }
+}
+
 class ScreenshareRateAllocationTest : public SimulcastRateAllocatorTest {
  public:
   void SetupConferenceScreenshare(bool use_simulcast, bool active = true) {
@@ -547,8 +647,9 @@ TEST_P(ScreenshareRateAllocationTest, BitrateBelowTl0) {
   SetupConferenceScreenshare(GetParam());
   CreateAllocator();
 
-  VideoBitrateAllocation allocation = allocator_->GetAllocation(
-      kLegacyScreenshareTargetBitrateKbps * 1000, kFramerateFps);
+  VideoBitrateAllocation allocation =
+      allocator_->Allocate(VideoBitrateAllocationParameters(
+          kLegacyScreenshareTargetBitrateKbps * 1000, kFramerateFps));
 
   // All allocation should go in TL0.
   EXPECT_EQ(kLegacyScreenshareTargetBitrateKbps, allocation.get_sum_kbps());
@@ -564,7 +665,8 @@ TEST_P(ScreenshareRateAllocationTest, BitrateAboveTl0) {
       (kLegacyScreenshareTargetBitrateKbps + kLegacyScreenshareMaxBitrateKbps) /
       2;
   VideoBitrateAllocation allocation =
-      allocator_->GetAllocation(target_bitrate_kbps * 1000, kFramerateFps);
+      allocator_->Allocate(VideoBitrateAllocationParameters(
+          target_bitrate_kbps * 1000, kFramerateFps));
 
   // Fill TL0, then put the rest in TL1.
   EXPECT_EQ(target_bitrate_kbps, allocation.get_sum_kbps());
@@ -579,8 +681,9 @@ TEST_F(ScreenshareRateAllocationTest, BitrateAboveTl1) {
   SetupConferenceScreenshare(false);
   CreateAllocator();
 
-  VideoBitrateAllocation allocation = allocator_->GetAllocation(
-      kLegacyScreenshareMaxBitrateKbps * 2000, kFramerateFps);
+  VideoBitrateAllocation allocation =
+      allocator_->Allocate(VideoBitrateAllocationParameters(
+          kLegacyScreenshareMaxBitrateKbps * 2000, kFramerateFps));
 
   // Fill both TL0 and TL1, but no more.
   EXPECT_EQ(kLegacyScreenshareMaxBitrateKbps, allocation.get_sum_kbps());
@@ -602,7 +705,8 @@ TEST_P(ScreenshareRateAllocationTest, InactiveScreenshare) {
       (kLegacyScreenshareTargetBitrateKbps + kLegacyScreenshareMaxBitrateKbps) /
       2;
   VideoBitrateAllocation allocation =
-      allocator_->GetAllocation(target_bitrate_kbps * 1000, kFramerateFps);
+      allocator_->Allocate(VideoBitrateAllocationParameters(
+          target_bitrate_kbps * 1000, kFramerateFps));
 
   EXPECT_EQ(0U, allocation.get_sum_kbps());
 }

@@ -9,14 +9,15 @@
  */
 
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "modules/rtp_rtcp/source/rtp_packet.h"
 
 #include <ctype.h>
 #include <string.h>
+
 #include <type_traits>
 
 #include "absl/algorithm/container.h"
 #include "api/array_view.h"
+#include "modules/rtp_rtcp/source/rtp_packet.h"
 
 namespace webrtc {
 
@@ -32,12 +33,12 @@ bool IsTokenChar(char ch) {
 }  // namespace
 
 bool IsLegalMidName(absl::string_view name) {
-  return (name.size() <= kMidRsidMaxSize && name.size() > 0 &&
+  return (name.size() <= kMidRsidMaxSize && !name.empty() &&
           absl::c_all_of(name, IsTokenChar));
 }
 
 bool IsLegalRsidName(absl::string_view name) {
-  return (name.size() <= kMidRsidMaxSize && name.size() > 0 &&
+  return (name.size() <= kMidRsidMaxSize && !name.empty() &&
           absl::c_all_of(name, isalnum));
 }
 

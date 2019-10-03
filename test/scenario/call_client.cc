@@ -11,7 +11,7 @@
 
 #include <utility>
 
-#include "absl/memory/memory.h"
+#include <memory>
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtc_event_log/rtc_event_log_factory.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
@@ -28,8 +28,6 @@ const uint32_t kVideoRecvLocalSsrcs[kNumSsrcs] = {0xDAB001, 0xDAB002, 0xDAB003,
                                                   0xDAB004, 0xDAB005, 0xDAB006};
 const uint32_t kAudioSendSsrc = 0xDEADBEEF;
 const uint32_t kReceiverLocalAudioSsrc = 0x1234567;
-
-const char* kPriorityStreamId = "priority-track";
 
 constexpr int kEventLogOutputIntervalMs = 5000;
 
@@ -76,7 +74,7 @@ std::unique_ptr<RtcEventLog> CreateEventLog(
     TaskQueueFactory* task_queue_factory,
     LogWriterFactoryInterface* log_writer_factory) {
   if (!log_writer_factory) {
-    return absl::make_unique<RtcEventLogNull>();
+    return std::make_unique<RtcEventLogNull>();
   }
   auto event_log = RtcEventLogFactory(task_queue_factory)
                        .CreateRtcEventLog(RtcEventLog::EncodingType::NewFormat);
@@ -85,7 +83,7 @@ std::unique_ptr<RtcEventLog> CreateEventLog(
   RTC_CHECK(success);
   return event_log;
 }
-}
+}  // namespace
 NetworkControleUpdateCache::NetworkControleUpdateCache(
     std::unique_ptr<NetworkControllerInterface> controller)
     : controller_(std::move(controller)) {}
@@ -132,6 +130,11 @@ NetworkControlUpdate NetworkControleUpdateCache::OnTransportPacketsFeedback(
     TransportPacketsFeedback msg) {
   return Update(controller_->OnTransportPacketsFeedback(msg));
 }
+NetworkControlUpdate NetworkControleUpdateCache::OnNetworkStateEstimate(
+    NetworkStateEstimate msg) {
+  return Update(controller_->OnNetworkStateEstimate(msg));
+}
+
 NetworkControlUpdate NetworkControleUpdateCache::update_state() const {
   return update_state_;
 }
@@ -166,8 +169,7 @@ LoggingNetworkControllerFactory::LoggingNetworkControllerFactory(
   }
 }
 
-LoggingNetworkControllerFactory::~LoggingNetworkControllerFactory() {
-}
+LoggingNetworkControllerFactory::~LoggingNetworkControllerFactory() {}
 
 void LoggingNetworkControllerFactory::LogCongestionControllerStats(
     Timestamp at_time) {
@@ -183,8 +185,8 @@ NetworkControlUpdate LoggingNetworkControllerFactory::GetUpdate() const {
 
 std::unique_ptr<NetworkControllerInterface>
 LoggingNetworkControllerFactory::Create(NetworkControllerConfig config) {
-  auto controller = absl::make_unique<NetworkControleUpdateCache>(
-      cc_factory_->Create(config));
+  auto controller =
+      std::make_unique<NetworkControleUpdateCache>(cc_factory_->Create(config));
   last_controller_ = controller.get();
   return controller;
 }
@@ -201,7 +203,7 @@ CallClient::CallClient(
       clock_(time_controller->GetClock()),
       log_writer_factory_(std::move(log_writer_factory)),
       network_controller_factory_(log_writer_factory_.get(), config.transport),
-      header_parser_(RtpHeaderParser::Create()),
+      header_parser_(RtpHeaderParser::CreateForTest()),
       task_queue_(time_controller->GetTaskQueueFactory()->CreateTaskQueue(
           "CallClient",
           TaskQueueFactory::Priority::NORMAL)) {
@@ -212,7 +214,7 @@ CallClient::CallClient(
     call_.reset(CreateCall(time_controller_, event_log_.get(), config,
                            &network_controller_factory_,
                            fake_audio_setup_.audio_state));
-    transport_ = absl::make_unique<NetworkNodeTransport>(clock_, call_.get());
+    transport_ = std::make_unique<NetworkNodeTransport>(clock_, call_.get());
   });
 }
 
@@ -239,16 +241,19 @@ ColumnPrinter CallClient::StatsPrinter() {
 }
 
 Call::Stats CallClient::GetStats() {
-  return call_->GetStats();
+  // This call needs to be made on the thread that |call_| was constructed on.
+  Call::Stats stats;
+  SendTask([this, &stats] { stats = call_->GetStats(); });
+  return stats;
 }
 
 DataRate CallClient::target_rate() const {
   return network_controller_factory_.GetUpdate().target_rate->target_rate;
 }
 
-DataRate CallClient::link_capacity() const {
+DataRate CallClient::stable_target_rate() const {
   return network_controller_factory_.GetUpdate()
-      .target_rate->network_estimate.bandwidth;
+      .target_rate->stable_target_rate;
 }
 
 DataRate CallClient::padding_rate() const {
@@ -268,16 +273,11 @@ void CallClient::OnPacketReceived(EmulatedIpPacket packet) {
     RTC_CHECK(ssrc.has_value());
     media_type = ssrc_media_types_[*ssrc];
   }
-  struct Closure {
-    void operator()() {
-      call->Receiver()->DeliverPacket(media_type, packet.data,
-                                      packet.arrival_time.us());
-    }
-    Call* call;
-    MediaType media_type;
-    EmulatedIpPacket packet;
-  };
-  task_queue_.PostTask(Closure{call_.get(), media_type, std::move(packet)});
+  task_queue_.PostTask(
+      [call = call_.get(), media_type, packet = std::move(packet)]() mutable {
+        call->Receiver()->DeliverPacket(media_type, packet.data,
+                                        packet.arrival_time.us());
+      });
 }
 
 std::unique_ptr<RtcEventLogOutput> CallClient::GetLogWriter(std::string name) {
@@ -311,11 +311,6 @@ uint32_t CallClient::GetNextAudioLocalSsrc() {
 uint32_t CallClient::GetNextRtxSsrc() {
   RTC_CHECK_LT(next_rtx_ssrc_index_, kNumSsrcs);
   return kSendRtxSsrcs[next_rtx_ssrc_index_++];
-}
-
-std::string CallClient::GetNextPriorityId() {
-  RTC_CHECK_LT(next_priority_index_++, 1);
-  return kPriorityStreamId;
 }
 
 void CallClient::AddExtensions(std::vector<RtpExtension> extensions) {

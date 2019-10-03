@@ -53,7 +53,6 @@ if (rtc_enable_protobuf) {
       "../../rtc_base:rtc_task_queue",
       "../../rtc_base/synchronization:sequence_checker",
       "../../rtc_base/third_party/sigslot",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
@@ -109,10 +108,12 @@ if (rtc_enable_protobuf) {
 }
 
 if (is_android) {
-  android_apk("NetworkTesterMobile") {
+  rtc_android_apk("NetworkTesterMobile") {
     testonly = true
     apk_name = "NetworkTesterMobile"
     android_manifest = "androidapp/AndroidManifest.xml"
+    min_sdk_version = 17
+    target_sdk_version = 24
 
     deps = [
       ":NetworkTesterMobile_javalib",
@@ -123,7 +124,7 @@ if (is_android) {
     shared_libraries = [ "../../rtc_tools/network_tester:network_tester_so" ]
   }
 
-  android_library("NetworkTesterMobile_javalib") {
+  rtc_android_library("NetworkTesterMobile_javalib") {
     testonly = true
     android_manifest_for_lint = "androidapp/AndroidManifest.xml"
 

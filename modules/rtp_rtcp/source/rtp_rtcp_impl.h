@@ -13,6 +13,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <memory>
 #include <set>
 #include <string>
@@ -21,7 +22,6 @@
 #include "absl/types/optional.h"
 #include "api/rtp_headers.h"
 #include "api/video/video_bitrate_allocation.h"
-#include "modules/include/module_common_types.h"
 #include "modules/include/module_fec_types.h"
 #include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
@@ -29,6 +29,7 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/tmmb_item.h"
 #include "modules/rtp_rtcp/source/rtcp_receiver.h"
 #include "modules/rtp_rtcp/source/rtcp_sender.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
 #include "rtc_base/critical_section.h"
 #include "rtc_base/gtest_prod_util.h"
@@ -74,7 +75,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   int32_t DeregisterSendRtpHeaderExtension(RTPExtensionType type) override;
 
-  bool HasBweExtensions() const override;
+  bool SupportsPadding() const override;
+  bool SupportsRtxPayloadPadding() const override;
 
   // Get start timestamp.
   uint32_t StartTimestamp() const override;
@@ -132,17 +134,12 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
                          int payload_type,
                          bool force_sender_report) override;
 
-  RtpPacketSendResult TimeToSendPacket(
-      uint32_t ssrc,
-      uint16_t sequence_number,
-      int64_t capture_time_ms,
-      bool retransmission,
-      const PacedPacketInfo& pacing_info) override;
+  bool TrySendPacket(RtpPacketToSend* packet,
+                     const PacedPacketInfo& pacing_info) override;
 
-  // Returns the number of padding bytes actually sent, which can be more or
-  // less than |bytes|.
-  size_t TimeToSendPadding(size_t bytes,
-                           const PacedPacketInfo& pacing_info) override;
+
+  std::vector<std::unique_ptr<RtpPacketToSend>> GeneratePadding(
+      size_t target_size_bytes) override;
 
   // RTCP part.
 
@@ -233,9 +230,13 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
   void RegisterRtcpStatisticsCallback(
       RtcpStatisticsCallback* callback) override;
   RtcpStatisticsCallback* GetRtcpStatisticsCallback() override;
+  void RegisterRtcpCnameCallback(RtcpCnameCallback* callback) override;
+
   void SetReportBlockDataObserver(ReportBlockDataObserver* observer) override;
 
   bool SendFeedbackPacket(const rtcp::TransportFeedback& packet) override;
+  bool SendNetworkStateEstimatePacket(
+      const rtcp::RemoteEstimate& packet) override;
   // (APP) Application specific data.
   int32_t SetRTCPApplicationSpecificData(uint8_t sub_type,
                                          uint32_t name,

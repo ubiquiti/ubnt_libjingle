@@ -39,7 +39,7 @@ namespace webrtc_pc_e2e {
 // and |codec_required_params|, then all of them will be added to the output
 // vector and they will be added in the same order, as they were in
 // |supported_codecs|.
-std::vector<RtpCodecCapability> FilterCodecCapabilities(
+std::vector<RtpCodecCapability> FilterVideoCodecCapabilities(
     absl::string_view codec_name,
     const std::map<std::string, std::string>& codec_required_params,
     bool use_rtx,
@@ -59,8 +59,25 @@ struct LocalAndRemoteSdp {
   std::unique_ptr<SessionDescriptionInterface> remote_sdp;
 };
 
+struct PatchingParams {
+  PatchingParams(
+      std::string video_codec_name,
+      bool use_conference_mode,
+      std::map<std::string, int> stream_label_to_simulcast_streams_count)
+      : video_codec_name(video_codec_name),
+        use_conference_mode(use_conference_mode),
+        stream_label_to_simulcast_streams_count(
+            stream_label_to_simulcast_streams_count) {}
+
+  std::string video_codec_name;
+  bool use_conference_mode;
+  std::map<std::string, int> stream_label_to_simulcast_streams_count;
+};
+
 class SignalingInterceptor {
  public:
+  explicit SignalingInterceptor(PatchingParams params) : params_(params) {}
+
   LocalAndRemoteSdp PatchOffer(
       std::unique_ptr<SessionDescriptionInterface> offer);
   LocalAndRemoteSdp PatchAnswer(
@@ -108,10 +125,20 @@ class SignalingInterceptor {
     std::vector<std::string> mids_order;
   };
 
-  void FillContext(SessionDescriptionInterface* offer);
+  LocalAndRemoteSdp PatchVp8Offer(
+      std::unique_ptr<SessionDescriptionInterface> offer);
+  LocalAndRemoteSdp PatchVp9Offer(
+      std::unique_ptr<SessionDescriptionInterface> offer);
+  LocalAndRemoteSdp PatchVp8Answer(
+      std::unique_ptr<SessionDescriptionInterface> offer);
+  LocalAndRemoteSdp PatchVp9Answer(
+      std::unique_ptr<SessionDescriptionInterface> offer);
+
+  void FillSimulcastContext(SessionDescriptionInterface* offer);
   std::unique_ptr<cricket::SessionDescription> RestoreMediaSectionsOrder(
       std::unique_ptr<cricket::SessionDescription> source);
 
+  PatchingParams params_;
   SignalingContext context_;
 };
 

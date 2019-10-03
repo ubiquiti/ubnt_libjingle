@@ -11,12 +11,12 @@
 #include "test/fake_encoder.h"
 
 #include <string.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
 
-#include "absl/memory/memory.h"
 #include "api/task_queue/queued_task.h"
 #include "api/video/video_content_type.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
@@ -58,6 +58,11 @@ FakeEncoder::FakeEncoder(Clock* clock)
   for (bool& used : used_layers_) {
     used = false;
   }
+}
+
+void FakeEncoder::SetFecControllerOverride(
+    FecControllerOverride* fec_controller_override) {
+  // Ignored.
 }
 
 void FakeEncoder::SetMaxBitrate(int max_kbps) {
@@ -117,8 +122,8 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
     }
 
     EncodedImage encoded;
-    encoded.Allocate(frame_info.layers[i].size);
-    encoded.set_size(frame_info.layers[i].size);
+    encoded.SetEncodedData(
+        EncodedImageBuffer::Create(frame_info.layers[i].size));
 
     // Fill the buffer with arbitrary data. Write someting to make Asan happy.
     memset(encoded.data(), 9, frame_info.layers[i].size);
@@ -281,7 +286,7 @@ std::unique_ptr<RTPFragmentationHeader> FakeH264Encoder::EncodeHook(
     current_idr_counter = idr_counter_;
     ++idr_counter_;
   }
-  auto fragmentation = absl::make_unique<RTPFragmentationHeader>();
+  auto fragmentation = std::make_unique<RTPFragmentationHeader>();
 
   if (current_idr_counter % kIdrFrequency == 0 &&
       encoded_image->size() > kSpsSize + kPpsSize + 1) {
@@ -406,8 +411,7 @@ int32_t MultithreadedFakeH264Encoder::Encode(
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
 
-  queue->PostTask(
-      absl::make_unique<EncodeTask>(this, input_image, frame_types));
+  queue->PostTask(std::make_unique<EncodeTask>(this, input_image, frame_types));
 
   return WEBRTC_VIDEO_CODEC_OK;
 }

@@ -61,6 +61,11 @@ MultiplexEncoderAdapter::~MultiplexEncoderAdapter() {
   Release();
 }
 
+void MultiplexEncoderAdapter::SetFecControllerOverride(
+    FecControllerOverride* fec_controller_override) {
+  // Ignored.
+}
+
 int MultiplexEncoderAdapter::InitEncode(
     const VideoCodec* inst,
     const VideoEncoder::Settings& settings) {
@@ -205,6 +210,7 @@ int MultiplexEncoderAdapter::Encode(
                                .set_timestamp_ms(input_image.render_time_ms())
                                .set_rotation(input_image.rotation())
                                .set_id(input_image.id())
+                               .set_packet_infos(input_image.packet_infos())
                                .build();
   rv = encoders_[kAXXStream]->Encode(alpha_image, &adjusted_frame_types);
   return rv;
@@ -230,6 +236,25 @@ void MultiplexEncoderAdapter::SetRates(
         static_cast<uint32_t>(encoders_.size() * parameters.framerate_fps),
         parameters.bandwidth_allocation -
             DataRate::bps(augmenting_data_size_)));
+  }
+}
+
+void MultiplexEncoderAdapter::OnPacketLossRateUpdate(float packet_loss_rate) {
+  for (auto& encoder : encoders_) {
+    encoder->OnPacketLossRateUpdate(packet_loss_rate);
+  }
+}
+
+void MultiplexEncoderAdapter::OnRttUpdate(int64_t rtt_ms) {
+  for (auto& encoder : encoders_) {
+    encoder->OnRttUpdate(rtt_ms);
+  }
+}
+
+void MultiplexEncoderAdapter::OnLossNotification(
+    const LossNotification& loss_notification) {
+  for (auto& encoder : encoders_) {
+    encoder->OnLossNotification(loss_notification);
   }
 }
 

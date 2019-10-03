@@ -11,6 +11,7 @@
 #include "modules/audio_coding/include/audio_coding_module.h"
 
 #include <assert.h>
+
 #include <algorithm>
 #include <cstdint>
 
@@ -44,11 +45,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   void ModifyEncoder(rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)>
                          modifier) override;
 
-  // Sets the bitrate to the specified value in bits/sec. In case the codec does
-  // not support the requested value it will choose an appropriate value
-  // instead.
-  void SetBitRate(int bitrate_bps) override;
-
   // Register a transport callback which will be
   // called to deliver the encoded buffers.
   int RegisterTransportCallback(AudioPacketizationCallback* transport) override;
@@ -78,37 +74,12 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // Initialize receiver, resets codec database etc.
   int InitializeReceiver() override;
 
-  // Get current receive frequency.
-  int ReceiveFrequency() const override;
-
-  // Get current playout frequency.
-  int PlayoutFrequency() const override;
-
   void SetReceiveCodecs(const std::map<int, SdpAudioFormat>& codecs) override;
-
-  // Get current received codec.
-  absl::optional<std::pair<int, SdpAudioFormat>> ReceiveCodec() const override;
 
   // Incoming packet from network parsed and ready for decode.
   int IncomingPacket(const uint8_t* incoming_payload,
                      const size_t payload_length,
                      const RTPHeader& rtp_info) override;
-
-  // Minimum playout delay.
-  int SetMinimumPlayoutDelay(int time_ms) override;
-
-  // Maximum playout delay.
-  int SetMaximumPlayoutDelay(int time_ms) override;
-
-  bool SetBaseMinimumPlayoutDelayMs(int delay_ms) override;
-
-  int GetBaseMinimumPlayoutDelayMs() const override;
-
-  absl::optional<uint32_t> PlayoutTimestamp() override;
-
-  int FilteredCurrentDelayMs() const override;
-
-  int TargetDelayMs() const override;
 
   // Get 10 milliseconds of raw audio data to play out, and
   // automatic resample to the requested frequency if > 0.
@@ -121,22 +92,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   //
 
   int GetNetworkStatistics(NetworkStatistics* statistics) override;
-
-  // If current send codec is Opus, informs it about the maximum playback rate
-  // the receiver will render.
-  int SetOpusMaxPlaybackRate(int frequency_hz) override;
-
-  int EnableOpusDtx() override;
-
-  int DisableOpusDtx() override;
-
-  int EnableNack(size_t max_nack_list_size) override;
-
-  void DisableNack() override;
-
-  std::vector<uint16_t> GetNackList(int64_t round_trip_time_ms) const override;
-
-  void GetDecodingCallStatistics(AudioDecodingCallStats* stats) const override;
 
   ANAStats GetANAStats() const override;
 
@@ -206,11 +161,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   // Current encoder stack, provided by a call to RegisterEncoder.
   std::unique_ptr<AudioEncoder> encoder_stack_ RTC_GUARDED_BY(acm_crit_sect_);
-
-  std::unique_ptr<AudioDecoder> isac_decoder_16k_
-      RTC_GUARDED_BY(acm_crit_sect_);
-  std::unique_ptr<AudioDecoder> isac_decoder_32k_
-      RTC_GUARDED_BY(acm_crit_sect_);
 
   // This is to keep track of CN instances where we can send DTMFs.
   uint8_t previous_pltype_ RTC_GUARDED_BY(acm_crit_sect_);
@@ -406,13 +356,6 @@ void AudioCodingModuleImpl::ModifyEncoder(
   modifier(&encoder_stack_);
 }
 
-void AudioCodingModuleImpl::SetBitRate(int bitrate_bps) {
-  rtc::CritScope lock(&acm_crit_sect_);
-  if (encoder_stack_) {
-    encoder_stack_->OnReceivedUplinkBandwidth(bitrate_bps, absl::nullopt);
-  }
-}
-
 // Register a transport callback which will be called to deliver
 // the encoded buffers.
 int AudioCodingModuleImpl::RegisterTransportCallback(
@@ -438,7 +381,7 @@ int AudioCodingModuleImpl::Add10MsDataInternal(const AudioFrame& audio_frame,
     return -1;
   }
 
-  if (audio_frame.sample_rate_hz_ > 48000) {
+  if (audio_frame.sample_rate_hz_ > 192000) {
     assert(false);
     RTC_LOG(LS_ERROR) << "Cannot Add 10 ms audio, input frequency not valid";
     return -1;
@@ -635,28 +578,10 @@ int AudioCodingModuleImpl::InitializeReceiverSafe() {
   return 0;
 }
 
-// Get current receive frequency.
-int AudioCodingModuleImpl::ReceiveFrequency() const {
-  const auto last_packet_sample_rate = receiver_.last_packet_sample_rate_hz();
-  return last_packet_sample_rate ? *last_packet_sample_rate
-                                 : receiver_.last_output_sample_rate_hz();
-}
-
-// Get current playout frequency.
-int AudioCodingModuleImpl::PlayoutFrequency() const {
-  return receiver_.last_output_sample_rate_hz();
-}
-
 void AudioCodingModuleImpl::SetReceiveCodecs(
     const std::map<int, SdpAudioFormat>& codecs) {
   rtc::CritScope lock(&acm_crit_sect_);
   receiver_.SetCodecs(codecs);
-}
-
-absl::optional<std::pair<int, SdpAudioFormat>>
-    AudioCodingModuleImpl::ReceiveCodec() const {
-  rtc::CritScope lock(&acm_crit_sect_);
-  return receiver_.LastDecoder();
 }
 
 // Incoming packet from network parsed and ready for decode.
@@ -667,32 +592,6 @@ int AudioCodingModuleImpl::IncomingPacket(const uint8_t* incoming_payload,
   return receiver_.InsertPacket(
       rtp_header,
       rtc::ArrayView<const uint8_t>(incoming_payload, payload_length));
-}
-
-// Minimum playout delay (Used for lip-sync).
-int AudioCodingModuleImpl::SetMinimumPlayoutDelay(int time_ms) {
-  if ((time_ms < 0) || (time_ms > 10000)) {
-    RTC_LOG(LS_ERROR) << "Delay must be in the range of 0-10000 milliseconds.";
-    return -1;
-  }
-  return receiver_.SetMinimumDelay(time_ms);
-}
-
-int AudioCodingModuleImpl::SetMaximumPlayoutDelay(int time_ms) {
-  if ((time_ms < 0) || (time_ms > 10000)) {
-    RTC_LOG(LS_ERROR) << "Delay must be in the range of 0-10000 milliseconds.";
-    return -1;
-  }
-  return receiver_.SetMaximumDelay(time_ms);
-}
-
-bool AudioCodingModuleImpl::SetBaseMinimumPlayoutDelayMs(int delay_ms) {
-  // All necessary validation happens on NetEq level.
-  return receiver_.SetBaseMinimumDelayMs(delay_ms);
-}
-
-int AudioCodingModuleImpl::GetBaseMinimumPlayoutDelayMs() const {
-  return receiver_.GetBaseMinimumDelayMs();
 }
 
 // Get 10 milliseconds of raw audio data to play out.
@@ -726,68 +625,12 @@ int AudioCodingModuleImpl::RegisterVADCallback(ACMVADCallback* vad_callback) {
   return 0;
 }
 
-// Informs Opus encoder of the maximum playback rate the receiver will render.
-int AudioCodingModuleImpl::SetOpusMaxPlaybackRate(int frequency_hz) {
-  rtc::CritScope lock(&acm_crit_sect_);
-  if (!HaveValidEncoder("SetOpusMaxPlaybackRate")) {
-    return -1;
-  }
-  encoder_stack_->SetMaxPlaybackRate(frequency_hz);
-  return 0;
-}
-
-int AudioCodingModuleImpl::EnableOpusDtx() {
-  rtc::CritScope lock(&acm_crit_sect_);
-  if (!HaveValidEncoder("EnableOpusDtx")) {
-    return -1;
-  }
-  return encoder_stack_->SetDtx(true) ? 0 : -1;
-}
-
-int AudioCodingModuleImpl::DisableOpusDtx() {
-  rtc::CritScope lock(&acm_crit_sect_);
-  if (!HaveValidEncoder("DisableOpusDtx")) {
-    return -1;
-  }
-  return encoder_stack_->SetDtx(false) ? 0 : -1;
-}
-
-absl::optional<uint32_t> AudioCodingModuleImpl::PlayoutTimestamp() {
-  return receiver_.GetPlayoutTimestamp();
-}
-
-int AudioCodingModuleImpl::FilteredCurrentDelayMs() const {
-  return receiver_.FilteredCurrentDelayMs();
-}
-
-int AudioCodingModuleImpl::TargetDelayMs() const {
-  return receiver_.TargetDelayMs();
-}
-
 bool AudioCodingModuleImpl::HaveValidEncoder(const char* caller_name) const {
   if (!encoder_stack_) {
     RTC_LOG(LS_ERROR) << caller_name << " failed: No send codec is registered.";
     return false;
   }
   return true;
-}
-
-int AudioCodingModuleImpl::EnableNack(size_t max_nack_list_size) {
-  return receiver_.EnableNack(max_nack_list_size);
-}
-
-void AudioCodingModuleImpl::DisableNack() {
-  receiver_.DisableNack();
-}
-
-std::vector<uint16_t> AudioCodingModuleImpl::GetNackList(
-    int64_t round_trip_time_ms) const {
-  return receiver_.GetNackList(round_trip_time_ms);
-}
-
-void AudioCodingModuleImpl::GetDecodingCallStatistics(
-    AudioDecodingCallStats* call_stats) const {
-  receiver_.GetDecodingCallStatistics(call_stats);
 }
 
 ANAStats AudioCodingModuleImpl::GetANAStats() const {

@@ -24,6 +24,8 @@
 #include "api/transport/webrtc_key_value_config.h"
 #include "modules/rtp_rtcp/include/flexfec_sender.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/include/rtp_packet_sender.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_packet_history.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
@@ -44,24 +46,7 @@ class RtpPacketToSend;
 
 class RTPSender {
  public:
-  RTPSender(bool audio,
-            Clock* clock,
-            Transport* transport,
-            RtpPacketSender* paced_sender,
-            absl::optional<uint32_t> flexfec_ssrc,
-            TransportSequenceNumberAllocator* sequence_number_allocator,
-            TransportFeedbackObserver* transport_feedback_callback,
-            BitrateStatisticsObserver* bitrate_callback,
-            SendSideDelayObserver* send_side_delay_observer,
-            RtcEventLog* event_log,
-            SendPacketObserver* send_packet_observer,
-            RateLimiter* nack_rate_limiter,
-            OverheadObserver* overhead_observer,
-            bool populate_network2_timestamp,
-            FrameEncryptorInterface* frame_encryptor,
-            bool require_frame_encryption,
-            bool extmap_allow_mixed,
-            const WebRtcKeyValueConfig& field_trials);
+  explicit RTPSender(const RtpRtcp::Configuration& config);
 
   ~RTPSender();
 
@@ -82,6 +67,7 @@ class RTPSender {
   uint32_t TimestampOffset() const;
   void SetTimestampOffset(uint32_t timestamp);
 
+  // TODO(bugs.webrtc.org/10774): Remove.
   void SetSSRC(uint32_t ssrc);
 
   void SetRid(const std::string& rid);
@@ -103,14 +89,15 @@ class RTPSender {
   bool IsRtpHeaderExtensionRegistered(RTPExtensionType type) const;
   int32_t DeregisterRtpHeaderExtension(RTPExtensionType type);
 
-  // Returns an RtpPacketSendResult indicating success, network unavailable,
-  // or packet not found.
-  RtpPacketSendResult TimeToSendPacket(uint32_t ssrc,
-                                       uint16_t sequence_number,
-                                       int64_t capture_time_ms,
-                                       bool retransmission,
-                                       const PacedPacketInfo& pacing_info);
-  size_t TimeToSendPadding(size_t bytes, const PacedPacketInfo& pacing_info);
+  // Tries to send packet to transport. Also updates any timing extensions,
+  // calls observers waiting for packet send events, and updates stats.
+  // Returns true if packet belongs to this RTP module, false otherwise.
+  bool TrySendPacket(RtpPacketToSend* packet,
+                     const PacedPacketInfo& pacing_info);
+  bool SupportsPadding() const;
+  bool SupportsRtxPayloadPadding() const;
+  std::vector<std::unique_ptr<RtpPacketToSend>> GeneratePadding(
+      size_t target_size_bytes);
 
   // NACK.
   void OnReceivedNack(const std::vector<uint16_t>& nack_sequence_numbers,
@@ -122,11 +109,16 @@ class RTPSender {
 
   int32_t ReSendPacket(uint16_t packet_id);
 
+  // ACK.
+  void OnReceivedAckOnSsrc(int64_t extended_highest_sequence_number);
+  void OnReceivedAckOnRtxSsrc(int64_t extended_highest_sequence_number);
+
   // RTX.
   void SetRtxStatus(int mode);
   int RtxStatus() const;
-
   uint32_t RtxSsrc() const;
+
+  // TODO(bugs.webrtc.org/10774): Remove.
   void SetRtxSsrc(uint32_t ssrc);
 
   void SetRtxPayloadType(int payload_type, int associated_payload_type);
@@ -156,9 +148,7 @@ class RTPSender {
   absl::optional<uint32_t> FlexfecSsrc() const;
 
   // Sends packet to |transport_| or to the pacer, depending on configuration.
-  bool SendToNetwork(std::unique_ptr<RtpPacketToSend> packet,
-                     StorageType storage,
-                     RtpPacketSender::Priority priority);
+  bool SendToNetwork(std::unique_ptr<RtpPacketToSend> packet);
 
   // Called on update of RTP statistics.
   void RegisterRtpStatisticsCallback(StreamDataCountersCallback* callback);
@@ -183,17 +173,19 @@ class RTPSender {
   // time.
   typedef std::map<int64_t, int> SendDelayMap;
 
-  size_t SendPadData(size_t bytes, const PacedPacketInfo& pacing_info);
+  // Helper class that redirects packets directly to the send part of this class
+  // without passing through an actual paced sender.
+  class NonPacedPacketSender : public RtpPacketSender {
+   public:
+    explicit NonPacedPacketSender(RTPSender* rtp_sender);
+    virtual ~NonPacedPacketSender();
 
-  bool PrepareAndSendPacket(std::unique_ptr<RtpPacketToSend> packet,
-                            bool send_over_rtx,
-                            bool is_retransmit,
-                            const PacedPacketInfo& pacing_info);
+    void EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) override;
 
-  // Return the number of bytes sent.  Note that both of these functions may
-  // return a larger value that their argument.
-  size_t TrySendRedundantPayloads(size_t bytes,
-                                  const PacedPacketInfo& pacing_info);
+   private:
+    uint16_t transport_sequence_number_;
+    RTPSender* const rtp_sender_;
+  };
 
   std::unique_ptr<RtpPacketToSend> BuildRtxPacket(
       const RtpPacketToSend& packet);
@@ -204,13 +196,12 @@ class RTPSender {
                            const PacedPacketInfo& pacing_info);
 
   void RecomputeMaxSendDelay() RTC_EXCLUSIVE_LOCKS_REQUIRED(statistics_crit_);
-  void UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms);
+  void UpdateDelayStatistics(int64_t capture_time_ms,
+                             int64_t now_ms,
+                             uint32_t ssrc);
   void UpdateOnSendPacket(int packet_id,
                           int64_t capture_time_ms,
                           uint32_t ssrc);
-
-  bool UpdateTransportSequenceNumber(RtpPacketToSend* packet, int* packet_id)
-      RTC_EXCLUSIVE_LOCKS_REQUIRED(send_critsect_);
 
   void UpdateRtpStats(const RtpPacketToSend& packet,
                       bool is_rtx,
@@ -230,8 +221,8 @@ class RTPSender {
 
   const absl::optional<uint32_t> flexfec_ssrc_;
 
+  const std::unique_ptr<NonPacedPacketSender> non_paced_packet_sender_;
   RtpPacketSender* const paced_sender_;
-  TransportSequenceNumberAllocator* const transport_sequence_number_allocator_;
   TransportFeedbackObserver* const transport_feedback_observer_;
   rtc::CriticalSection send_critsect_;
 
@@ -246,9 +237,6 @@ class RTPSender {
       RTC_GUARDED_BY(send_critsect_);
 
   RtpPacketHistory packet_history_;
-  // TODO(brandtr): Remove |flexfec_packet_history_| when the FlexfecSender
-  // is hooked up to the PacedSender.
-  RtpPacketHistory flexfec_packet_history_;
 
   // Statistics
   rtc::CriticalSection statistics_crit_;
@@ -281,6 +269,10 @@ class RTPSender {
   std::string rid_ RTC_GUARDED_BY(send_critsect_);
   // MID value to send in the MID header extension.
   std::string mid_ RTC_GUARDED_BY(send_critsect_);
+  // Track if any ACK has been received on the SSRC and RTX SSRC to indicate
+  // when to stop sending the MID and RID header extensions.
+  bool ssrc_has_acked_ RTC_GUARDED_BY(send_critsect_);
+  bool rtx_ssrc_has_acked_ RTC_GUARDED_BY(send_critsect_);
   uint32_t last_rtp_timestamp_ RTC_GUARDED_BY(send_critsect_);
   int64_t capture_time_ms_ RTC_GUARDED_BY(send_critsect_);
   int64_t last_timestamp_time_ms_ RTC_GUARDED_BY(send_critsect_);
@@ -292,19 +284,13 @@ class RTPSender {
   // Mapping rtx_payload_type_map_[associated] = rtx.
   std::map<int8_t, int8_t> rtx_payload_type_map_ RTC_GUARDED_BY(send_critsect_);
   size_t rtp_overhead_bytes_per_packet_ RTC_GUARDED_BY(send_critsect_);
+  bool supports_bwe_extension_ RTC_GUARDED_BY(send_critsect_);
 
   RateLimiter* const retransmission_rate_limiter_;
   OverheadObserver* overhead_observer_;
   const bool populate_network2_timestamp_;
 
   const bool send_side_bwe_with_overhead_;
-  const bool legacy_packet_history_storage_mode_;
-
-  // Set by field trial "WebRTC-PayloadPadding-UseMostUsefulPacket". If set
-  // to "Enabled" this field will be true and
-  // packet_history_.GetPayloadPaddingPacket() will be called instead of
-  // packet_history_.GetBestFittingPacket() in TrySendRedundantPayloads().
-  const bool payload_padding_prefer_useful_packets_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RTPSender);
 };

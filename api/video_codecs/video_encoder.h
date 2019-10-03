@@ -18,6 +18,7 @@
 
 #include "absl/container/inlined_vector.h"
 #include "absl/types/optional.h"
+#include "api/fec_controller_override.h"
 #include "api/units/data_rate.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_bitrate_allocation.h"
@@ -122,6 +123,26 @@ class RTC_EXPORT VideoEncoder {
     ScalingSettings();
   };
 
+  // Bitrate limits for resolution.
+  struct ResolutionBitrateLimits {
+    ResolutionBitrateLimits(int frame_size_pixels,
+                            int min_start_bitrate_bps,
+                            int min_bitrate_bps,
+                            int max_bitrate_bps)
+        : frame_size_pixels(frame_size_pixels),
+          min_start_bitrate_bps(min_start_bitrate_bps),
+          min_bitrate_bps(min_bitrate_bps),
+          max_bitrate_bps(max_bitrate_bps) {}
+    // Size of video frame, in pixels, the bitrate thresholds are intended for.
+    int frame_size_pixels = 0;
+    // Recommended minimum bitrate to start encoding.
+    int min_start_bitrate_bps = 0;
+    // Recommended minimum bitrate.
+    int min_bitrate_bps = 0;
+    // Recommended maximum bitrate.
+    int max_bitrate_bps = 0;
+  };
+
   // Struct containing metadata about the encoder implementing this interface.
   struct EncoderInfo {
     static constexpr uint8_t kMaxFramerateFraction =
@@ -192,6 +213,16 @@ class RTC_EXPORT VideoEncoder {
     // with a 100% frame rate fraction.
     absl::InlinedVector<uint8_t, kMaxTemporalStreams>
         fps_allocation[kMaxSpatialLayers];
+
+    // Recommended bitrate limits for different resolutions.
+    std::vector<ResolutionBitrateLimits> resolution_bitrate_limits;
+
+    // If true, this encoder has internal support for generating simulcast
+    // streams. Otherwise, an adapter class will be needed.
+    // Even if true, the config provided to InitEncode() might not be supported,
+    // in such case the encoder should return
+    // WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED.
+    bool supports_simulcast;
   };
 
   struct RateControlParameters {
@@ -215,6 +246,9 @@ class RTC_EXPORT VideoEncoder {
     // |bitrate.get_sum_bps()|, but may be higher if the application is not
     // network constrained.
     DataRate bandwidth_allocation;
+
+    bool operator==(const RateControlParameters& rhs) const;
+    bool operator!=(const RateControlParameters& rhs) const;
   };
 
   struct LossNotification {
@@ -264,6 +298,12 @@ class RTC_EXPORT VideoEncoder {
   static VideoCodecH264 GetDefaultH264Settings();
 
   virtual ~VideoEncoder() {}
+
+  // Set a FecControllerOverride, through which the encoder may override
+  // decisions made by FecController.
+  // TODO(bugs.webrtc.org/10769): Update downstream, then make pure-virtual.
+  virtual void SetFecControllerOverride(
+      FecControllerOverride* fec_controller_override);
 
   // Initialize the encoder with the information from the codecSettings
   //

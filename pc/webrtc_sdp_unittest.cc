@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <string.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <map>
@@ -1523,6 +1524,8 @@ class WebRtcSdpTest : public ::testing::Test {
       CompareSimulcastDescription(
           c1.media_description()->simulcast_description(),
           c2.media_description()->simulcast_description());
+      EXPECT_EQ(c1.media_description()->alt_protocol(),
+                c2.media_description()->alt_protocol());
     }
 
     // group
@@ -1679,6 +1682,14 @@ class WebRtcSdpTest : public ::testing::Test {
     desc_.RemoveTransportInfoByName(content_name);
     info.description.opaque_parameters = params;
     desc_.AddTransportInfo(info);
+  }
+
+  void AddAltProtocol(const std::string& content_name,
+                      const std::string& alt_protocol) {
+    ASSERT_TRUE(desc_.GetTransportInfoByName(content_name) != NULL);
+    cricket::MediaContentDescription* description =
+        desc_.GetContentDescriptionByName(content_name);
+    description->set_alt_protocol(alt_protocol);
   }
 
   void AddFingerprint() {
@@ -2233,6 +2244,22 @@ TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithOpaqueTransportParams) {
   EXPECT_EQ(message, sdp_with_transport_parameters);
 }
 
+TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithAltProtocol) {
+  AddAltProtocol(kAudioContentName, "foo");
+  AddAltProtocol(kVideoContentName, "bar");
+
+  ASSERT_TRUE(jdesc_.Initialize(desc_.Clone(), jdesc_.session_id(),
+                                jdesc_.session_version()));
+  std::string message = webrtc::SdpSerialize(jdesc_);
+
+  std::string sdp_with_alt_protocol = kSdpFullString;
+  InjectAfter(kAttributeIcePwdVoice, "a=x-alt-protocol:foo\r\n",
+              &sdp_with_alt_protocol);
+  InjectAfter(kAttributeIcePwdVideo, "a=x-alt-protocol:bar\r\n",
+              &sdp_with_alt_protocol);
+  EXPECT_EQ(message, sdp_with_alt_protocol);
+}
+
 TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithRecvOnlyContent) {
   EXPECT_TRUE(TestSerializeDirection(RtpTransceiverDirection::kRecvOnly));
 }
@@ -2643,6 +2670,24 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithOpaqueTransportParams) {
                                 jdesc_.session_version()));
   EXPECT_TRUE(
       CompareSessionDescription(jdesc_, jdesc_with_transport_parameters));
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithAltProtocol) {
+  std::string sdp_with_alt_protocol = kSdpFullString;
+  InjectAfter(kAttributeIcePwdVoice, "a=x-alt-protocol:foo\r\n",
+              &sdp_with_alt_protocol);
+  InjectAfter(kAttributeIcePwdVideo, "a=x-alt-protocol:bar\r\n",
+              &sdp_with_alt_protocol);
+
+  JsepSessionDescription jdesc_with_alt_protocol(kDummyType);
+  EXPECT_TRUE(SdpDeserialize(sdp_with_alt_protocol, &jdesc_with_alt_protocol));
+
+  AddAltProtocol(kAudioContentName, "foo");
+  AddAltProtocol(kVideoContentName, "bar");
+
+  ASSERT_TRUE(jdesc_.Initialize(desc_.Clone(), jdesc_.session_id(),
+                                jdesc_.session_version()));
+  EXPECT_TRUE(CompareSessionDescription(jdesc_, jdesc_with_alt_protocol));
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithUfragPwd) {
@@ -3229,6 +3274,25 @@ TEST_F(WebRtcSdpTest, SerializeSdpWithConferenceFlag) {
   cricket::VideoContentDescription* video =
       cricket::GetFirstVideoContentDescription(jdesc.description());
   EXPECT_TRUE(video->conference_mode());
+}
+
+TEST_F(WebRtcSdpTest, SerializeAndDeserializeRemoteNetEstimate) {
+  {
+    // By default remote estimates are disabled.
+    JsepSessionDescription dst(kDummyType);
+    SdpDeserialize(webrtc::SdpSerialize(jdesc_), &dst);
+    EXPECT_FALSE(cricket::GetFirstVideoContentDescription(dst.description())
+                     ->remote_estimate());
+  }
+  {
+    // When remote estimate is enabled, the setting is propagated via SDP.
+    cricket::GetFirstVideoContentDescription(jdesc_.description())
+        ->set_remote_estimate(true);
+    JsepSessionDescription dst(kDummyType);
+    SdpDeserialize(webrtc::SdpSerialize(jdesc_), &dst);
+    EXPECT_TRUE(cricket::GetFirstVideoContentDescription(dst.description())
+                    ->remote_estimate());
+  }
 }
 
 TEST_F(WebRtcSdpTest, DeserializeBrokenSdp) {
@@ -4258,31 +4322,6 @@ TEST_F(WebRtcSdpTest, SerializeAndDeserializeWithConnectionAddress) {
             video_desc->connection_address().ToString());
 }
 
-// Test that a media description that contains a hostname connection address can
-// be correctly serialized.
-TEST_F(WebRtcSdpTest, SerializeAndDeserializeWithHostnameConnectionAddress) {
-  JsepSessionDescription expected_jsep(kDummyType);
-  cricket::Candidate c;
-  const rtc::SocketAddress hostname_addr("example.local", 1234);
-  audio_desc_->set_connection_address(hostname_addr);
-  video_desc_->set_connection_address(hostname_addr);
-  ASSERT_TRUE(
-      expected_jsep.Initialize(desc_.Clone(), kSessionId, kSessionVersion));
-  // Serialization.
-  std::string message = webrtc::SdpSerialize(expected_jsep);
-  // Deserialization.
-  JsepSessionDescription jdesc(kDummyType);
-  ASSERT_TRUE(SdpDeserialize(message, &jdesc));
-  auto audio_desc = jdesc.description()
-                        ->GetContentByName(kAudioContentName)
-                        ->media_description();
-  auto video_desc = jdesc.description()
-                        ->GetContentByName(kVideoContentName)
-                        ->media_description();
-  EXPECT_EQ(hostname_addr, audio_desc->connection_address());
-  EXPECT_EQ(hostname_addr, video_desc->connection_address());
-}
-
 // RFC4566 says "If a session has no meaningful name, the value "s= " SHOULD be
 // used (i.e., a single space as the session name)." So we should accept that.
 TEST_F(WebRtcSdpTest, DeserializeEmptySessionName) {
@@ -4496,6 +4535,61 @@ TEST_F(WebRtcSdpTest, TestDeserializeIgnoresDuplicateRidLines) {
   CompareRidDescriptionIds(rids, {"1", "3"});
 }
 
+TEST_F(WebRtcSdpTest, TestDeserializeRidSendDirection) {
+  std::string sdp = kUnifiedPlanSdpFullStringNoSsrc;
+  sdp += "a=rid:1 recv\r\n";
+  sdp += "a=rid:2 recv\r\n";
+  sdp += "a=simulcast:send 1;2\r\n";
+  JsepSessionDescription output(kDummyType);
+  SdpParseError error;
+  EXPECT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error));
+  const cricket::ContentInfos& contents = output.description()->contents();
+  const cricket::MediaContentDescription* media =
+      contents.back().media_description();
+  EXPECT_FALSE(media->HasSimulcast());
+}
+
+TEST_F(WebRtcSdpTest, TestDeserializeRidRecvDirection) {
+  std::string sdp = kUnifiedPlanSdpFullStringNoSsrc;
+  sdp += "a=rid:1 send\r\n";
+  sdp += "a=rid:2 send\r\n";
+  sdp += "a=simulcast:recv 1;2\r\n";
+  JsepSessionDescription output(kDummyType);
+  SdpParseError error;
+  EXPECT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error));
+  const cricket::ContentInfos& contents = output.description()->contents();
+  const cricket::MediaContentDescription* media =
+      contents.back().media_description();
+  EXPECT_FALSE(media->HasSimulcast());
+}
+
+TEST_F(WebRtcSdpTest, TestDeserializeIgnoresWrongRidDirectionLines) {
+  std::string sdp = kUnifiedPlanSdpFullStringNoSsrc;
+  sdp += "a=rid:1 send\r\n";
+  sdp += "a=rid:2 send\r\n";
+  sdp += "a=rid:3 send\r\n";
+  sdp += "a=rid:4 recv\r\n";
+  sdp += "a=rid:5 recv\r\n";
+  sdp += "a=rid:6 recv\r\n";
+  sdp += "a=simulcast:send 1;5;3 recv 4;2;6\r\n";
+  JsepSessionDescription output(kDummyType);
+  SdpParseError error;
+  EXPECT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error));
+  const cricket::ContentInfos& contents = output.description()->contents();
+  const cricket::MediaContentDescription* media =
+      contents.back().media_description();
+  EXPECT_TRUE(media->HasSimulcast());
+  const SimulcastDescription& simulcast = media->simulcast_description();
+  EXPECT_EQ(2ul, simulcast.send_layers().size());
+  EXPECT_EQ(2ul, simulcast.receive_layers().size());
+  EXPECT_EQ(2ul, simulcast.send_layers().GetAllLayers().size());
+  EXPECT_EQ(2ul, simulcast.receive_layers().GetAllLayers().size());
+
+  EXPECT_FALSE(media->streams().empty());
+  const std::vector<RidDescription>& rids = media->streams()[0].rids();
+  CompareRidDescriptionIds(rids, {"1", "3"});
+}
+
 // Simulcast serialization integration test.
 // This test will serialize and deserialize the description and compare.
 // More detailed tests for parsing simulcast can be found in
@@ -4512,12 +4606,20 @@ TEST_F(WebRtcSdpTest, SerializeSimulcast_ComplexSerialization) {
   send_rids.push_back(RidDescription("3", RidDirection::kSend));
   send_rids.push_back(RidDescription("4", RidDirection::kSend));
   send_stream.set_rids(send_rids);
+  std::vector<RidDescription> receive_rids;
+  receive_rids.push_back(RidDescription("5", RidDirection::kReceive));
+  receive_rids.push_back(RidDescription("6", RidDirection::kReceive));
+  receive_rids.push_back(RidDescription("7", RidDirection::kReceive));
+  media->set_receive_rids(receive_rids);
 
   SimulcastDescription& simulcast = media->simulcast_description();
   simulcast.send_layers().AddLayerWithAlternatives(
       {SimulcastLayer("2", false), SimulcastLayer("1", true)});
   simulcast.send_layers().AddLayerWithAlternatives(
       {SimulcastLayer("4", false), SimulcastLayer("3", false)});
+  simulcast.receive_layers().AddLayer({SimulcastLayer("5", false)});
+  simulcast.receive_layers().AddLayer({SimulcastLayer("6", false)});
+  simulcast.receive_layers().AddLayer({SimulcastLayer("7", false)});
 
   TestSerialize(jdesc_);
 }
@@ -4633,7 +4735,7 @@ TEST_F(WebRtcSdpTest, ParseMediaTransportIgnoreNonsenseAttributeLines) {
 }
 
 TEST_F(WebRtcSdpTest, SerializeMediaTransportSettings) {
-  auto description = absl::make_unique<cricket::SessionDescription>();
+  auto description = std::make_unique<cricket::SessionDescription>();
 
   JsepSessionDescription output(SdpType::kOffer);
   // JsepSessionDescription takes ownership of the description.

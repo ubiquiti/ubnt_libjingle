@@ -14,6 +14,7 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
@@ -173,44 +174,19 @@ BasicPortAllocator::BasicPortAllocator(rtc::NetworkManager* network_manager)
 }
 
 BasicPortAllocator::BasicPortAllocator(rtc::NetworkManager* network_manager,
+                                       const ServerAddresses& stun_servers)
+    : BasicPortAllocator(network_manager,
+                         /*socket_factory=*/nullptr,
+                         stun_servers) {}
+
+BasicPortAllocator::BasicPortAllocator(rtc::NetworkManager* network_manager,
                                        rtc::PacketSocketFactory* socket_factory,
                                        const ServerAddresses& stun_servers)
     : network_manager_(network_manager), socket_factory_(socket_factory) {
   InitRelayPortFactory(nullptr);
   RTC_DCHECK(relay_port_factory_ != nullptr);
-  RTC_DCHECK(socket_factory_ != NULL);
   SetConfiguration(stun_servers, std::vector<RelayServerConfig>(), 0, false,
                    nullptr);
-  Construct();
-}
-
-BasicPortAllocator::BasicPortAllocator(
-    rtc::NetworkManager* network_manager,
-    const ServerAddresses& stun_servers,
-    const rtc::SocketAddress& relay_address_udp,
-    const rtc::SocketAddress& relay_address_tcp,
-    const rtc::SocketAddress& relay_address_ssl)
-    : network_manager_(network_manager), socket_factory_(NULL) {
-  InitRelayPortFactory(nullptr);
-  RTC_DCHECK(relay_port_factory_ != nullptr);
-  RTC_DCHECK(network_manager_ != nullptr);
-  std::vector<RelayServerConfig> turn_servers;
-  RelayServerConfig config(RELAY_GTURN);
-  if (!relay_address_udp.IsNil()) {
-    config.ports.push_back(ProtocolAddress(relay_address_udp, PROTO_UDP));
-  }
-  if (!relay_address_tcp.IsNil()) {
-    config.ports.push_back(ProtocolAddress(relay_address_tcp, PROTO_TCP));
-  }
-  if (!relay_address_ssl.IsNil()) {
-    config.ports.push_back(ProtocolAddress(relay_address_ssl, PROTO_SSLTCP));
-  }
-
-  if (!config.ports.empty()) {
-    turn_servers.push_back(config);
-  }
-
-  SetConfiguration(stun_servers, turn_servers, 0, false, nullptr);
   Construct();
 }
 
@@ -530,6 +506,19 @@ void BasicPortAllocatorSession::Regather(
   }
 }
 
+void BasicPortAllocatorSession::GetCandidateStatsFromReadyPorts(
+    CandidateStatsList* candidate_stats_list) const {
+  auto ports = ReadyPorts();
+  for (auto* port : ports) {
+    auto candidates = port->Candidates();
+    for (const auto& candidate : candidates) {
+      CandidateStats candidate_stats(allocator_->SanitizeCandidate(candidate));
+      port->GetStunStats(&candidate_stats.stun_stats);
+      candidate_stats_list->push_back(std::move(candidate_stats));
+    }
+  }
+}
+
 void BasicPortAllocatorSession::SetStunKeepaliveIntervalForReadyPorts(
     const absl::optional<int>& stun_keepalive_interval) {
   RTC_DCHECK_RUN_ON(network_thread_);
@@ -578,35 +567,12 @@ void BasicPortAllocatorSession::GetCandidatesFromPort(
     if (!CheckCandidateFilter(candidate)) {
       continue;
     }
-    auto sanitized_candidate = SanitizeCandidate(candidate);
-    candidates->push_back(sanitized_candidate);
+    candidates->push_back(allocator_->SanitizeCandidate(candidate));
   }
 }
 
-bool BasicPortAllocatorSession::MdnsObfuscationEnabled() const {
-  return allocator_->network_manager()->GetMdnsResponder() != nullptr;
-}
-
-Candidate BasicPortAllocatorSession::SanitizeCandidate(
-    const Candidate& c) const {
-  RTC_DCHECK_RUN_ON(network_thread_);
-  // If the candidate has a generated hostname, we need to obfuscate its IP
-  // address when signaling this candidate.
-  bool use_hostname_address =
-      !c.address().hostname().empty() && !c.address().IsUnresolvedIP();
-  // If adapter enumeration is disabled or host candidates are disabled,
-  // clear the raddr of STUN candidates to avoid local address leakage.
-  bool filter_stun_related_address =
-      ((flags() & PORTALLOCATOR_DISABLE_ADAPTER_ENUMERATION) &&
-       (flags() & PORTALLOCATOR_DISABLE_DEFAULT_LOCAL_CANDIDATE)) ||
-      !(candidate_filter_ & CF_HOST) || MdnsObfuscationEnabled();
-  // If the candidate filter doesn't allow reflexive addresses, empty TURN raddr
-  // to avoid reflexive address leakage.
-  bool filter_turn_related_address = !(candidate_filter_ & CF_REFLEXIVE);
-  bool filter_related_address =
-      ((c.type() == STUN_PORT_TYPE && filter_stun_related_address) ||
-       (c.type() == RELAY_PORT_TYPE && filter_turn_related_address));
-  return c.ToSanitizedCopy(use_hostname_address, filter_related_address);
+bool BasicPortAllocator::MdnsObfuscationEnabled() const {
+  return network_manager()->GetMdnsResponder() != nullptr;
 }
 
 bool BasicPortAllocatorSession::CandidatesAllocationDone() const {
@@ -1014,7 +980,7 @@ void BasicPortAllocatorSession::OnCandidateReady(Port* port,
 
   if (data->ready() && CheckCandidateFilter(c)) {
     std::vector<Candidate> candidates;
-    candidates.push_back(SanitizeCandidate(c));
+    candidates.push_back(allocator_->SanitizeCandidate(c));
     SignalCandidatesReady(this, candidates);
   } else {
     RTC_LOG(LS_INFO) << "Discarding candidate because it doesn't match filter.";
@@ -1585,8 +1551,8 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
       RTC_LOG(LS_INFO)
           << "Server and local address families are not compatible. "
              "Server address: "
-          << relay_port->address.ipaddr().ToString()
-          << " Local address: " << network_->GetBestIP().ToString();
+          << relay_port->address.ipaddr().ToSensitiveString()
+          << " Local address: " << network_->GetBestIP().ToSensitiveString();
       continue;
     }
 
@@ -1613,7 +1579,7 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
 
       if (!port) {
         RTC_LOG(LS_WARNING) << "Failed to create relay port with "
-                            << args.server_address->address.ToString();
+                            << args.server_address->address.ToSensitiveString();
         continue;
       }
 
@@ -1628,7 +1594,7 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
 
       if (!port) {
         RTC_LOG(LS_WARNING) << "Failed to create relay port with "
-                            << args.server_address->address.ToString();
+                            << args.server_address->address.ToSensitiveString();
         continue;
       }
     }

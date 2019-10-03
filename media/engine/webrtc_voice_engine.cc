@@ -21,7 +21,7 @@
 #include "absl/strings/match.h"
 #include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/call/audio_sink.h"
-#include "api/media_transport_interface.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "media/base/audio_source.h"
 #include "media/base/media_constants.h"
 #include "media/base/stream_params.h"
@@ -141,6 +141,18 @@ absl::optional<std::string> GetAudioNetworkAdaptorConfig(
   return absl::nullopt;
 }
 
+// Returns its smallest positive argument. If neither argument is positive,
+// returns an arbitrary nonpositive value.
+int MinPositive(int a, int b) {
+  if (a <= 0) {
+    return b;
+  }
+  if (b <= 0) {
+    return a;
+  }
+  return std::min(a, b);
+}
+
 // |max_send_bitrate_bps| is the bitrate from "b=" in SDP.
 // |rtp_max_bitrate_bps| is the bitrate from RtpSender::SetParameters.
 absl::optional<int> ComputeSendBitrate(int max_send_bitrate_bps,
@@ -148,10 +160,9 @@ absl::optional<int> ComputeSendBitrate(int max_send_bitrate_bps,
                                        const webrtc::AudioCodecSpec& spec) {
   // If application-configured bitrate is set, take minimum of that and SDP
   // bitrate.
-  const int bps =
-      rtp_max_bitrate_bps
-          ? webrtc::MinPositive(max_send_bitrate_bps, *rtp_max_bitrate_bps)
-          : max_send_bitrate_bps;
+  const int bps = rtp_max_bitrate_bps
+                      ? MinPositive(max_send_bitrate_bps, *rtp_max_bitrate_bps)
+                      : max_send_bitrate_bps;
   if (bps <= 0) {
     return spec.info.default_bitrate_bps;
   }
@@ -277,8 +288,6 @@ void WebRtcVoiceEngine::Init() {
     options.audio_jitter_buffer_enable_rtx_handling = false;
     options.typing_detection = true;
     options.experimental_agc = false;
-    options.extended_filter_aec = false;
-    options.delay_agnostic_aec = false;
     options.experimental_ns = false;
     options.residual_echo_detector = true;
     bool error = ApplyOptions(options);
@@ -320,32 +329,15 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     // EC may be forced on for a device known to have non-functioning platform
     // AEC.
     options.echo_cancellation = true;
-    options.extended_filter_aec = true;
     RTC_LOG(LS_WARNING)
         << "Force software AEC on iOS. May conflict with platform AEC.";
   } else {
     // On iOS, VPIO provides built-in EC.
     options.echo_cancellation = false;
-    options.extended_filter_aec = false;
     RTC_LOG(LS_INFO) << "Always disable AEC on iOS. Use built-in instead.";
   }
 #elif defined(WEBRTC_ANDROID)
   ec_mode = webrtc::kEcAecm;
-  options.extended_filter_aec = false;
-#endif
-
-  // Delay Agnostic AEC automatically turns on EC if not set except on iOS
-  // where the feature is not supported.
-  bool use_delay_agnostic_aec = false;
-#if !defined(WEBRTC_IOS)
-  if (options.delay_agnostic_aec) {
-    use_delay_agnostic_aec = *options.delay_agnostic_aec;
-    if (use_delay_agnostic_aec) {
-      options.echo_cancellation = true;
-      options.extended_filter_aec = true;
-      ec_mode = webrtc::kEcConference;
-    }
-  }
 #endif
 
 // Set and adjust noise suppressor options.
@@ -397,11 +389,9 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     // in combination with Open SL ES audio.
     const bool built_in_aec = adm()->BuiltInAECIsAvailable();
     if (built_in_aec) {
-      // Built-in EC exists on this device and use_delay_agnostic_aec is not
-      // overriding it. Enable/Disable it according to the echo_cancellation
-      // audio option.
-      const bool enable_built_in_aec =
-          *options.echo_cancellation && !use_delay_agnostic_aec;
+      // Built-in EC exists on this device. Enable/Disable it according to the
+      // echo_cancellation audio option.
+      const bool enable_built_in_aec = *options.echo_cancellation;
       if (adm()->EnableBuiltInAEC(enable_built_in_aec) == 0 &&
           enable_built_in_aec) {
         // Disable internal software EC if built-in EC is enabled,
@@ -475,25 +465,6 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
 
   webrtc::Config config;
 
-  if (options.delay_agnostic_aec)
-    delay_agnostic_aec_ = options.delay_agnostic_aec;
-  if (delay_agnostic_aec_) {
-    RTC_LOG(LS_INFO) << "Delay agnostic aec is enabled? "
-                     << *delay_agnostic_aec_;
-    config.Set<webrtc::DelayAgnostic>(
-        new webrtc::DelayAgnostic(*delay_agnostic_aec_));
-  }
-
-  if (options.extended_filter_aec) {
-    extended_filter_aec_ = options.extended_filter_aec;
-  }
-  if (extended_filter_aec_) {
-    RTC_LOG(LS_INFO) << "Extended filter aec is enabled? "
-                     << *extended_filter_aec_;
-    config.Set<webrtc::ExtendedFilter>(
-        new webrtc::ExtendedFilter(*extended_filter_aec_));
-  }
-
   if (options.experimental_ns) {
     experimental_ns_ = options.experimental_ns;
   }
@@ -556,6 +527,8 @@ RtpCapabilities WebRtcVoiceEngine::GetCapabilities() const {
   int id = 1;
   capabilities.header_extensions.push_back(
       webrtc::RtpExtension(webrtc::RtpExtension::kAudioLevelUri, id++));
+  capabilities.header_extensions.push_back(
+      webrtc::RtpExtension(webrtc::RtpExtension::kAbsSendTimeUri, id++));
   capabilities.header_extensions.push_back(webrtc::RtpExtension(
       webrtc::RtpExtension::kTransportSequenceNumberUri, id++));
   return capabilities;
@@ -1024,7 +997,6 @@ class WebRtcVoiceMediaChannel::WebRtcAudioSendStream
 
   rtc::ThreadChecker worker_thread_checker_;
   rtc::RaceChecker audio_capture_race_checker_;
-  const webrtc::AudioAllocationSettings allocation_settings_;
   webrtc::Call* call_ = nullptr;
   webrtc::AudioSendStream::Config config_;
   // The stream is owned by WebRtcAudioSendStream and may be reallocated if
@@ -1104,8 +1076,10 @@ class WebRtcVoiceMediaChannel::WebRtcAudioReceiveStream {
 
   void SetLocalSsrc(uint32_t local_ssrc) {
     RTC_DCHECK(worker_thread_checker_.IsCurrent());
-    config_.rtp.local_ssrc = local_ssrc;
-    ReconfigureAudioReceiveStream();
+    if (local_ssrc != config_.rtp.local_ssrc) {
+      config_.rtp.local_ssrc = local_ssrc;
+      RecreateAudioReceiveStream();
+    }
   }
 
   void SetUseTransportCcAndRecreateStream(bool use_transport_cc,
@@ -2125,15 +2099,6 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(rtc::CopyOnWriteBuffer packet,
   RTC_DCHECK_NE(webrtc::PacketReceiver::DELIVERY_UNKNOWN_SSRC, delivery_result);
 }
 
-void WebRtcVoiceMediaChannel::OnRtcpReceived(rtc::CopyOnWriteBuffer packet,
-                                             int64_t packet_time_us) {
-  RTC_DCHECK(worker_thread_checker_.IsCurrent());
-
-  // Forward packet to Call as well.
-  call_->Receiver()->DeliverPacket(webrtc::MediaType::AUDIO, packet,
-                                   packet_time_us);
-}
-
 void WebRtcVoiceMediaChannel::OnNetworkRouteChanged(
     const std::string& transport_name,
     const rtc::NetworkRoute& network_route) {
@@ -2206,7 +2171,6 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     sinfo.fraction_lost = stats.fraction_lost;
     sinfo.codec_name = stats.codec_name;
     sinfo.codec_payload_type = stats.codec_payload_type;
-    sinfo.ext_seqnum = stats.ext_seqnum;
     sinfo.jitter_ms = stats.jitter_ms;
     sinfo.rtt_ms = stats.rtt_ms;
     sinfo.audio_level = stats.audio_level;
@@ -2247,10 +2211,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     rinfo.fec_packets_received = stats.fec_packets_received;
     rinfo.fec_packets_discarded = stats.fec_packets_discarded;
     rinfo.packets_lost = stats.packets_lost;
-    rinfo.fraction_lost = stats.fraction_lost;
     rinfo.codec_name = stats.codec_name;
     rinfo.codec_payload_type = stats.codec_payload_type;
-    rinfo.ext_seqnum = stats.ext_seqnum;
     rinfo.jitter_ms = stats.jitter_ms;
     rinfo.jitter_buffer_ms = stats.jitter_buffer_ms;
     rinfo.jitter_buffer_preferred_ms = stats.jitter_buffer_preferred_ms;
@@ -2280,6 +2242,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     rinfo.decoding_calls_to_neteq = stats.decoding_calls_to_neteq;
     rinfo.decoding_normal = stats.decoding_normal;
     rinfo.decoding_plc = stats.decoding_plc;
+    rinfo.decoding_codec_plc = stats.decoding_codec_plc;
     rinfo.decoding_cng = stats.decoding_cng;
     rinfo.decoding_plc_cng = stats.decoding_plc_cng;
     rinfo.decoding_muted_output = stats.decoding_muted_output;
@@ -2306,6 +2269,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     info->receive_codecs.insert(
         std::make_pair(codec_params.payload_type, std::move(codec_params)));
   }
+  info->device_underrun_count = engine_->adm()->GetPlayoutUnderrunCount();
 
   return true;
 }

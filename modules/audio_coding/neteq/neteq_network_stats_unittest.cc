@@ -13,10 +13,10 @@
 #include "absl/memory/memory.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio_codecs/audio_decoder.h"
-
 #include "modules/audio_coding/neteq/include/neteq.h"
 #include "modules/audio_coding/neteq/tools/rtp_generator.h"
 #include "rtc_base/ref_counted_object.h"
+#include "system_wrappers/include/clock.h"
 #include "test/audio_decoder_proxy_factory.h"
 #include "test/gmock.h"
 
@@ -24,8 +24,8 @@ namespace webrtc {
 namespace test {
 
 using ::testing::_;
-using ::testing::SetArgPointee;
 using ::testing::Return;
+using ::testing::SetArgPointee;
 
 class MockAudioDecoder final : public AudioDecoder {
  public:
@@ -147,7 +147,6 @@ class NetEqNetworkStatsTest {
     logic accelerate_rate;
     logic secondary_decoded_rate;
     logic secondary_discarded_rate;
-    logic clockdrift_ppm;
     logic added_zero_samples;
     NetEqNetworkStatistics stats_ref;
   };
@@ -163,7 +162,8 @@ class NetEqNetworkStatsTest {
         packet_loss_interval_(0xffffffff) {
     NetEq::Config config;
     config.sample_rate_hz = format.clockrate_hz;
-    neteq_ = absl::WrapUnique(NetEq::Create(config, decoder_factory_));
+    neteq_ = absl::WrapUnique(
+        NetEq::Create(config, Clock::GetRealTimeClock(), decoder_factory_));
     neteq_->RegisterPayloadType(kPayloadType, format);
   }
 
@@ -215,7 +215,6 @@ class NetEqNetworkStatsTest {
     CHECK_NETEQ_NETWORK_STATS(accelerate_rate);
     CHECK_NETEQ_NETWORK_STATS(secondary_decoded_rate);
     CHECK_NETEQ_NETWORK_STATS(secondary_discarded_rate);
-    CHECK_NETEQ_NETWORK_STATS(clockdrift_ppm);
     CHECK_NETEQ_NETWORK_STATS(added_zero_samples);
 
 #undef CHECK_NETEQ_NETWORK_STATS
@@ -265,9 +264,8 @@ class NetEqNetworkStatsTest {
                                       kEqual,   // accelerate_rate
                                       kEqual,   // decoded_fec_rate
                                       kEqual,   // discarded_fec_rate
-                                      kIgnore,  // clockdrift_ppm
                                       kEqual,   // added_zero_samples
-                                      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+                                      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
     RunTest(50, expects);
 
     // Next we introduce packet losses.
@@ -297,9 +295,8 @@ class NetEqNetworkStatsTest {
                                       kEqual,   // accelerate_rate
                                       kEqual,   // decoded_fec_rate
                                       kEqual,   // discard_fec_rate
-                                      kIgnore,  // clockdrift_ppm
                                       kEqual,   // added_zero_samples
-                                      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+                                      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
     RunTest(50, expects);
 
     SetPacketLossRate(1);

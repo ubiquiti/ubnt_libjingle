@@ -12,6 +12,7 @@
 #define MODULES_AUDIO_PROCESSING_AEC3_AEC_STATE_H_
 
 #include <stddef.h>
+
 #include <array>
 #include <memory>
 #include <vector>
@@ -39,7 +40,7 @@ class ApmDataDumper;
 // Handles the state and the conditions for the echo removal functionality.
 class AecState {
  public:
-  explicit AecState(const EchoCanceller3Config& config);
+  AecState(const EchoCanceller3Config& config, size_t num_capture_channels);
   ~AecState();
 
   // Returns whether the echo subtractor can be used to determine the residual
@@ -128,6 +129,8 @@ class AecState {
   }
 
   // Updates the aec state.
+  // TODO(bugs.webrtc.org/10913): Handle multi-channel adaptive filter response.
+  // TODO(bugs.webrtc.org/10913): Compute multi-channel ERL, ERLE, and reverb.
   void Update(const absl::optional<DelayEstimate>& external_delay,
               const std::vector<std::array<float, kFftLengthBy2Plus1>>&
                   adaptive_filter_frequency_response,
@@ -135,8 +138,7 @@ class AecState {
               const RenderBuffer& render_buffer,
               const std::array<float, kFftLengthBy2Plus1>& E2_main,
               const std::array<float, kFftLengthBy2Plus1>& Y2,
-              const SubtractorOutput& subtractor_output,
-              rtc::ArrayView<const float> y);
+              rtc::ArrayView<const SubtractorOutput> subtractor_output);
 
   // Returns filter length in blocks.
   int FilterLengthBlocks() const {
@@ -266,43 +268,6 @@ class AecState {
     bool convergence_seen_ = false;
   } filter_quality_state_;
 
-  // Class containing the legacy functionality for analyzing how well the linear
-  // filter is, and can be expected to perform on the current signals. The
-  // purpose of this is for using to select the echo suppression functionality
-  // as well as the input to the echo suppressor.
-  class LegacyFilteringQualityAnalyzer {
-   public:
-    explicit LegacyFilteringQualityAnalyzer(const EchoCanceller3Config& config);
-
-    // Returns whether the the linear filter is can be used for the echo
-    // canceller output.
-    bool LinearFilterUsable() const { return usable_linear_estimate_; }
-
-    // Resets the state of the analyzer.
-    void Reset();
-
-    // Updates the analysis based on new data.
-    void Update(bool saturated_echo,
-                bool active_render,
-                bool saturated_capture,
-                bool transparent_mode,
-                const absl::optional<DelayEstimate>& external_delay,
-                bool converged_filter,
-                bool diverged_filter);
-
-   private:
-    const bool conservative_initial_phase_;
-    const float required_blocks_for_convergence_;
-    const bool linear_and_stable_echo_path_;
-    bool usable_linear_estimate_ = false;
-    size_t strong_not_saturated_render_blocks_ = 0;
-    size_t non_converged_sequence_size_;
-    size_t diverged_sequence_size_ = 0;
-    size_t active_non_converged_sequence_size_ = 0;
-    bool recent_convergence_during_activity_ = false;
-    bool recent_convergence_ = false;
-  } legacy_filter_quality_state_;
-
   // Class for detecting whether the echo is to be considered to be
   // saturated.
   class SaturationDetector {
@@ -311,39 +276,15 @@ class AecState {
     bool SaturatedEcho() const { return saturated_echo_; }
 
     // Updates the detection decision based on new data.
-    void Update(rtc::ArrayView<const float> x,
+    void Update(rtc::ArrayView<const std::vector<float>> x,
                 bool saturated_capture,
                 bool usable_linear_estimate,
-                const SubtractorOutput& subtractor_output,
+                rtc::ArrayView<const SubtractorOutput> subtractor_output,
                 float echo_path_gain);
 
    private:
     bool saturated_echo_ = false;
   } saturation_detector_;
-
-  // Legacy class for detecting whether the echo is to be considered to be
-  // saturated. This is kept as a fallback solution to use instead of the class
-  // SaturationDetector,
-  class LegacySaturationDetector {
-   public:
-    explicit LegacySaturationDetector(const EchoCanceller3Config& config);
-
-    // Returns whether the echo is to be considered saturated.
-    bool SaturatedEcho() const { return saturated_echo_; }
-
-    // Resets the state of the detector.
-    void Reset();
-
-    // Updates the detection decision based on new data.
-    void Update(rtc::ArrayView<const float> x,
-                bool saturated_capture,
-                float echo_path_gain);
-
-   private:
-    const bool echo_can_saturate_;
-    size_t not_saturated_sequence_size_;
-    bool saturated_echo_ = false;
-  } legacy_saturation_detector_;
 
   ErlEstimator erl_estimator_;
   ErleEstimator erle_estimator_;
@@ -355,7 +296,7 @@ class AecState {
   EchoAudibility echo_audibility_;
   ReverbModelEstimator reverb_model_estimator_;
   RenderReverbModel render_reverb_;
-  SubtractorOutputAnalyzer subtractor_output_analyzer_;
+  std::vector<SubtractorOutputAnalyzer> subtractor_output_analyzers_;
 };
 
 }  // namespace webrtc

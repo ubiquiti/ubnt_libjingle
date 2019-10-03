@@ -57,7 +57,6 @@ if (rtc_include_tests) {
       "../../../../rtc_base:checks",
       "../../../../test:fileutils",
       "../../../../test:test_support",
-      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -125,6 +124,8 @@ if (rtc_include_tests) {
       "../../../../common_audio",
       "../../../../rtc_base:rtc_base_approved",
       "../../../../test:test_support",
+      "//third_party/abseil-cpp/absl/flags:flag",
+      "//third_party/abseil-cpp/absl/flags:parse",
     ]
   }
 }

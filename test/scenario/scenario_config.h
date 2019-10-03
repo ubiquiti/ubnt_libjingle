@@ -11,6 +11,7 @@
 #define TEST_SCENARIO_SCENARIO_CONFIG_H_
 
 #include <stddef.h>
+
 #include <string>
 
 #include "absl/types/optional.h"
@@ -102,7 +103,7 @@ struct VideoStreamConfig {
     } slides;
     struct Generator {
       using PixelFormat = FrameGenerator::OutputType;
-      PixelFormat pixel_format = PixelFormat::I420;
+      PixelFormat pixel_format = PixelFormat::kI420;
       int width = 320;
       int height = 180;
     } generator;
@@ -148,7 +149,6 @@ struct VideoStreamConfig {
       } prediction = Prediction::kFull;
     } layers;
 
-    using DegradationPreference = DegradationPreference;
     DegradationPreference degradation_preference =
         DegradationPreference::MAINTAIN_FRAMERATE;
   } encoder;
@@ -156,6 +156,7 @@ struct VideoStreamConfig {
     Stream();
     Stream(const Stream&);
     ~Stream();
+    bool abs_send_time = false;
     bool packet_feedback = true;
     bool use_rtx = true;
     DataRate pad_to_rate = DataRate::Zero();
@@ -201,13 +202,13 @@ struct AudioStreamConfig {
     absl::optional<DataRate> fixed_rate;
     absl::optional<DataRate> min_rate;
     absl::optional<DataRate> max_rate;
-    absl::optional<DataRate> priority_rate;
     TimeDelta initial_frame_length = TimeDelta::ms(20);
   } encoder;
   struct Stream {
     Stream();
     Stream(const Stream&);
     ~Stream();
+    bool abs_send_time = false;
     bool in_bandwidth_estimation = false;
   } stream;
   struct Rendering {

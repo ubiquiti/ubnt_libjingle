@@ -9,7 +9,6 @@
  */
 
 #include "api/rtp_packet_infos.h"
-
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -69,33 +68,6 @@ TEST(RtpPacketInfoTest, Csrcs) {
   EXPECT_EQ(rhs.csrcs(), value);
 }
 
-TEST(RtpPacketInfoTest, SequenceNumber) {
-  const uint16_t value = 20238;
-
-  RtpPacketInfo lhs;
-  RtpPacketInfo rhs;
-
-  EXPECT_TRUE(lhs == rhs);
-  EXPECT_FALSE(lhs != rhs);
-
-  rhs.set_sequence_number(value);
-  EXPECT_EQ(rhs.sequence_number(), value);
-
-  EXPECT_FALSE(lhs == rhs);
-  EXPECT_TRUE(lhs != rhs);
-
-  lhs = rhs;
-
-  EXPECT_TRUE(lhs == rhs);
-  EXPECT_FALSE(lhs != rhs);
-
-  rhs = RtpPacketInfo();
-  EXPECT_NE(rhs.sequence_number(), value);
-
-  rhs = RtpPacketInfo({}, {}, value, {}, {}, {});
-  EXPECT_EQ(rhs.sequence_number(), value);
-}
-
 TEST(RtpPacketInfoTest, RtpTimestamp) {
   const uint32_t value = 4038189233;
 
@@ -119,7 +91,7 @@ TEST(RtpPacketInfoTest, RtpTimestamp) {
   rhs = RtpPacketInfo();
   EXPECT_NE(rhs.rtp_timestamp(), value);
 
-  rhs = RtpPacketInfo({}, {}, {}, value, {}, {});
+  rhs = RtpPacketInfo({}, {}, value, {}, {}, {});
   EXPECT_EQ(rhs.rtp_timestamp(), value);
 }
 
@@ -146,8 +118,35 @@ TEST(RtpPacketInfoTest, AudioLevel) {
   rhs = RtpPacketInfo();
   EXPECT_NE(rhs.audio_level(), value);
 
-  rhs = RtpPacketInfo({}, {}, {}, {}, value, {});
+  rhs = RtpPacketInfo({}, {}, {}, value, {}, {});
   EXPECT_EQ(rhs.audio_level(), value);
+}
+
+TEST(RtpPacketInfoTest, AbsoluteCaptureTime) {
+  const absl::optional<AbsoluteCaptureTime> value = AbsoluteCaptureTime{12, 34};
+
+  RtpPacketInfo lhs;
+  RtpPacketInfo rhs;
+
+  EXPECT_TRUE(lhs == rhs);
+  EXPECT_FALSE(lhs != rhs);
+
+  rhs.set_absolute_capture_time(value);
+  EXPECT_EQ(rhs.absolute_capture_time(), value);
+
+  EXPECT_FALSE(lhs == rhs);
+  EXPECT_TRUE(lhs != rhs);
+
+  lhs = rhs;
+
+  EXPECT_TRUE(lhs == rhs);
+  EXPECT_FALSE(lhs != rhs);
+
+  rhs = RtpPacketInfo();
+  EXPECT_NE(rhs.absolute_capture_time(), value);
+
+  rhs = RtpPacketInfo({}, {}, {}, {}, value, {});
+  EXPECT_EQ(rhs.absolute_capture_time(), value);
 }
 
 TEST(RtpPacketInfoTest, ReceiveTimeMs) {

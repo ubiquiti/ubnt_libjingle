@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "modules/rtp_rtcp/source/rtp_sender_audio.h"
+
 #include <vector>
 
 #include "api/transport/field_trial_based_config.h"
@@ -16,7 +18,6 @@
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
-#include "modules/rtp_rtcp/source/rtp_sender_audio.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -32,14 +33,12 @@ const uint32_t kSsrc = 725242;
 const uint8_t kAudioLevel = 0x5a;
 const uint64_t kStartTime = 123456789;
 
-using ::testing::_;
 using ::testing::ElementsAreArray;
 
 class LoopbackTransportTest : public webrtc::Transport {
  public:
   LoopbackTransportTest() {
-    receivers_extensions_.Register(kRtpExtensionAudioLevel,
-                                   kAudioLevelExtensionId);
+    receivers_extensions_.Register<AudioLevel>(kAudioLevelExtensionId);
   }
 
   bool SendRtp(const uint8_t* data,
@@ -64,26 +63,15 @@ class RtpSenderAudioTest : public ::testing::Test {
  public:
   RtpSenderAudioTest()
       : fake_clock_(kStartTime),
-        rtp_sender_(true,
-                    &fake_clock_,
-                    &transport_,
-                    nullptr,
-                    absl::nullopt,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    false,
-                    nullptr,
-                    false,
-                    false,
-                    FieldTrialBasedConfig()),
+        rtp_sender_([&] {
+          RtpRtcp::Configuration config;
+          config.audio = true;
+          config.clock = &fake_clock_;
+          config.outgoing_transport = &transport_;
+          config.local_media_ssrc = kSsrc;
+          return config;
+        }()),
         rtp_sender_audio_(&fake_clock_, &rtp_sender_) {
-    rtp_sender_.SetSSRC(kSsrc);
     rtp_sender_.SetSequenceNumber(kSeqNum);
   }
 

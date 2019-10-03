@@ -31,6 +31,7 @@ namespace webrtc {
 // Forward declarations.
 class AudioFrame;
 class AudioDecoderFactory;
+class Clock;
 
 struct NetEqNetworkStatistics {
   uint16_t current_buffer_size_ms;    // Current jitter buffer size in ms.
@@ -50,8 +51,6 @@ struct NetEqNetworkStatistics {
                                       // decoding (in Q14).
   uint16_t secondary_discarded_rate;  // Fraction of discarded FEC/RED data (in
                                       // Q14).
-  int32_t clockdrift_ppm;     // Average clock-drift in parts-per-million
-                              // (positive or negative).
   size_t added_zero_samples;  // Number of zero samples added in "off" mode.
   // Statistics for packet waiting times, i.e., the time between a packet
   // arrives until it is decoded.
@@ -149,6 +148,7 @@ class NetEq {
   // method.
   static NetEq* Create(
       const NetEq::Config& config,
+      Clock* clock,
       const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory);
 
   virtual ~NetEq() {}

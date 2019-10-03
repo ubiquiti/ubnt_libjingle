@@ -20,6 +20,7 @@
 #include <stddef.h>  // size_t
 #include <stdio.h>   // FILE
 #include <string.h>
+
 #include <vector>
 
 #include "absl/types/optional.h"
@@ -32,7 +33,6 @@
 #include "modules/audio_processing/include/gain_control.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/deprecation.h"
-#include "rtc_base/platform_file.h"
 #include "rtc_base/ref_count.h"
 #include "rtc_base/system/rtc_export.h"
 
@@ -245,6 +245,20 @@ class AudioProcessing : public rtc::RefCountInterface {
   // submodule resets, affecting the audio quality. Use the RuntimeSetting
   // construct for runtime configuration.
   struct Config {
+    // Sets the properties of the audio processing pipeline.
+    struct Pipeline {
+      Pipeline();
+
+      // Maximum allowed processing rate used internally. May only be set to
+      // 32000 or 48000 and any differing values will be treated as 48000. The
+      // default rate is currently selected based on the CPU architecture, but
+      // that logic may change.
+      int maximum_internal_processing_rate;
+      // Force multi-channel processing on playout and capture audio. This is an
+      // experimental feature, and is likely to change without warning.
+      bool experimental_multi_channel = false;
+    } pipeline;
+
     // Enabled the pre-amplifier. It amplifies the capture signal
     // before any other processing is done.
     struct PreAmplifier {
@@ -370,6 +384,8 @@ class AudioProcessing : public rtc::RefCountInterface {
       }
       return *this;
     }
+
+    std::string ToString() const;
   };
 
   // TODO(mgraczyk): Remove once all methods that use ChannelLayout are gone.
@@ -696,6 +712,7 @@ class AudioProcessing : public rtc::RefCountInterface {
     kBadStreamParameterWarning = -13
   };
 
+  // Native rates supported by the AudioFrame interfaces.
   enum NativeRate {
     kSampleRate8kHz = 8000,
     kSampleRate16kHz = 16000,

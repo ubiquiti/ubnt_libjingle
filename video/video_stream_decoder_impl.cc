@@ -10,7 +10,8 @@
 
 #include "video/video_stream_decoder_impl.h"
 
-#include "absl/memory/memory.h"
+#include <memory>
+
 #include "api/task_queue/queued_task.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
@@ -34,9 +35,7 @@ VideoStreamDecoderImpl::VideoStreamDecoderImpl(
                      "video_stream_decoder_decode_thread",
                      rtc::kHighestPriority),
       timing_(Clock::GetRealTimeClock()),
-      frame_buffer_(Clock::GetRealTimeClock(),
-                    &timing_,
-                    nullptr),
+      frame_buffer_(Clock::GetRealTimeClock(), &timing_, nullptr),
       next_frame_timestamps_index_(0) {
   frame_timestamps_.fill({-1, -1, -1});
   decode_thread_.Start();
@@ -66,7 +65,7 @@ void VideoStreamDecoderImpl::OnFrame(
     };
 
     bookkeeping_queue_.PostTask(
-        absl::make_unique<OnFrameTask>(std::move(frame), this));
+        std::make_unique<OnFrameTask>(std::move(frame), this));
     return;
   }
 
@@ -215,7 +214,7 @@ VideoStreamDecoderImpl::DecodeResult VideoStreamDecoderImpl::DecodeNextFrame(
         });
 
     int32_t decode_result = decoder->Decode(frame->EncodedImage(),
-                                            false,    // missing_frame
+                                            false,  // missing_frame
                                             frame->RenderTimeMs());
 
     return decode_result == WEBRTC_VIDEO_CODEC_OK ? kOk : kDecodeFailure;
@@ -277,8 +276,7 @@ void VideoStreamDecoderImpl::Decoded(VideoFrame& decoded_image,
     absl::optional<int> casted_decode_time_ms(decode_time_ms.value_or(
         decode_stop_time_ms - frame_timestamps->decode_start_time_ms));
 
-    timing_.StopDecodeTimer(0, *casted_decode_time_ms, decode_stop_time_ms,
-                            frame_timestamps->render_time_us / 1000);
+    timing_.StopDecodeTimer(*casted_decode_time_ms, decode_stop_time_ms);
 
     VideoFrame copy = decoded_image;
     copy.set_timestamp_us(frame_timestamps->render_time_us);

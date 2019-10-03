@@ -19,9 +19,9 @@
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/crypto/crypto_options.h"
 #include "api/function_view.h"
-#include "api/media_transport_config.h"
-#include "api/media_transport_interface.h"
 #include "api/task_queue/task_queue_factory.h"
+#include "api/transport/media/media_transport_config.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "modules/rtp_rtcp/include/report_block_data.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/source/rtp_sender_audio.h"
@@ -77,7 +77,6 @@ class ChannelSendInterface {
       rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier) = 0;
   virtual void CallEncoder(rtc::FunctionView<void(AudioEncoder*)> modifier) = 0;
 
-  virtual void SetLocalSSRC(uint32_t ssrc) = 0;
   // Use 0 to indicate that the extension should not be registered.
   virtual void SetRid(const std::string& rid,
                       int extension_id,
@@ -140,7 +139,8 @@ std::unique_ptr<ChannelSendInterface> CreateChannelSend(
     FrameEncryptorInterface* frame_encryptor,
     const webrtc::CryptoOptions& crypto_options,
     bool extmap_allow_mixed,
-    int rtcp_report_interval_ms);
+    int rtcp_report_interval_ms,
+    uint32_t ssrc);
 
 }  // namespace voe
 }  // namespace webrtc

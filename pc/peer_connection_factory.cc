@@ -14,17 +14,17 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "api/fec_controller.h"
 #include "api/media_stream_proxy.h"
 #include "api/media_stream_track_proxy.h"
-#include "api/media_transport_interface.h"
 #include "api/network_state_predictor.h"
 #include "api/peer_connection_factory_proxy.h"
 #include "api/peer_connection_proxy.h"
+#include "api/rtc_event_log/rtc_event_log.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "api/turn_customizer.h"
+#include "api/units/data_rate.h"
 #include "api/video_track_source_proxy.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "media/base/rtp_data_engine.h"
 #include "media/sctp/sctp_transport.h"
 #include "p2p/base/basic_packet_socket_factory.h"
@@ -37,6 +37,9 @@
 #include "pc/video_track.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/field_trial_parser.h"
+#include "rtc_base/experiments/field_trial_units.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/system/file_wrapper.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -131,8 +134,8 @@ bool PeerConnectionFactory::Initialize() {
     return false;
   }
 
-  channel_manager_ = absl::make_unique<cricket::ChannelManager>(
-      std::move(media_engine_), absl::make_unique<cricket::RtpDataEngine>(),
+  channel_manager_ = std::make_unique<cricket::ChannelManager>(
+      std::move(media_engine_), std::make_unique<cricket::RtpDataEngine>(),
       worker_thread_, network_thread_);
 
   channel_manager_->SetVideoRtxEnabled(true);
@@ -214,17 +217,6 @@ bool PeerConnectionFactory::StartAecDump(FILE* file, int64_t max_size_bytes) {
   return channel_manager_->StartAecDump(FileWrapper(file), max_size_bytes);
 }
 
-bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file,
-                                         int64_t max_size_bytes) {
-  RTC_DCHECK(signaling_thread_->IsCurrent());
-  FILE* f = rtc::FdopenPlatformFileForWriting(file);
-  if (!f) {
-    rtc::ClosePlatformFile(file);
-    return false;
-  }
-  return StartAecDump(f, max_size_bytes);
-}
-
 void PeerConnectionFactory::StopAecDump() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   channel_manager_->StopAecDump();
@@ -236,7 +228,7 @@ PeerConnectionFactory::CreatePeerConnection(
     std::unique_ptr<cricket::PortAllocator> allocator,
     std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     PeerConnectionObserver* observer) {
-  // Convert the legacy API into the new depnedency structure.
+  // Convert the legacy API into the new dependency structure.
   PeerConnectionDependencies dependencies(observer);
   dependencies.allocator = std::move(allocator);
   dependencies.cert_generator = std::move(cert_generator);
@@ -249,18 +241,28 @@ PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
     PeerConnectionDependencies dependencies) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(!(dependencies.allocator && dependencies.packet_socket_factory))
+      << "You can't set both allocator and packet_socket_factory; "
+         "the former is going away (see bugs.webrtc.org/7447";
 
   // Set internal defaults if optional dependencies are not set.
   if (!dependencies.cert_generator) {
     dependencies.cert_generator =
-        absl::make_unique<rtc::RTCCertificateGenerator>(signaling_thread_,
-                                                        network_thread_);
+        std::make_unique<rtc::RTCCertificateGenerator>(signaling_thread_,
+                                                       network_thread_);
   }
   if (!dependencies.allocator) {
+    rtc::PacketSocketFactory* packet_socket_factory;
+    if (dependencies.packet_socket_factory)
+      packet_socket_factory = dependencies.packet_socket_factory.get();
+    else
+      packet_socket_factory = default_socket_factory_.get();
+
     network_thread_->Invoke<void>(RTC_FROM_HERE, [this, &configuration,
-                                                  &dependencies]() {
-      dependencies.allocator = absl::make_unique<cricket::BasicPortAllocator>(
-          default_network_manager_.get(), default_socket_factory_.get(),
+                                                  &dependencies,
+                                                  &packet_socket_factory]() {
+      dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
+          default_network_manager_.get(), packet_socket_factory,
           configuration.turn_customizer);
     });
   }
@@ -320,7 +322,7 @@ rtc::scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
 std::unique_ptr<cricket::SctpTransportInternalFactory>
 PeerConnectionFactory::CreateSctpTransportInternalFactory() {
 #ifdef HAVE_SCTP
-  return absl::make_unique<cricket::SctpTransportFactory>(network_thread());
+  return std::make_unique<cricket::SctpTransportFactory>(network_thread());
 #else
   return nullptr;
 #endif
@@ -338,16 +340,12 @@ std::unique_ptr<RtcEventLog> PeerConnectionFactory::CreateRtcEventLog_w() {
     encoding_type = RtcEventLog::EncodingType::NewFormat;
   return event_log_factory_
              ? event_log_factory_->CreateRtcEventLog(encoding_type)
-             : absl::make_unique<RtcEventLogNullImpl>();
+             : std::make_unique<RtcEventLogNull>();
 }
 
 std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
     RtcEventLog* event_log) {
   RTC_DCHECK_RUN_ON(worker_thread_);
-
-  const int kMinBandwidthBps = 30000;
-  const int kStartBandwidthBps = 300000;
-  const int kMaxBandwidthBps = 2000000;
 
   webrtc::Call::Config call_config(event_log);
   if (!channel_manager_->media_engine() || !call_factory_) {
@@ -355,9 +353,19 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
   }
   call_config.audio_state =
       channel_manager_->media_engine()->voice().GetAudioState();
-  call_config.bitrate_config.min_bitrate_bps = kMinBandwidthBps;
-  call_config.bitrate_config.start_bitrate_bps = kStartBandwidthBps;
-  call_config.bitrate_config.max_bitrate_bps = kMaxBandwidthBps;
+
+  FieldTrialParameter<DataRate> min_bandwidth("min", DataRate::kbps(30));
+  FieldTrialParameter<DataRate> start_bandwidth("start", DataRate::kbps(300));
+  FieldTrialParameter<DataRate> max_bandwidth("max", DataRate::kbps(2000));
+  ParseFieldTrial({&min_bandwidth, &start_bandwidth, &max_bandwidth},
+                  field_trial::FindFullName("WebRTC-PcFactoryDefaultBitrates"));
+
+  call_config.bitrate_config.min_bitrate_bps =
+      rtc::saturated_cast<int>(min_bandwidth->bps());
+  call_config.bitrate_config.start_bitrate_bps =
+      rtc::saturated_cast<int>(start_bandwidth->bps());
+  call_config.bitrate_config.max_bitrate_bps =
+      rtc::saturated_cast<int>(max_bandwidth->bps());
 
   call_config.fec_controller_factory = fec_controller_factory_.get();
   call_config.task_queue_factory = task_queue_factory_.get();

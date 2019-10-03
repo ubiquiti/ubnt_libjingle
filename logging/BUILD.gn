@@ -19,7 +19,6 @@ group("logging") {
   deps = [
     ":rtc_event_audio",
     ":rtc_event_bwe",
-    ":rtc_event_log_impl_base",
     ":rtc_event_log_impl_encoder",
     ":rtc_event_pacing",
     ":rtc_event_rtp_rtcp",
@@ -30,18 +29,10 @@ group("logging") {
 rtc_source_set("rtc_event_log_api") {
   sources = [
     "rtc_event_log/encoder/rtc_event_log_encoder.h",
-    "rtc_event_log/events/rtc_event.h",
-    "rtc_event_log/rtc_event_log.h",
-    "rtc_event_log/rtc_event_log_factory_interface.h",
   ]
 
   deps = [
-    "../api:libjingle_logging_api",
-    "../api:scoped_refptr",
     "../api/rtc_event_log",
-    "../api/task_queue",
-    "../rtc_base:rtc_base_approved",
-    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 
@@ -52,9 +43,8 @@ rtc_source_set("rtc_stream_config") {
   ]
 
   deps = [
-    ":rtc_event_log_api",
-    "../api:libjingle_peerconnection_api",
     "../api:rtp_headers",
+    "../api:rtp_parameters",
   ]
 }
 
@@ -65,8 +55,8 @@ rtc_source_set("rtc_event_pacing") {
   ]
 
   deps = [
-    ":rtc_event_log_api",
     "../api:scoped_refptr",
+    "../api/rtc_event_log",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }
@@ -84,9 +74,9 @@ rtc_source_set("rtc_event_audio") {
   ]
 
   deps = [
-    ":rtc_event_log_api",
     ":rtc_stream_config",
     "../api:scoped_refptr",
+    "../api/rtc_event_log",
     "../modules/audio_coding:audio_network_adaptor_config",
     "../rtc_base:checks",
     "//third_party/abseil-cpp/absl/memory",
@@ -105,15 +95,18 @@ rtc_source_set("rtc_event_bwe") {
     "rtc_event_log/events/rtc_event_probe_result_failure.h",
     "rtc_event_log/events/rtc_event_probe_result_success.cc",
     "rtc_event_log/events/rtc_event_probe_result_success.h",
+    "rtc_event_log/events/rtc_event_remote_estimate.h",
     "rtc_event_log/events/rtc_event_route_change.cc",
     "rtc_event_log/events/rtc_event_route_change.h",
   ]
 
   deps = [
-    ":rtc_event_log_api",
     "../api:scoped_refptr",
+    "../api/rtc_event_log",
+    "../api/units:data_rate",
     "../modules/remote_bitrate_estimator",
     "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
 
@@ -128,7 +121,7 @@ rtc_source_set("rtc_event_generic_packet_events") {
     "rtc_event_log/events/rtc_event_generic_packet_sent.h",
   ]
   deps = [
-    ":rtc_event_log_api",
+    "../api/rtc_event_log",
     "../rtc_base:timeutils",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/types:optional",
@@ -148,9 +141,9 @@ rtc_source_set("rtc_event_rtp_rtcp") {
   ]
 
   deps = [
-    ":rtc_event_log_api",
     "../api:array_view",
     "../api:scoped_refptr",
+    "../api/rtc_event_log",
     "../modules/rtp_rtcp:rtp_rtcp_format",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
@@ -167,9 +160,9 @@ rtc_source_set("rtc_event_video") {
   ]
 
   deps = [
-    ":rtc_event_log_api",
     ":rtc_stream_config",
     "../api:scoped_refptr",
+    "../api/rtc_event_log",
     "../rtc_base:checks",
     "//third_party/abseil-cpp/absl/memory",
   ]
@@ -192,8 +185,8 @@ rtc_static_library("rtc_event_log_impl_encoder") {
   defines = []
 
   deps = [
-    "../api:libjingle_peerconnection_api",
     "../api:rtp_headers",
+    "../api:rtp_parameters",
     "../api/transport:network_control",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
@@ -260,27 +253,9 @@ if (rtc_enable_protobuf) {
       "../rtc_base:rtc_task_queue",
       "../rtc_base:safe_minmax",
       "../rtc_base/synchronization:sequence_checker",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
-}
-
-rtc_static_library("rtc_event_log_impl_base") {
-  # TODO(bugs.webrtc.org/10206): Remove this target when all users switch to
-  # using target api/rtc_event_log:rtc_event_log_factory directly.
-  visibility = [ "*" ]
-  sources = [
-    "rtc_event_log/rtc_event_log_factory.cc",
-    "rtc_event_log/rtc_event_log_factory.h",
-  ]
-
-  deps = [
-    "../api/rtc_event_log",
-    "../api/rtc_event_log:rtc_event_log_factory",
-    "../api/task_queue:global_task_queue_factory",
-    "//third_party/abseil-cpp/absl/memory",
-  ]
 }
 
 rtc_source_set("fake_rtc_event_log") {
@@ -294,7 +269,7 @@ rtc_source_set("fake_rtc_event_log") {
 
   deps = [
     ":ice_log",
-    ":rtc_event_log_api",
+    "../api/rtc_event_log",
     "../rtc_base",
     "../rtc_base:checks",
   ]
@@ -332,13 +307,13 @@ if (rtc_enable_protobuf) {
       ":ice_log",
       ":rtc_event_bwe",
       ":rtc_event_log2_proto",
-      ":rtc_event_log_api",
       ":rtc_event_log_impl_encoder",
       ":rtc_event_log_proto",
       ":rtc_stream_config",
       "../api:function_view",
-      "../api:libjingle_peerconnection_api",
       "../api:rtp_headers",
+      "../api:rtp_parameters",
+      "../api/rtc_event_log",
       "../api/units:data_rate",
       "../api/units:time_delta",
       "../api/units:timestamp",
@@ -379,8 +354,6 @@ if (rtc_enable_protobuf) {
         ":rtc_event_bwe",
         ":rtc_event_generic_packet_events",
         ":rtc_event_log2_proto",
-        ":rtc_event_log_api",
-        ":rtc_event_log_impl_base",
         ":rtc_event_log_impl_encoder",
         ":rtc_event_log_parser",
         ":rtc_event_log_proto",
@@ -389,9 +362,11 @@ if (rtc_enable_protobuf) {
         ":rtc_event_video",
         ":rtc_stream_config",
         "../api:array_view",
-        "../api:libjingle_peerconnection_api",
         "../api:rtc_event_log_output_file",
         "../api:rtp_headers",
+        "../api:rtp_parameters",
+        "../api/rtc_event_log",
+        "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue:default_task_queue_factory",
         "../call",
         "../call:call_interfaces",
@@ -410,23 +385,25 @@ if (rtc_enable_protobuf) {
       ]
     }
 
-    rtc_test("rtc_event_log2rtp_dump") {
+    rtc_executable("rtc_event_log_rtp_dump") {
       testonly = true
       sources = [
         "rtc_event_log/rtc_event_log2rtp_dump.cc",
       ]
       deps = [
-        ":rtc_event_log_api",
         ":rtc_event_log_parser",
         "../api:array_view",
-        "../api:libjingle_peerconnection_api",
         "../api:rtp_headers",
+        "../api/rtc_event_log",
         "../modules/rtp_rtcp",
         "../modules/rtp_rtcp:rtp_rtcp_format",
         "../rtc_base:checks",
         "../rtc_base:protobuf_utils",
         "../rtc_base:rtc_base_approved",
         "../test:rtp_test_utils",
+        "//third_party/abseil-cpp/absl/flags:flag",
+        "//third_party/abseil-cpp/absl/flags:parse",
+        "//third_party/abseil-cpp/absl/flags:usage",
         "//third_party/abseil-cpp/absl/memory",
         "//third_party/abseil-cpp/absl/types:optional",
       ]
@@ -449,9 +426,9 @@ rtc_source_set("ice_log") {
   ]
 
   deps = [
-    ":rtc_event_log_api",
     "../api:libjingle_logging_api",
-    "../api:libjingle_peerconnection_api",
+    "../api:libjingle_peerconnection_api",  # For api/dtls_transport_interface.h
+    "../api/rtc_event_log",
     "../rtc_base:rtc_base_approved",
     "//third_party/abseil-cpp/absl/memory",
   ]
@@ -465,7 +442,7 @@ if (rtc_include_tests) {
       "rtc_event_log/mock/mock_rtc_event_log.h",
     ]
     deps = [
-      ":rtc_event_log_api",
+      "../api/rtc_event_log",
       "../test:test_support",
     ]
   }

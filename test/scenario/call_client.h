@@ -16,16 +16,16 @@
 #include <utility>
 #include <vector>
 
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "call/call.h"
-#include "logging/rtc_event_log/rtc_event_log.h"
 #include "modules/audio_device/include/test_audio_device.h"
 #include "modules/congestion_controller/goog_cc/test/goog_cc_printer.h"
-#include "modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "test/logging/log_writer.h"
+#include "test/network/network_emulation.h"
+#include "test/rtp_header_parser.h"
 #include "test/scenario/column_printer.h"
-#include "test/scenario/network/network_emulation.h"
 #include "test/scenario/network_node.h"
 #include "test/scenario/scenario_config.h"
 #include "test/time_controller/time_controller.h"
@@ -52,6 +52,8 @@ class NetworkControleUpdateCache : public NetworkControllerInterface {
   NetworkControlUpdate OnTransportLossReport(TransportLossReport msg) override;
   NetworkControlUpdate OnTransportPacketsFeedback(
       TransportPacketsFeedback msg) override;
+  NetworkControlUpdate OnNetworkStateEstimate(
+      NetworkStateEstimate msg) override;
 
   NetworkControlUpdate update_state() const;
 
@@ -105,7 +107,7 @@ class CallClient : public EmulatedNetworkReceiverInterface {
     return DataRate::bps(GetStats().send_bandwidth_bps);
   }
   DataRate target_rate() const;
-  DataRate link_capacity() const;
+  DataRate stable_target_rate() const;
   DataRate padding_rate() const;
 
   void OnPacketReceived(EmulatedIpPacket packet) override;
@@ -126,7 +128,6 @@ class CallClient : public EmulatedNetworkReceiverInterface {
   uint32_t GetNextAudioSsrc();
   uint32_t GetNextAudioLocalSsrc();
   uint32_t GetNextRtxSsrc();
-  std::string GetNextPriorityId();
   void AddExtensions(std::vector<RtpExtension> extensions);
   void SendTask(std::function<void()> task);
 
@@ -148,7 +149,6 @@ class CallClient : public EmulatedNetworkReceiverInterface {
   int next_rtx_ssrc_index_ = 0;
   int next_audio_ssrc_index_ = 0;
   int next_audio_local_ssrc_index_ = 0;
-  int next_priority_index_ = 0;
   std::map<uint32_t, MediaType> ssrc_media_types_;
   // Defined last so it's destroyed first.
   TaskQueueForTest task_queue_;

@@ -12,6 +12,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+
 #include <cstdint>
 #include <vector>
 
@@ -21,7 +22,6 @@
 #include "modules/audio_coding/acm2/acm_resampler.h"
 #include "modules/audio_coding/acm2/call_statistics.h"
 #include "modules/audio_coding/neteq/include/neteq.h"
-#include "modules/include/module_common_types.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -34,7 +34,9 @@ namespace acm2 {
 
 AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
     : last_audio_buffer_(new int16_t[AudioFrame::kMaxDataSizeSamples]),
-      neteq_(NetEq::Create(config.neteq_config, config.decoder_factory)),
+      neteq_(NetEq::Create(config.neteq_config,
+                           config.clock,
+                           config.decoder_factory)),
       clock_(config.clock),
       resampled_last_output_frame_(true) {
   RTC_DCHECK(clock_);
@@ -93,8 +95,7 @@ int AcmReceiver::InsertPacket(const RTPHeader& rtp_header,
     format = neteq_->GetDecoderFormat(payload_type);
   }
   if (!format) {
-    RTC_LOG_F(LS_ERROR) << "Payload-type "
-                        << payload_type
+    RTC_LOG_F(LS_ERROR) << "Payload-type " << payload_type
                         << " is not registered.";
     return -1;
   }
@@ -216,8 +217,8 @@ int AcmReceiver::TargetDelayMs() const {
   return neteq_->TargetDelayMs();
 }
 
-absl::optional<std::pair<int, SdpAudioFormat>>
-    AcmReceiver::LastDecoder() const {
+absl::optional<std::pair<int, SdpAudioFormat>> AcmReceiver::LastDecoder()
+    const {
   rtc::CritScope lock(&crit_sect_);
   if (!last_decoder_) {
     return absl::nullopt;
@@ -226,7 +227,7 @@ absl::optional<std::pair<int, SdpAudioFormat>>
   return last_decoder_;
 }
 
-void AcmReceiver::GetNetworkStatistics(NetworkStatistics* acm_stat) {
+void AcmReceiver::GetNetworkStatistics(NetworkStatistics* acm_stat) const {
   NetEqNetworkStatistics neteq_stat;
   // NetEq function always returns zero, so we don't check the return value.
   neteq_->NetworkStatistics(&neteq_stat);
@@ -241,7 +242,6 @@ void AcmReceiver::GetNetworkStatistics(NetworkStatistics* acm_stat) {
   acm_stat->currentAccelerateRate = neteq_stat.accelerate_rate;
   acm_stat->currentSecondaryDecodedRate = neteq_stat.secondary_decoded_rate;
   acm_stat->currentSecondaryDiscardedRate = neteq_stat.secondary_discarded_rate;
-  acm_stat->clockDriftPPM = neteq_stat.clockdrift_ppm;
   acm_stat->addedSamples = neteq_stat.added_zero_samples;
   acm_stat->meanWaitingTimeMs = neteq_stat.mean_waiting_time_ms;
   acm_stat->medianWaitingTimeMs = neteq_stat.median_waiting_time_ms;

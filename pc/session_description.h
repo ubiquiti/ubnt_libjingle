@@ -13,6 +13,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -47,7 +48,6 @@ extern const char kMediaProtocolAvpf[];
 extern const char kMediaProtocolSavpf[];
 
 extern const char kMediaProtocolDtlsSavpf[];
-
 
 // Options to control how session descriptions are generated.
 const int kAutoBandwidth = -1;
@@ -111,6 +111,13 @@ class MediaContentDescription {
   virtual bool rtcp_reduced_size() const { return rtcp_reduced_size_; }
   virtual void set_rtcp_reduced_size(bool reduced_size) {
     rtcp_reduced_size_ = reduced_size;
+  }
+
+  // Indicates support for the remote network estimate packet type. This
+  // functionality is experimental and subject to change without notice.
+  virtual bool remote_estimate() const { return remote_estimate_; }
+  virtual void set_remote_estimate(bool remote_estimate) {
+    remote_estimate_ = remote_estimate;
   }
 
   virtual int bandwidth() const { return bandwidth_; }
@@ -235,10 +242,24 @@ class MediaContentDescription {
       const SimulcastDescription& simulcast) {
     simulcast_ = simulcast;
   }
+  virtual const std::vector<RidDescription>& receive_rids() const {
+    return receive_rids_;
+  }
+  virtual void set_receive_rids(const std::vector<RidDescription>& rids) {
+    receive_rids_ = rids;
+  }
+
+  virtual const absl::optional<std::string>& alt_protocol() const {
+    return alt_protocol_;
+  }
+  virtual void set_alt_protocol(const absl::optional<std::string>& protocol) {
+    alt_protocol_ = protocol;
+  }
 
  protected:
   bool rtcp_mux_ = false;
   bool rtcp_reduced_size_ = false;
+  bool remote_estimate_ = false;
   int bandwidth_ = kAutoBandwidth;
   std::string protocol_;
   std::vector<CryptoParams> cryptos_;
@@ -255,6 +276,9 @@ class MediaContentDescription {
   ExtmapAllowMixed extmap_allow_mixed_enum_ = kNo;
 
   SimulcastDescription simulcast_;
+  std::vector<RidDescription> receive_rids_;
+
+  absl::optional<std::string> alt_protocol_;
 };
 
 // TODO(bugs.webrtc.org/8620): Remove this alias once downstream projects have

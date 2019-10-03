@@ -9,8 +9,10 @@
  */
 
 #include "test/scenario/stats_collection.h"
+
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "rtc_base/memory_usage.h"
+#include "rtc_base/thread.h"
 
 namespace webrtc {
 namespace test {
@@ -36,9 +38,24 @@ std::function<void(const VideoFramePair&)> VideoQualityAnalyzer::Handler() {
   return [this](VideoFramePair pair) { HandleFramePair(pair); };
 }
 
-void VideoQualityAnalyzer::HandleFramePair(VideoFramePair sample) {
-  layer_analyzers_[sample.layer_id].HandleFramePair(sample, writer_.get());
+void VideoQualityAnalyzer::HandleFramePair(VideoFramePair sample, double psnr) {
+  layer_analyzers_[sample.layer_id].HandleFramePair(sample, psnr,
+                                                    writer_.get());
   cached_.reset();
+}
+
+void VideoQualityAnalyzer::HandleFramePair(VideoFramePair sample) {
+  double psnr = NAN;
+  if (sample.decoded)
+    psnr = I420PSNR(*sample.captured->ToI420(), *sample.decoded->ToI420());
+
+  if (config_.thread) {
+    config_.thread->PostTask(RTC_FROM_HERE, [this, sample, psnr] {
+      HandleFramePair(std::move(sample), psnr);
+    });
+  } else {
+    HandleFramePair(std::move(sample), psnr);
+  }
 }
 
 std::vector<VideoQualityStats> VideoQualityAnalyzer::layer_stats() const {
@@ -58,21 +75,22 @@ VideoQualityStats& VideoQualityAnalyzer::stats() {
 }
 
 void VideoLayerAnalyzer::HandleFramePair(VideoFramePair sample,
+                                         double psnr,
                                          RtcEventLogOutput* writer) {
-  double psnr = NAN;
   RTC_CHECK(sample.captured);
   HandleCapturedFrame(sample);
   if (!sample.decoded) {
+    // Can only happen in the beginning of a call or if the resolution is
+    // reduced. Otherwise we will detect a freeze.
     ++stats_.lost_count;
     ++skip_count_;
   } else {
-    psnr = I420PSNR(*sample.captured->ToI420(), *sample.decoded->ToI420());
-    stats_.end_to_end_delay.AddSample(sample.render_time - sample.capture_time);
-    stats_.psnr.AddSample(psnr);
+    stats_.psnr_with_freeze.AddSample(psnr);
     if (sample.repeated) {
       ++stats_.freeze_count;
       ++skip_count_;
     } else {
+      stats_.psnr.AddSample(psnr);
       HandleRenderedFrame(sample);
     }
   }
@@ -92,6 +110,9 @@ void VideoLayerAnalyzer::HandleCapturedFrame(const VideoFramePair& sample) {
 }
 
 void VideoLayerAnalyzer::HandleRenderedFrame(const VideoFramePair& sample) {
+  stats_.capture_to_decoded_delay.AddSample(sample.decoded_time -
+                                            sample.capture_time);
+  stats_.end_to_end_delay.AddSample(sample.render_time - sample.capture_time);
   stats_.render.AddFrameInfo(*sample.decoded, sample.render_time);
   stats_.skipped_between_rendered.AddSample(skip_count_);
   skip_count_ = 0;

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "absl/types/optional.h"
+#include "api/fec_controller_override.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/include/video_codec_interface.h"
@@ -37,11 +38,20 @@ class VideoEncoderFactory;
 // interfaces should be called from the encoder task queue.
 class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
  public:
-  explicit SimulcastEncoderAdapter(VideoEncoderFactory* factory,
-                                   const SdpVideoFormat& format);
+  // TODO(bugs.webrtc.org/11000): Remove when downstream usage is gone.
+  SimulcastEncoderAdapter(VideoEncoderFactory* primarty_factory,
+                          const SdpVideoFormat& format);
+  // |primary_factory| produces the first-choice encoders to use.
+  // |fallback_factory|, if non-null, is used to create fallback encoder that
+  // will be used if InitEncode() fails for the primary encoder.
+  SimulcastEncoderAdapter(VideoEncoderFactory* primary_factory,
+                          VideoEncoderFactory* fallback_factory,
+                          const SdpVideoFormat& format);
   virtual ~SimulcastEncoderAdapter();
 
   // Implements VideoEncoder.
+  void SetFecControllerOverride(
+      FecControllerOverride* fec_controller_override) override;
   int Release() override;
   int InitEncode(const VideoCodec* codec_settings,
                  const VideoEncoder::Settings& settings) override;
@@ -49,6 +59,9 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
              const std::vector<VideoFrameType>* frame_types) override;
   int RegisterEncodeCompleteCallback(EncodedImageCallback* callback) override;
   void SetRates(const RateControlParameters& parameters) override;
+  void OnPacketLossRateUpdate(float packet_loss_rate) override;
+  void OnRttUpdate(int64_t rtt_ms) override;
+  void OnLossNotification(const LossNotification& loss_notification) override;
 
   // Eventual handler for the contained encoders' EncodedImageCallbacks, but
   // called from an internal helper that also knows the correct stream
@@ -100,7 +113,8 @@ class RTC_EXPORT SimulcastEncoderAdapter : public VideoEncoder {
   void DestroyStoredEncoders();
 
   volatile int inited_;  // Accessed atomically.
-  VideoEncoderFactory* const factory_;
+  VideoEncoderFactory* const primary_encoder_factory_;
+  VideoEncoderFactory* const fallback_encoder_factory_;
   const SdpVideoFormat video_format_;
   VideoCodec codec_;
   std::vector<StreamInfo> streaminfos_;

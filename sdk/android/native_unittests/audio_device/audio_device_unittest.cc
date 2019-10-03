@@ -19,7 +19,7 @@
 #include "rtc_base/event.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/time_utils.h"
-#include "sdk/android/generated_native_unittests_jni/jni/BuildInfo_jni.h"
+#include "sdk/android/generated_native_unittests_jni/BuildInfo_jni.h"
 #include "sdk/android/native_api/audio_device_module/audio_device_android.h"
 #include "sdk/android/native_unittests/application_context_provider.h"
 #include "sdk/android/src/jni/audio_device/audio_common.h"
@@ -183,7 +183,7 @@ class FifoAudioStream : public AudioStreamInterface {
     const size_t size = fifo_->size();
     if (size > largest_size_) {
       largest_size_ = size;
-      PRINTD("(%" PRIuS ")", largest_size_);
+      PRINTD("(%" RTC_PRIuS ")", largest_size_);
     }
     total_written_elements_ += size;
   }
@@ -546,12 +546,12 @@ class AudioDeviceTest : public ::testing::Test {
 #ifdef ENABLE_PRINTF
     PRINT("file name: %s\n", file_name.c_str());
     const size_t bytes = test::GetFileSize(file_name);
-    PRINT("file size: %" PRIuS " [bytes]\n", bytes);
-    PRINT("file size: %" PRIuS " [samples]\n", bytes / kBytesPerSample);
+    PRINT("file size: %" RTC_PRIuS " [bytes]\n", bytes);
+    PRINT("file size: %" RTC_PRIuS " [samples]\n", bytes / kBytesPerSample);
     const int seconds =
         static_cast<int>(bytes / (sample_rate * kBytesPerSample));
     PRINT("file size: %d [secs]\n", seconds);
-    PRINT("file size: %" PRIuS " [callbacks]\n",
+    PRINT("file size: %" RTC_PRIuS " [callbacks]\n",
           seconds * kNumCallbacksPerSecond);
 #endif
     return file_name;
@@ -971,16 +971,16 @@ TEST_F(AudioDeviceTest, ShowAudioParameterInfo) {
   PRINT("%saudio layer: %s\n", kTag,
         low_latency_out ? "Low latency OpenSL" : "Java/JNI based AudioTrack");
   PRINT("%ssample rate: %d Hz\n", kTag, output_parameters_.sample_rate());
-  PRINT("%schannels: %" PRIuS "\n", kTag, output_parameters_.channels());
-  PRINT("%sframes per buffer: %" PRIuS " <=> %.2f ms\n", kTag,
+  PRINT("%schannels: %" RTC_PRIuS "\n", kTag, output_parameters_.channels());
+  PRINT("%sframes per buffer: %" RTC_PRIuS " <=> %.2f ms\n", kTag,
         output_parameters_.frames_per_buffer(),
         output_parameters_.GetBufferSizeInMilliseconds());
   PRINT("RECORD: \n");
   PRINT("%saudio layer: %s\n", kTag,
         low_latency_in ? "Low latency OpenSL" : "Java/JNI based AudioRecord");
   PRINT("%ssample rate: %d Hz\n", kTag, input_parameters_.sample_rate());
-  PRINT("%schannels: %" PRIuS "\n", kTag, input_parameters_.channels());
-  PRINT("%sframes per buffer: %" PRIuS " <=> %.2f ms\n", kTag,
+  PRINT("%schannels: %" RTC_PRIuS "\n", kTag, input_parameters_.channels());
+  PRINT("%sframes per buffer: %" RTC_PRIuS " <=> %.2f ms\n", kTag,
         input_parameters_.frames_per_buffer(),
         input_parameters_.GetBufferSizeInMilliseconds());
 }

@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "video/video_receive_stream.h"
+
+#include <algorithm>
+#include <memory>
 #include <utility>
 #include <vector>
 
-#include "test/gmock.h"
-#include "test/gtest.h"
-
-#include "absl/memory/memory.h"
 #include "api/task_queue/default_task_queue_factory.h"
 #include "api/test/video/function_video_decoder_factory.h"
 #include "api/video_codecs/video_decoder.h"
@@ -29,15 +29,19 @@
 #include "system_wrappers/include/clock.h"
 #include "test/fake_decoder.h"
 #include "test/field_trial.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
 #include "test/video_decoder_proxy_factory.h"
 #include "video/call_stats.h"
-#include "video/video_receive_stream.h"
 
 namespace webrtc {
 namespace {
 
 using ::testing::_;
+using ::testing::ElementsAreArray;
 using ::testing::Invoke;
+using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
 constexpr int kDefaultTimeOutMs = 50;
 
@@ -107,14 +111,14 @@ class VideoReceiveStreamTest : public ::testing::Test {
     null_decoder.decoder_factory = &null_decoder_factory_;
     config_.decoders.push_back(null_decoder);
 
-    Clock* clock = Clock::GetRealTimeClock();
-    timing_ = new VCMTiming(clock);
+    clock_ = Clock::GetRealTimeClock();
+    timing_ = new VCMTiming(clock_);
 
     video_receive_stream_ =
-        absl::make_unique<webrtc::internal::VideoReceiveStream>(
+        std::make_unique<webrtc::internal::VideoReceiveStream>(
             task_queue_factory_.get(), &rtp_stream_receiver_controller_,
             kDefaultNumCpuCores, &packet_router_, config_.Copy(),
-            process_thread_.get(), &call_stats_, clock, timing_);
+            process_thread_.get(), &call_stats_, clock_, timing_);
   }
 
  protected:
@@ -131,6 +135,7 @@ class VideoReceiveStreamTest : public ::testing::Test {
   PacketRouter packet_router_;
   RtpStreamReceiverController rtp_stream_receiver_controller_;
   std::unique_ptr<webrtc::internal::VideoReceiveStream> video_receive_stream_;
+  Clock* clock_;
   VCMTiming* timing_;
 };
 
@@ -227,7 +232,7 @@ class VideoReceiveStreamTestWithFakeDecoder : public ::testing::Test {
  public:
   VideoReceiveStreamTestWithFakeDecoder()
       : fake_decoder_factory_(
-            []() { return absl::make_unique<test::FakeDecoder>(); }),
+            []() { return std::make_unique<test::FakeDecoder>(); }),
         process_thread_(ProcessThread::Create("TestThread")),
         task_queue_factory_(CreateDefaultTaskQueueFactory()),
         config_(&mock_transport_),
@@ -243,13 +248,13 @@ class VideoReceiveStreamTestWithFakeDecoder : public ::testing::Test {
     fake_decoder.video_format = SdpVideoFormat("VP8");
     fake_decoder.decoder_factory = &fake_decoder_factory_;
     config_.decoders.push_back(fake_decoder);
-    Clock* clock = Clock::GetRealTimeClock();
-    timing_ = new VCMTiming(clock);
+    clock_ = Clock::GetRealTimeClock();
+    timing_ = new VCMTiming(clock_);
 
     video_receive_stream_.reset(new webrtc::internal::VideoReceiveStream(
         task_queue_factory_.get(), &rtp_stream_receiver_controller_,
         kDefaultNumCpuCores, &packet_router_, config_.Copy(),
-        process_thread_.get(), &call_stats_, clock, timing_));
+        process_thread_.get(), &call_stats_, clock_, timing_));
   }
 
  protected:
@@ -263,12 +268,13 @@ class VideoReceiveStreamTestWithFakeDecoder : public ::testing::Test {
   PacketRouter packet_router_;
   RtpStreamReceiverController rtp_stream_receiver_controller_;
   std::unique_ptr<webrtc::internal::VideoReceiveStream> video_receive_stream_;
+  Clock* clock_;
   VCMTiming* timing_;
 };
 
 TEST_F(VideoReceiveStreamTestWithFakeDecoder, PassesNtpTime) {
   const int64_t kNtpTimestamp = 12345;
-  auto test_frame = absl::make_unique<FrameObjectFake>();
+  auto test_frame = std::make_unique<FrameObjectFake>();
   test_frame->SetPayloadType(99);
   test_frame->id.picture_id = 0;
   test_frame->SetNtpTime(kNtpTimestamp);
@@ -281,7 +287,7 @@ TEST_F(VideoReceiveStreamTestWithFakeDecoder, PassesNtpTime) {
 
 TEST_F(VideoReceiveStreamTestWithFakeDecoder, PassesRotation) {
   const webrtc::VideoRotation kRotation = webrtc::kVideoRotation_180;
-  auto test_frame = absl::make_unique<FrameObjectFake>();
+  auto test_frame = std::make_unique<FrameObjectFake>();
   test_frame->SetPayloadType(99);
   test_frame->id.picture_id = 0;
   test_frame->SetRotation(kRotation);
@@ -293,20 +299,96 @@ TEST_F(VideoReceiveStreamTestWithFakeDecoder, PassesRotation) {
   EXPECT_EQ(kRotation, fake_renderer_.rotation());
 }
 
-TEST_F(VideoReceiveStreamTestWithFakeDecoder, PassesColorSpace) {
-  auto test_frame = absl::make_unique<FrameObjectFake>();
+TEST_F(VideoReceiveStreamTestWithFakeDecoder, PassesPacketInfos) {
+  auto test_frame = std::make_unique<FrameObjectFake>();
   test_frame->SetPayloadType(99);
   test_frame->id.picture_id = 0;
-  webrtc::ColorSpace color_space =
-      CreateTestColorSpace(/*with_hdr_metadata=*/true);
-  test_frame->SetColorSpace(color_space);
+  RtpPacketInfos packet_infos = CreatePacketInfos(3);
+  test_frame->SetPacketInfos(packet_infos);
 
   video_receive_stream_->Start();
   video_receive_stream_->OnCompleteFrame(std::move(test_frame));
   EXPECT_TRUE(fake_renderer_.WaitForRenderedFrame(kDefaultTimeOutMs));
 
-  ASSERT_TRUE(fake_renderer_.color_space().has_value());
-  EXPECT_EQ(color_space, *fake_renderer_.color_space());
+  EXPECT_THAT(fake_renderer_.packet_infos(), ElementsAreArray(packet_infos));
+}
+
+TEST_F(VideoReceiveStreamTestWithFakeDecoder, RenderedFrameUpdatesGetSources) {
+  constexpr uint32_t kSsrc = 1111;
+  constexpr uint32_t kCsrc = 9001;
+  constexpr uint32_t kRtpTimestamp = 12345;
+
+  // Prepare one video frame with per-packet information.
+  auto test_frame = std::make_unique<FrameObjectFake>();
+  test_frame->SetPayloadType(99);
+  test_frame->id.picture_id = 0;
+  RtpPacketInfos packet_infos;
+  {
+    RtpPacketInfos::vector_type infos;
+
+    RtpPacketInfo info;
+    info.set_ssrc(kSsrc);
+    info.set_csrcs({kCsrc});
+    info.set_rtp_timestamp(kRtpTimestamp);
+
+    info.set_receive_time_ms(clock_->TimeInMilliseconds() - 5000);
+    infos.push_back(info);
+
+    info.set_receive_time_ms(clock_->TimeInMilliseconds() - 3000);
+    infos.push_back(info);
+
+    info.set_receive_time_ms(clock_->TimeInMilliseconds() - 2000);
+    infos.push_back(info);
+
+    info.set_receive_time_ms(clock_->TimeInMilliseconds() - 4000);
+    infos.push_back(info);
+
+    packet_infos = RtpPacketInfos(std::move(infos));
+  }
+  test_frame->SetPacketInfos(packet_infos);
+
+  // Start receive stream.
+  video_receive_stream_->Start();
+  EXPECT_THAT(video_receive_stream_->GetSources(), IsEmpty());
+
+  // Render one video frame.
+  int64_t timestamp_ms_min = clock_->TimeInMilliseconds();
+  video_receive_stream_->OnCompleteFrame(std::move(test_frame));
+  EXPECT_TRUE(fake_renderer_.WaitForRenderedFrame(kDefaultTimeOutMs));
+  int64_t timestamp_ms_max = clock_->TimeInMilliseconds();
+
+  // Verify that the per-packet information is passed to the renderer.
+  EXPECT_THAT(fake_renderer_.packet_infos(), ElementsAreArray(packet_infos));
+
+  // Verify that the per-packet information also updates |GetSources()|.
+  std::vector<RtpSource> sources = video_receive_stream_->GetSources();
+  ASSERT_THAT(sources, SizeIs(2));
+  {
+    auto it = std::find_if(sources.begin(), sources.end(),
+                           [](const RtpSource& source) {
+                             return source.source_type() == RtpSourceType::SSRC;
+                           });
+    ASSERT_NE(it, sources.end());
+
+    EXPECT_EQ(it->source_id(), kSsrc);
+    EXPECT_EQ(it->source_type(), RtpSourceType::SSRC);
+    EXPECT_EQ(it->rtp_timestamp(), kRtpTimestamp);
+    EXPECT_GE(it->timestamp_ms(), timestamp_ms_min);
+    EXPECT_LE(it->timestamp_ms(), timestamp_ms_max);
+  }
+  {
+    auto it = std::find_if(sources.begin(), sources.end(),
+                           [](const RtpSource& source) {
+                             return source.source_type() == RtpSourceType::CSRC;
+                           });
+    ASSERT_NE(it, sources.end());
+
+    EXPECT_EQ(it->source_id(), kCsrc);
+    EXPECT_EQ(it->source_type(), RtpSourceType::CSRC);
+    EXPECT_EQ(it->rtp_timestamp(), kRtpTimestamp);
+    EXPECT_GE(it->timestamp_ms(), timestamp_ms_min);
+    EXPECT_LE(it->timestamp_ms(), timestamp_ms_max);
+  }
 }
 
 }  // namespace webrtc

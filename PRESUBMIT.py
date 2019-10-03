@@ -175,11 +175,11 @@ def CheckNativeApiHeaderChanges(input_api, output_api):
       if path == 'api':
         # Special case: Subdirectories included.
         if dn == 'api' or dn.startswith('api/'):
-          files.append(f)
+          files.append(f.LocalPath())
       else:
         # Normal case: Subdirectories not included.
         if dn == path:
-          files.append(f)
+          files.append(f.LocalPath())
 
   if files:
     return [output_api.PresubmitNotifyResult(API_CHANGE_MSG, files)]
@@ -736,7 +736,6 @@ def RunPythonTests(input_api, output_api):
   test_directories = [
       input_api.PresubmitLocalPath(),
       Join('rtc_tools', 'py_event_log_analyzer'),
-      Join('rtc_tools'),
       Join('audio', 'test', 'unittests'),
   ] + [
       root for root, _, files in os.walk(Join('tools_webrtc'))
@@ -892,6 +891,8 @@ def CommonChecks(input_api, output_api):
   results.extend(CheckApiDepsFileIsUpToDate(input_api, output_api))
   results.extend(CheckAbslMemoryInclude(
       input_api, output_api, non_third_party_sources))
+  results.extend(CheckBannedAbslMakeUnique(
+      input_api, output_api, non_third_party_sources))
   return results
 
 
@@ -911,13 +912,14 @@ def CheckApiDepsFileIsUpToDate(input_api, output_api):
     deps_content = _ParseDeps(f.read())
 
   include_rules = deps_content.get('include_rules', [])
+  dirs_to_skip = set(['api', 'docs'])
 
   # Only check top level directories affected by the current CL.
   dirs_to_check = set()
   for f in input_api.AffectedFiles():
     path_tokens = [t for t in f.LocalPath().split(os.sep) if t]
     if len(path_tokens) > 1:
-      if (path_tokens[0] != 'api' and
+      if (path_tokens[0] not in dirs_to_skip and
           os.path.isdir(os.path.join(input_api.PresubmitLocalPath(),
                                      path_tokens[0]))):
         dirs_to_check.add(path_tokens[0])
@@ -948,6 +950,25 @@ def CheckApiDepsFileIsUpToDate(input_api, output_api):
 
   return results
 
+def CheckBannedAbslMakeUnique(input_api, output_api, source_file_filter):
+  file_filter = lambda f: (f.LocalPath().endswith(('.cc', '.h'))
+                           and source_file_filter(f))
+
+  files = []
+  for f in input_api.AffectedFiles(
+      include_deletes=False, file_filter=file_filter):
+    for _, line in f.ChangedContents():
+      if 'absl::make_unique' in line:
+        files.append(f)
+        break
+
+  if len(files):
+    return [output_api.PresubmitError(
+        'Please use std::make_unique instead of absl::make_unique.\n'
+        'Affected files:',
+        files)]
+  return []
+
 def CheckAbslMemoryInclude(input_api, output_api, source_file_filter):
   pattern = input_api.re.compile(
       r'^#include\s*"absl/memory/memory.h"', input_api.re.MULTILINE)
@@ -961,16 +982,15 @@ def CheckAbslMemoryInclude(input_api, output_api, source_file_filter):
     if pattern.search(contents):
       continue
     for _, line in f.ChangedContents():
-      if 'absl::make_unique' in line or 'absl::WrapUnique' in line:
+      if 'absl::WrapUnique' in line:
         files.append(f)
         break
 
   if len(files):
     return [output_api.PresubmitError(
-        'Please include "absl/memory/memory.h" header for'
-        ' absl::make_unique or absl::WrapUnique.\nThis header may or'
-        ' may not be included transitively depending on the C++ standard'
-        ' version.',
+        'Please include "absl/memory/memory.h" header for  absl::WrapUnique.\n'
+        'This header may or may not be included transitively depending on the '
+        'C++ standard version.',
         files)]
   return []
 
