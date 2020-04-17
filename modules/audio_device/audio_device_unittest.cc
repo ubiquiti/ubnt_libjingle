@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <list>
 #include <memory>
 #include <numeric>
 
@@ -22,6 +23,7 @@
 #include "api/task_queue/task_queue_factory.h"
 #include "modules/audio_device/audio_device_impl.h"
 #include "modules/audio_device/include/mock_audio_transport.h"
+#include "rtc_base/arraysize.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
@@ -807,6 +809,60 @@ TEST_P(MAYBE_AudioDeviceTest, StartStopRecording) {
   StopRecording();
 }
 
+// Tests Start/Stop playout for all available input devices to ensure that
+// the selected device can be created and used as intended.
+TEST_P(MAYBE_AudioDeviceTest, StartStopPlayoutWithRealDevice) {
+  SKIP_TEST_IF_NOT(requirements_satisfied());
+  int num_devices = audio_device()->PlayoutDevices();
+  if (NewWindowsAudioDeviceModuleIsUsed()) {
+    num_devices += 2;
+  }
+  EXPECT_GT(num_devices, 0);
+  // Verify that all available playout devices can be set and used.
+  for (int i = 0; i < num_devices; ++i) {
+    EXPECT_EQ(0, audio_device()->SetPlayoutDevice(i));
+    StartPlayout();
+    StopPlayout();
+  }
+#ifdef WEBRTC_WIN
+  AudioDeviceModule::WindowsDeviceType device_role[] = {
+      AudioDeviceModule::kDefaultDevice,
+      AudioDeviceModule::kDefaultCommunicationDevice};
+  for (size_t i = 0; i < arraysize(device_role); ++i) {
+    EXPECT_EQ(0, audio_device()->SetPlayoutDevice(device_role[i]));
+    StartPlayout();
+    StopPlayout();
+  }
+#endif
+}
+
+// Tests Start/Stop recording for all available input devices to ensure that
+// the selected device can be created and used as intended.
+TEST_P(MAYBE_AudioDeviceTest, StartStopRecordingWithRealDevice) {
+  SKIP_TEST_IF_NOT(requirements_satisfied());
+  int num_devices = audio_device()->RecordingDevices();
+  if (NewWindowsAudioDeviceModuleIsUsed()) {
+    num_devices += 2;
+  }
+  EXPECT_GT(num_devices, 0);
+  // Verify that all available recording devices can be set and used.
+  for (int i = 0; i < num_devices; ++i) {
+    EXPECT_EQ(0, audio_device()->SetRecordingDevice(i));
+    StartRecording();
+    StopRecording();
+  }
+#ifdef WEBRTC_WIN
+  AudioDeviceModule::WindowsDeviceType device_role[] = {
+      AudioDeviceModule::kDefaultDevice,
+      AudioDeviceModule::kDefaultCommunicationDevice};
+  for (size_t i = 0; i < arraysize(device_role); ++i) {
+    EXPECT_EQ(0, audio_device()->SetRecordingDevice(device_role[i]));
+    StartRecording();
+    StopRecording();
+  }
+#endif
+}
+
 // Tests Init/Stop/Init recording without any registered audio callback.
 // See https://bugs.chromium.org/p/webrtc/issues/detail?id=8041 for details
 // on why this test is useful.
@@ -1100,14 +1156,7 @@ TEST_P(MAYBE_AudioDeviceTest, RunPlayoutAndRecordingInFullDuplex) {
       std::max(kTestTimeOutInMilliseconds, 1000 * kFullDuplexTimeInSec)));
   StopRecording();
   StopPlayout();
-  // Avoid concurrent access to audio_stream.
   PreTearDown();
-  // This thresholds is set rather high to accommodate differences in hardware
-  // in several devices. The main idea is to capture cases where a very large
-  // latency is built up. See http://bugs.webrtc.org/7744 for examples on
-  // bots where relatively large average latencies can happen.
-  EXPECT_LE(audio_stream.average_size(), 25u);
-  PRINT("\n");
 }
 
 // Runs audio in full duplex until user hits Enter. Intended as a manual test

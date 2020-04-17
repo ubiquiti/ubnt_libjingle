@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/match.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "modules/utility/include/process_thread.h"
 #include "rtc_base/checks.h"
@@ -27,15 +28,20 @@ namespace webrtc {
 const int64_t PacedSender::kMaxQueueLengthMs = 2000;
 const float PacedSender::kDefaultPaceMultiplier = 2.5f;
 
-PacedSender::PacedSender(Clock* clock,
-                         PacketRouter* packet_router,
+PacedSender::PacedSender(Clock* clock, PacketRouter* packet_router,
                          RtcEventLog* event_log,
                          const WebRtcKeyValueConfig* field_trials,
                          ProcessThread* process_thread)
-    : pacing_controller_(clock,
+    : process_mode_(
+          (field_trials != nullptr &&
+           absl::StartsWith(field_trials->Lookup("WebRTC-Pacer-DynamicProcess"),
+                            "Enabled"))
+              ? PacingController::ProcessMode::kDynamic
+              : PacingController::ProcessMode::kPeriodic),
+      pacing_controller_(clock,
                          static_cast<PacingController::PacketSender*>(this),
-                         event_log,
-                         field_trials),
+                         event_log, field_trials, process_mode_),
+      clock_(clock),
       packet_router_(packet_router),
       process_thread_(process_thread) {
   if (process_thread_)
@@ -43,8 +49,9 @@ PacedSender::PacedSender(Clock* clock,
 }
 
 PacedSender::~PacedSender() {
-  if (process_thread_)
+  if (process_thread_) {
     process_thread_->DeRegisterModule(&module_proxy_);
+  }
 }
 
 void PacedSender::CreateProbeCluster(DataRate bitrate, int cluster_id) {
@@ -60,8 +67,9 @@ void PacedSender::Pause() {
 
   // Tell the process thread to call our TimeUntilNextProcess() method to get
   // a new (longer) estimate for when to call Process().
-  if (process_thread_)
+  if (process_thread_) {
     process_thread_->WakeUp(&module_proxy_);
+  }
 }
 
 void PacedSender::Resume() {
@@ -72,28 +80,44 @@ void PacedSender::Resume() {
 
   // Tell the process thread to call our TimeUntilNextProcess() method to
   // refresh the estimate for when to call Process().
-  if (process_thread_)
+  if (process_thread_) {
     process_thread_->WakeUp(&module_proxy_);
+  }
 }
 
 void PacedSender::SetCongestionWindow(DataSize congestion_window_size) {
-  rtc::CritScope cs(&critsect_);
-  pacing_controller_.SetCongestionWindow(congestion_window_size);
+  {
+    rtc::CritScope cs(&critsect_);
+    pacing_controller_.SetCongestionWindow(congestion_window_size);
+  }
+  MaybeWakupProcessThread();
 }
 
 void PacedSender::UpdateOutstandingData(DataSize outstanding_data) {
-  rtc::CritScope cs(&critsect_);
-  pacing_controller_.UpdateOutstandingData(outstanding_data);
+  {
+    rtc::CritScope cs(&critsect_);
+    pacing_controller_.UpdateOutstandingData(outstanding_data);
+  }
+  MaybeWakupProcessThread();
 }
 
 void PacedSender::SetPacingRates(DataRate pacing_rate, DataRate padding_rate) {
-  rtc::CritScope cs(&critsect_);
-  pacing_controller_.SetPacingRates(pacing_rate, padding_rate);
+  {
+    rtc::CritScope cs(&critsect_);
+    pacing_controller_.SetPacingRates(pacing_rate, padding_rate);
+  }
+  MaybeWakupProcessThread();
 }
 
-void PacedSender::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
-  rtc::CritScope cs(&critsect_);
-  pacing_controller_.EnqueuePacket(std::move(packet));
+void PacedSender::EnqueuePackets(
+    std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
+  {
+    rtc::CritScope cs(&critsect_);
+    for (auto& packet : packets) {
+      pacing_controller_.EnqueuePacket(std::move(packet));
+    }
+  }
+  MaybeWakupProcessThread();
 }
 
 void PacedSender::SetAccountForAudioPackets(bool account_for_audio) {
@@ -101,14 +125,19 @@ void PacedSender::SetAccountForAudioPackets(bool account_for_audio) {
   pacing_controller_.SetAccountForAudioPackets(account_for_audio);
 }
 
+void PacedSender::SetIncludeOverhead() {
+  rtc::CritScope cs(&critsect_);
+  pacing_controller_.SetIncludeOverhead();
+}
+
+void PacedSender::SetTransportOverhead(DataSize overhead_per_packet) {
+  rtc::CritScope cs(&critsect_);
+  pacing_controller_.SetTransportOverhead(overhead_per_packet);
+}
+
 TimeDelta PacedSender::ExpectedQueueTime() const {
   rtc::CritScope cs(&critsect_);
   return pacing_controller_.ExpectedQueueTime();
-}
-
-size_t PacedSender::QueueSizePackets() const {
-  rtc::CritScope cs(&critsect_);
-  return pacing_controller_.QueueSizePackets();
 }
 
 DataSize PacedSender::QueueSizeData() const {
@@ -129,22 +158,13 @@ TimeDelta PacedSender::OldestPacketWaitTime() const {
 int64_t PacedSender::TimeUntilNextProcess() {
   rtc::CritScope cs(&critsect_);
 
-  // When paused we wake up every 500 ms to send a padding packet to ensure
-  // we won't get stuck in the paused state due to no feedback being received.
-  TimeDelta elapsed_time = pacing_controller_.TimeElapsedSinceLastProcess();
-  if (pacing_controller_.IsPaused()) {
-    return std::max(PacingController::kPausedProcessInterval - elapsed_time,
-                    TimeDelta::Zero())
-        .ms();
+  Timestamp next_send_time = pacing_controller_.NextSendTime();
+  TimeDelta sleep_time =
+      std::max(TimeDelta::Zero(), next_send_time - clock_->CurrentTime());
+  if (process_mode_ == PacingController::ProcessMode::kDynamic) {
+    return std::max(sleep_time, PacingController::kMinSleepTime).ms();
   }
-
-  auto next_probe = pacing_controller_.TimeUntilNextProbe();
-  if (next_probe) {
-    return next_probe->ms();
-  }
-
-  const TimeDelta min_packet_limit = TimeDelta::ms(5);
-  return std::max(min_packet_limit - elapsed_time, TimeDelta::Zero()).ms();
+  return sleep_time.ms();
 }
 
 void PacedSender::Process() {
@@ -157,9 +177,21 @@ void PacedSender::ProcessThreadAttached(ProcessThread* process_thread) {
   RTC_DCHECK(!process_thread || process_thread == process_thread_);
 }
 
+void PacedSender::MaybeWakupProcessThread() {
+  // Tell the process thread to call our TimeUntilNextProcess() method to get
+  // a new time for when to call Process().
+  if (process_thread_ &&
+      process_mode_ == PacingController::ProcessMode::kDynamic) {
+    process_thread_->WakeUp(&module_proxy_);
+  }
+}
+
 void PacedSender::SetQueueTimeLimit(TimeDelta limit) {
-  rtc::CritScope cs(&critsect_);
-  pacing_controller_.SetQueueTimeLimit(limit);
+  {
+    rtc::CritScope cs(&critsect_);
+    pacing_controller_.SetQueueTimeLimit(limit);
+  }
+  MaybeWakupProcessThread();
 }
 
 void PacedSender::SendRtpPacket(std::unique_ptr<RtpPacketToSend> packet,

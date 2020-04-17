@@ -15,6 +15,7 @@
 
 #include <string>
 
+#include "absl/strings/match.h"
 #include "api/transport/field_trial_based_config.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -32,6 +33,9 @@ const char kVp8TrustedRateControllerFieldTrialName[] =
 const char kVp9TrustedRateControllerFieldTrialName[] =
     "WebRTC-LibvpxVp9TrustedRateController";
 
+const char kUseBaseHeavyVp8Tl3RateAllocationFieldTrialName[] =
+    "WebRTC-UseBaseHeavyVP8TL3RateAllocation";
+
 const char* kVideoHysteresisFieldTrialname =
     "WebRTC-SimulcastUpswitchHysteresisPercent";
 const char* kScreenshareHysteresisFieldTrialname =
@@ -39,7 +43,7 @@ const char* kScreenshareHysteresisFieldTrialname =
 
 bool IsEnabled(const WebRtcKeyValueConfig* const key_value_config,
                absl::string_view key) {
-  return key_value_config->Lookup(key).find("Enabled") == 0;
+  return absl::StartsWith(key_value_config->Lookup(key), "Enabled");
 }
 
 void ParseHysteresisFactor(const WebRtcKeyValueConfig* const key_value_config,
@@ -59,7 +63,9 @@ constexpr char CongestionWindowConfig::kKey[];
 
 std::unique_ptr<StructParametersParser> CongestionWindowConfig::Parser() {
   return StructParametersParser::Create("QueueSize", &queue_size_ms,  //
-                                        "MinBitrate", &min_bitrate_bps);
+                                        "MinBitrate", &min_bitrate_bps,
+                                        "InitWin", &initial_data_window,
+                                        "DropFrame", &drop_frame_only);
 }
 
 // static
@@ -74,19 +80,20 @@ constexpr char VideoRateControlConfig::kKey[];
 std::unique_ptr<StructParametersParser> VideoRateControlConfig::Parser() {
   // The empty comments ensures that each pair is on a separate line.
   return StructParametersParser::Create(
-      "pacing_factor", &pacing_factor,                    //
-      "alr_probing", &alr_probing,                        //
-      "vp8_qp_max", &vp8_qp_max,                          //
-      "vp8_min_pixels", &vp8_min_pixels,                  //
-      "trust_vp8", &trust_vp8,                            //
-      "trust_vp9", &trust_vp9,                            //
-      "video_hysteresis", &video_hysteresis,              //
-      "screenshare_hysteresis", &screenshare_hysteresis,  //
-      "probe_max_allocation", &probe_max_allocation,      //
-      "bitrate_adjuster", &bitrate_adjuster,              //
-      "adjuster_use_headroom", &adjuster_use_headroom,    //
-      "vp8_s0_boost", &vp8_s0_boost,                      //
-      "vp8_dynamic_rate", &vp8_dynamic_rate,              //
+      "pacing_factor", &pacing_factor,                        //
+      "alr_probing", &alr_probing,                            //
+      "vp8_qp_max", &vp8_qp_max,                              //
+      "vp8_min_pixels", &vp8_min_pixels,                      //
+      "trust_vp8", &trust_vp8,                                //
+      "trust_vp9", &trust_vp9,                                //
+      "video_hysteresis", &video_hysteresis,                  //
+      "screenshare_hysteresis", &screenshare_hysteresis,      //
+      "probe_max_allocation", &probe_max_allocation,          //
+      "bitrate_adjuster", &bitrate_adjuster,                  //
+      "adjuster_use_headroom", &adjuster_use_headroom,        //
+      "vp8_s0_boost", &vp8_s0_boost,                          //
+      "vp8_base_heavy_tl3_alloc", &vp8_base_heavy_tl3_alloc,  //
+      "vp8_dynamic_rate", &vp8_dynamic_rate,                  //
       "vp9_dynamic_rate", &vp9_dynamic_rate);
 }
 
@@ -98,6 +105,8 @@ RateControlSettings::RateControlSettings(
       IsEnabled(key_value_config, kVp8TrustedRateControllerFieldTrialName);
   video_config_.trust_vp9 =
       IsEnabled(key_value_config, kVp9TrustedRateControllerFieldTrialName);
+  video_config_.vp8_base_heavy_tl3_alloc = IsEnabled(
+      key_value_config, kUseBaseHeavyVp8Tl3RateAllocationFieldTrialName);
   ParseHysteresisFactor(key_value_config, kVideoHysteresisFieldTrialname,
                         &video_config_.video_hysteresis);
   ParseHysteresisFactor(key_value_config, kScreenshareHysteresisFieldTrialname,
@@ -135,10 +144,19 @@ bool RateControlSettings::UseCongestionWindowPushback() const {
          congestion_window_config_.min_bitrate_bps;
 }
 
+bool RateControlSettings::UseCongestionWindowDropFrameOnly() const {
+  return congestion_window_config_.drop_frame_only;
+}
+
 uint32_t RateControlSettings::CongestionWindowMinPushbackTargetBitrateBps()
     const {
   return congestion_window_config_.min_bitrate_bps.value_or(
       kDefaultMinPushbackTargetBitrateBps);
+}
+
+absl::optional<DataSize>
+RateControlSettings::CongestionWindowInitialDataWindow() const {
+  return congestion_window_config_.initial_data_window;
 }
 
 absl::optional<double> RateControlSettings::GetPacingFactor() const {
@@ -199,6 +217,10 @@ double RateControlSettings::GetSimulcastHysteresisFactor(
     return video_config_.screenshare_hysteresis;
   }
   return video_config_.video_hysteresis;
+}
+
+bool RateControlSettings::Vp8BaseHeavyTl3RateAllocation() const {
+  return video_config_.vp8_base_heavy_tl3_alloc;
 }
 
 bool RateControlSettings::TriggerProbeOnMaxAllocatedBitrateChange() const {

@@ -41,8 +41,6 @@ std::unique_ptr<AudioProcessing> CreateApm(test::FuzzDataHelper* fuzz_data,
   bool exp_agc = fuzz_data->ReadOrDefaultValue(true);
   bool exp_ns = fuzz_data->ReadOrDefaultValue(true);
   static_cast<void>(fuzz_data->ReadOrDefaultValue(true));
-  bool ef = fuzz_data->ReadOrDefaultValue(true);
-  bool raf = fuzz_data->ReadOrDefaultValue(true);
   static_cast<void>(fuzz_data->ReadOrDefaultValue(true));
   static_cast<void>(fuzz_data->ReadOrDefaultValue(true));
   bool red = fuzz_data->ReadOrDefaultValue(true);
@@ -108,9 +106,6 @@ std::unique_ptr<AudioProcessing> CreateApm(test::FuzzDataHelper* fuzz_data,
 
   config.Set<ExperimentalAgc>(new ExperimentalAgc(exp_agc));
   config.Set<ExperimentalNs>(new ExperimentalNs(exp_ns));
-  config.Set<ExtendedFilter>(new ExtendedFilter(ef));
-  config.Set<RefinedAdaptiveFilter>(new RefinedAdaptiveFilter(raf));
-  config.Set<DelayAgnostic>(new DelayAgnostic(true));
 
   std::unique_ptr<AudioProcessing> apm(
       AudioProcessingBuilder()
@@ -122,6 +117,8 @@ std::unique_ptr<AudioProcessing> CreateApm(test::FuzzDataHelper* fuzz_data,
 #endif
 
   webrtc::AudioProcessing::Config apm_config;
+  apm_config.pipeline.multi_channel_render = true;
+  apm_config.pipeline.multi_channel_capture = true;
   apm_config.echo_canceller.enabled = use_aec || use_aecm;
   apm_config.echo_canceller.mobile_mode = use_aecm;
   apm_config.residual_echo_detector.enabled = red;
@@ -142,10 +139,8 @@ std::unique_ptr<AudioProcessing> CreateApm(test::FuzzDataHelper* fuzz_data,
       use_agc2_adaptive_digital_saturation_protector;
   apm_config.noise_suppression.enabled = use_ns;
   apm_config.voice_detection.enabled = use_vad;
+  apm_config.level_estimation.enabled = use_le;
   apm->ApplyConfig(apm_config);
-
-  apm->level_estimator()->Enable(use_le);
-  apm->voice_detection()->Enable(use_vad);
 
   return apm;
 }

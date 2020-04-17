@@ -99,10 +99,11 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
                                                        &feedback_request);
         break;
       }
-      case kRtpExtensionPlayoutDelay:
-        PlayoutDelay playout;
+      case kRtpExtensionPlayoutDelay: {
+        PlayoutDelay playout = PlayoutDelay::Noop();
         packet.GetExtension<PlayoutDelayLimits>(&playout);
         break;
+      }
       case kRtpExtensionVideoContentType:
         VideoContentType content_type;
         packet.GetExtension<VideoContentTypeExtension>(&content_type);
@@ -145,11 +146,19 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
         packet.GetExtension<ColorSpaceExtension>(&color_space);
         break;
       }
+      case kRtpExtensionInbandComfortNoise: {
+        absl::optional<uint8_t> noise_level;
+        packet.GetExtension<InbandComfortNoiseExtension>(&noise_level);
+        break;
+      }
       case kRtpExtensionGenericFrameDescriptor02:
         // This extension requires state to read and so complicated that
         // deserves own fuzzer.
         break;
     }
   }
+
+  // Check that zero-ing mutable extensions wouldn't cause any problems.
+  packet.ZeroMutableExtensions();
 }
 }  // namespace webrtc

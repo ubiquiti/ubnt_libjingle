@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "api/rtc_event_log/rtc_event_log.h"
+#include "api/test/time_controller.h"
 #include "call/call.h"
 #include "modules/audio_device/include/test_audio_device.h"
 #include "modules/congestion_controller/goog_cc/test/goog_cc_printer.h"
@@ -28,7 +29,6 @@
 #include "test/scenario/column_printer.h"
 #include "test/scenario/network_node.h"
 #include "test/scenario/scenario_config.h"
-#include "test/time_controller/time_controller.h"
 
 namespace webrtc {
 
@@ -104,7 +104,7 @@ class CallClient : public EmulatedNetworkReceiverInterface {
   ColumnPrinter StatsPrinter();
   Call::Stats GetStats();
   DataRate send_bandwidth() {
-    return DataRate::bps(GetStats().send_bandwidth_bps);
+    return DataRate::BitsPerSec(GetStats().send_bandwidth_bps);
   }
   DataRate target_rate() const;
   DataRate stable_target_rate() const;
@@ -112,6 +112,11 @@ class CallClient : public EmulatedNetworkReceiverInterface {
 
   void OnPacketReceived(EmulatedIpPacket packet) override;
   std::unique_ptr<RtcEventLogOutput> GetLogWriter(std::string name);
+
+  // Exposed publicly so that tests can execute tasks such as querying stats
+  // for media streams in the expected runtime environment (essentially what
+  // CallClient does internally for GetStats()).
+  void SendTask(std::function<void()> task);
 
  private:
   friend class Scenario;
@@ -129,7 +134,8 @@ class CallClient : public EmulatedNetworkReceiverInterface {
   uint32_t GetNextAudioLocalSsrc();
   uint32_t GetNextRtxSsrc();
   void AddExtensions(std::vector<RtpExtension> extensions);
-  void SendTask(std::function<void()> task);
+  int16_t Bind(EmulatedEndpoint* endpoint);
+  void UnBind();
 
   TimeController* const time_controller_;
   Clock* clock_;
@@ -140,10 +146,8 @@ class CallClient : public EmulatedNetworkReceiverInterface {
   std::unique_ptr<Call> call_;
   std::unique_ptr<NetworkNodeTransport> transport_;
   std::unique_ptr<RtpHeaderParser> const header_parser_;
+  std::vector<std::pair<EmulatedEndpoint*, uint16_t>> endpoints_;
 
-  // Stores the configured overhead per known destination endpoint. This is used
-  // to subtract the overhead before processing.
-  std::map<rtc::IPAddress, DataSize> route_overhead_;
   int next_video_ssrc_index_ = 0;
   int next_video_local_ssrc_index_ = 0;
   int next_rtx_ssrc_index_ = 0;
@@ -152,6 +156,8 @@ class CallClient : public EmulatedNetworkReceiverInterface {
   std::map<uint32_t, MediaType> ssrc_media_types_;
   // Defined last so it's destroyed first.
   TaskQueueForTest task_queue_;
+
+  const FieldTrialBasedConfig field_trials_;
 };
 
 class CallClientPair {

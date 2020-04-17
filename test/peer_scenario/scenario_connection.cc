@@ -44,7 +44,6 @@ class ScenarioIceConnectionImpl : public ScenarioIceConnection,
       const std::string& mid,
       RtpTransportInternal* rtp_transport,
       rtc::scoped_refptr<DtlsTransport> dtls_transport,
-      MediaTransportInterface* media_transport,
       DataChannelTransportInterface* data_channel_transport) override;
 
   void OnRtpPacket(const RtpPacketReceived& packet) override;
@@ -86,7 +85,7 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
       signaling_thread_(rtc::Thread::Current()),
       network_thread_(manager_->network_thread()),
       certificate_(rtc::RTCCertificate::Create(
-          absl::WrapUnique(rtc::SSLIdentity::Generate("", ::rtc::KT_DEFAULT)))),
+          rtc::SSLIdentity::Create("", ::rtc::KT_DEFAULT))),
       transport_description_(
           /*transport_options*/ {},
           rtc::CreateRandomString(cricket::ICE_UFRAG_LENGTH),
@@ -109,7 +108,8 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
     port_allocator_->set_flags(port_allocator_->flags() | flags);
     port_allocator_->Initialize();
     RTC_CHECK(port_allocator_->SetConfiguration(/*stun_servers*/ {},
-                                                /*turn_servers*/ {}, 0, false));
+                                                /*turn_servers*/ {}, 0,
+                                                webrtc::NO_PRUNE));
     jsep_controller_->SetLocalCertificate(certificate_);
   });
 }
@@ -207,7 +207,6 @@ bool ScenarioIceConnectionImpl::OnTransportChanged(
     const std::string& mid,
     RtpTransportInternal* rtp_transport,
     rtc::scoped_refptr<DtlsTransport> dtls_transport,
-    MediaTransportInterface* media_transport,
     DataChannelTransportInterface* data_channel_transport) {
   RTC_DCHECK_RUN_ON(network_thread_);
   if (rtp_transport == nullptr) {

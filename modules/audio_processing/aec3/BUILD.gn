@@ -8,7 +8,7 @@
 
 import("../../../webrtc.gni")
 
-rtc_static_library("aec3") {
+rtc_library("aec3") {
   visibility = [ "*" ]
   configs += [ "..:apm_debug_dump" ]
   sources = [
@@ -22,6 +22,8 @@ rtc_static_library("aec3") {
     "aec3_fft.h",
     "aec_state.cc",
     "aec_state.h",
+    "alignment_mixer.cc",
+    "alignment_mixer.h",
     "api_call_jitter_metrics.cc",
     "api_call_jitter_metrics.h",
     "block_buffer.cc",
@@ -36,11 +38,15 @@ rtc_static_library("aec3") {
     "block_processor_metrics.h",
     "clockdrift_detector.cc",
     "clockdrift_detector.h",
+    "coarse_filter_update_gain.cc",
+    "coarse_filter_update_gain.h",
     "comfort_noise_generator.cc",
     "comfort_noise_generator.h",
     "decimator.cc",
     "decimator.h",
     "delay_estimate.h",
+    "dominant_nearend_detector.cc",
+    "dominant_nearend_detector.h",
     "downsampled_render_buffer.cc",
     "downsampled_render_buffer.h",
     "echo_audibility.cc",
@@ -68,14 +74,15 @@ rtc_static_library("aec3") {
     "frame_blocker.h",
     "fullband_erle_estimator.cc",
     "fullband_erle_estimator.h",
-    "main_filter_update_gain.cc",
-    "main_filter_update_gain.h",
     "matched_filter.cc",
     "matched_filter.h",
     "matched_filter_lag_aggregator.cc",
     "matched_filter_lag_aggregator.h",
     "moving_average.cc",
     "moving_average.h",
+    "nearend_detector.h",
+    "refined_filter_update_gain.cc",
+    "refined_filter_update_gain.h",
     "render_buffer.cc",
     "render_buffer.h",
     "render_delay_buffer.cc",
@@ -84,8 +91,6 @@ rtc_static_library("aec3") {
     "render_delay_controller.h",
     "render_delay_controller_metrics.cc",
     "render_delay_controller_metrics.h",
-    "render_reverb_model.cc",
-    "render_reverb_model.h",
     "render_signal_analyzer.cc",
     "render_signal_analyzer.h",
     "residual_echo_estimator.cc",
@@ -98,8 +103,6 @@ rtc_static_library("aec3") {
     "reverb_model.h",
     "reverb_model_estimator.cc",
     "reverb_model_estimator.h",
-    "shadow_filter_update_gain.cc",
-    "shadow_filter_update_gain.h",
     "signal_dependent_erle_estimator.cc",
     "signal_dependent_erle_estimator.h",
     "spectrum_buffer.cc",
@@ -108,6 +111,8 @@ rtc_static_library("aec3") {
     "stationarity_estimator.h",
     "subband_erle_estimator.cc",
     "subband_erle_estimator.h",
+    "subband_nearend_detector.cc",
+    "subband_nearend_detector.h",
     "subtractor.cc",
     "subtractor.h",
     "subtractor_output.cc",
@@ -138,6 +143,7 @@ rtc_static_library("aec3") {
     "../../../rtc_base:checks",
     "../../../rtc_base:rtc_base_approved",
     "../../../rtc_base:safe_minmax",
+    "../../../rtc_base/experiments:field_trial_parser",
     "../../../rtc_base/system:arch",
     "../../../system_wrappers:cpu_features_api",
     "../../../system_wrappers:field_trial",
@@ -149,7 +155,7 @@ rtc_static_library("aec3") {
 }
 
 if (rtc_include_tests) {
-  rtc_source_set("aec3_unittests") {
+  rtc_library("aec3_unittests") {
     testonly = true
 
     configs += [ "..:apm_debug_dump" ]
@@ -178,6 +184,7 @@ if (rtc_include_tests) {
       "../../../rtc_base:safe_minmax",
       "../../../rtc_base/system:arch",
       "../../../system_wrappers:cpu_features_api",
+      "../../../test:field_trial",
       "../../../test:test_support",
       "../utility:cascaded_biquad_filter",
       "//third_party/abseil-cpp/absl/types:optional",
@@ -191,12 +198,14 @@ if (rtc_include_tests) {
         "adaptive_fir_filter_unittest.cc",
         "aec3_fft_unittest.cc",
         "aec_state_unittest.cc",
+        "alignment_mixer_unittest.cc",
         "api_call_jitter_metrics_unittest.cc",
         "block_delay_buffer_unittest.cc",
         "block_framer_unittest.cc",
         "block_processor_metrics_unittest.cc",
         "block_processor_unittest.cc",
         "clockdrift_detector_unittest.cc",
+        "coarse_filter_update_gain_unittest.cc",
         "comfort_noise_generator_unittest.cc",
         "decimator_unittest.cc",
         "echo_canceller3_unittest.cc",
@@ -209,10 +218,10 @@ if (rtc_include_tests) {
         "fft_data_unittest.cc",
         "filter_analyzer_unittest.cc",
         "frame_blocker_unittest.cc",
-        "main_filter_update_gain_unittest.cc",
         "matched_filter_lag_aggregator_unittest.cc",
         "matched_filter_unittest.cc",
         "moving_average_unittest.cc",
+        "refined_filter_update_gain_unittest.cc",
         "render_buffer_unittest.cc",
         "render_delay_buffer_unittest.cc",
         "render_delay_controller_metrics_unittest.cc",
@@ -220,7 +229,6 @@ if (rtc_include_tests) {
         "render_signal_analyzer_unittest.cc",
         "residual_echo_estimator_unittest.cc",
         "reverb_model_estimator_unittest.cc",
-        "shadow_filter_update_gain_unittest.cc",
         "signal_dependent_erle_estimator_unittest.cc",
         "subtractor_unittest.cc",
         "suppression_filter_unittest.cc",

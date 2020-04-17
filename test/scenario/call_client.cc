@@ -65,6 +65,7 @@ Call* CreateCall(TimeController* time_controller,
   call_config.task_queue_factory = time_controller->GetTaskQueueFactory();
   call_config.network_controller_factory = network_controller_factory;
   call_config.audio_state = audio_state;
+  call_config.trials = config.field_trials;
   return Call::Create(call_config, time_controller->GetClock(),
                       time_controller->CreateProcessThread("CallModules"),
                       time_controller->CreateProcessThread("Pacer"));
@@ -207,6 +208,7 @@ CallClient::CallClient(
       task_queue_(time_controller->GetTaskQueueFactory()->CreateTaskQueue(
           "CallClient",
           TaskQueueFactory::Priority::NORMAL)) {
+  config.field_trials = &field_trials_;
   SendTask([this, config] {
     event_log_ = CreateEventLog(time_controller_->GetTaskQueueFactory(),
                                 log_writer_factory_.get());
@@ -261,12 +263,6 @@ DataRate CallClient::padding_rate() const {
 }
 
 void CallClient::OnPacketReceived(EmulatedIpPacket packet) {
-  // Removes added overhead before delivering packet to sender.
-  size_t size =
-      packet.data.size() - route_overhead_.at(packet.to.ipaddr()).bytes();
-  RTC_DCHECK_GE(size, 0);
-  packet.data.SetSize(size);
-
   MediaType media_type = MediaType::ANY;
   if (!RtpHeaderParser::IsRtcp(packet.cdata(), packet.data.size())) {
     auto ssrc = RtpHeaderParser::GetSsrc(packet.cdata(), packet.data.size());
@@ -319,8 +315,18 @@ void CallClient::AddExtensions(std::vector<RtpExtension> extensions) {
 }
 
 void CallClient::SendTask(std::function<void()> task) {
-  time_controller_->InvokeWithControlledYield(
-      [&] { task_queue_.SendTask(std::move(task)); });
+  task_queue_.SendTask(std::move(task), RTC_FROM_HERE);
+}
+
+int16_t CallClient::Bind(EmulatedEndpoint* endpoint) {
+  uint16_t port = endpoint->BindReceiver(0, this).value();
+  endpoints_.push_back({endpoint, port});
+  return port;
+}
+
+void CallClient::UnBind() {
+  for (auto ep_port : endpoints_)
+    ep_port.first->UnbindReceiver(ep_port.second);
 }
 
 CallClientPair::~CallClientPair() = default;

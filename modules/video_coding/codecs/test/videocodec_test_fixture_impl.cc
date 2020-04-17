@@ -62,8 +62,8 @@ const int kMaxQp = 56;
 
 void ConfigureSimulcast(VideoCodec* codec_settings) {
   const std::vector<webrtc::VideoStream> streams = cricket::GetSimulcastConfig(
-      codec_settings->numberOfSimulcastStreams, codec_settings->width,
-      codec_settings->height, kBitratePriority, kMaxQp,
+      /*min_layer=*/1, codec_settings->numberOfSimulcastStreams,
+      codec_settings->width, codec_settings->height, kBitratePriority, kMaxQp,
       /* is_screenshare = */ false, true);
 
   for (size_t i = 0; i < streams.size(); ++i) {
@@ -85,7 +85,7 @@ void ConfigureSvc(VideoCodec* codec_settings) {
 
   const std::vector<SpatialLayer> layers = GetSvcConfig(
       codec_settings->width, codec_settings->height, kMaxFramerateFps,
-      codec_settings->VP9()->numberOfSpatialLayers,
+      /*first_active_layer=*/0, codec_settings->VP9()->numberOfSpatialLayers,
       codec_settings->VP9()->numberOfTemporalLayers,
       /* is_screen_sharing = */ false);
   ASSERT_EQ(codec_settings->VP9()->numberOfSpatialLayers, layers.size())
@@ -447,7 +447,7 @@ void VideoCodecTestFixtureImpl::ProcessAllFrames(
   }
 
   // Wait until we know that the last frame has been sent for encode.
-  task_queue->SendTask([] {});
+  task_queue->SendTask([] {}, RTC_FROM_HERE);
 
   // Give the VideoProcessor pipeline some time to process the last frame,
   // and then release the codecs.
@@ -648,37 +648,42 @@ void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
 
   RTC_DCHECK(encoded_frame_writers_.empty());
   RTC_DCHECK(decoded_frame_writers_.empty());
-  const size_t num_simulcast_or_spatial_layers = std::max(
-      config_.NumberOfSimulcastStreams(), config_.NumberOfSpatialLayers());
-  const size_t num_temporal_layers = config_.NumberOfTemporalLayers();
-  for (size_t simulcast_svc_idx = 0;
-       simulcast_svc_idx < num_simulcast_or_spatial_layers;
-       ++simulcast_svc_idx) {
-    const std::string output_filename_base =
-        OutputPath() + FilenameWithParams(config_) + "_sl" +
-        std::to_string(simulcast_svc_idx);
 
-    if (config_.visualization_params.save_encoded_ivf) {
-      for (size_t temporal_idx = 0; temporal_idx < num_temporal_layers;
-           ++temporal_idx) {
-        const std::string output_file_path =
-            output_filename_base + "tl" + std::to_string(temporal_idx) + ".ivf";
-        FileWrapper ivf_file = FileWrapper::OpenWriteOnly(output_file_path);
+  if (config_.visualization_params.save_encoded_ivf ||
+      config_.visualization_params.save_decoded_y4m) {
+    const size_t num_simulcast_or_spatial_layers = std::max(
+        config_.NumberOfSimulcastStreams(), config_.NumberOfSpatialLayers());
+    const size_t num_temporal_layers = config_.NumberOfTemporalLayers();
+    for (size_t simulcast_svc_idx = 0;
+         simulcast_svc_idx < num_simulcast_or_spatial_layers;
+         ++simulcast_svc_idx) {
+      const std::string output_filename_base = JoinFilename(
+          config_.output_path, FilenameWithParams(config_) + "_sl" +
+                                   std::to_string(simulcast_svc_idx));
 
-        const VideoProcessor::LayerKey layer_key(simulcast_svc_idx,
-                                                 temporal_idx);
-        encoded_frame_writers_[layer_key] =
-            IvfFileWriter::Wrap(std::move(ivf_file), /*byte_limit=*/0);
+      if (config_.visualization_params.save_encoded_ivf) {
+        for (size_t temporal_idx = 0; temporal_idx < num_temporal_layers;
+             ++temporal_idx) {
+          const std::string output_file_path = output_filename_base + "tl" +
+                                               std::to_string(temporal_idx) +
+                                               ".ivf";
+          FileWrapper ivf_file = FileWrapper::OpenWriteOnly(output_file_path);
+
+          const VideoProcessor::LayerKey layer_key(simulcast_svc_idx,
+                                                   temporal_idx);
+          encoded_frame_writers_[layer_key] =
+              IvfFileWriter::Wrap(std::move(ivf_file), /*byte_limit=*/0);
+        }
       }
-    }
 
-    if (config_.visualization_params.save_decoded_y4m) {
-      FrameWriter* decoded_frame_writer = new Y4mFrameWriterImpl(
-          output_filename_base + ".y4m", config_.codec_settings.width,
-          config_.codec_settings.height, config_.codec_settings.maxFramerate);
-      EXPECT_TRUE(decoded_frame_writer->Init());
-      decoded_frame_writers_.push_back(
-          std::unique_ptr<FrameWriter>(decoded_frame_writer));
+      if (config_.visualization_params.save_decoded_y4m) {
+        FrameWriter* decoded_frame_writer = new Y4mFrameWriterImpl(
+            output_filename_base + ".y4m", config_.codec_settings.width,
+            config_.codec_settings.height, config_.codec_settings.maxFramerate);
+        EXPECT_TRUE(decoded_frame_writer->Init());
+        decoded_frame_writers_.push_back(
+            std::unique_ptr<FrameWriter>(decoded_frame_writer));
+      }
     }
   }
 
@@ -686,22 +691,26 @@ void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
 
   cpu_process_time_.reset(new CpuProcessTime(config_));
 
-  task_queue->SendTask([this]() {
-    CreateEncoderAndDecoder();
-    processor_ = std::make_unique<VideoProcessor>(
-        encoder_.get(), &decoders_, source_frame_reader_.get(), config_,
-        &stats_, &encoded_frame_writers_,
-        decoded_frame_writers_.empty() ? nullptr : &decoded_frame_writers_);
-  });
+  task_queue->SendTask(
+      [this]() {
+        CreateEncoderAndDecoder();
+        processor_ = std::make_unique<VideoProcessor>(
+            encoder_.get(), &decoders_, source_frame_reader_.get(), config_,
+            &stats_, &encoded_frame_writers_,
+            decoded_frame_writers_.empty() ? nullptr : &decoded_frame_writers_);
+      },
+      RTC_FROM_HERE);
 }
 
 void VideoCodecTestFixtureImpl::ReleaseAndCloseObjects(
     TaskQueueForTest* task_queue) {
-  task_queue->SendTask([this]() {
-    processor_.reset();
-    // The VideoProcessor must be destroyed before the codecs.
-    DestroyEncoderAndDecoder();
-  });
+  task_queue->SendTask(
+      [this]() {
+        processor_.reset();
+        // The VideoProcessor must be destroyed before the codecs.
+        DestroyEncoderAndDecoder();
+      },
+      RTC_FROM_HERE);
 
   source_frame_reader_->Close();
 
@@ -724,10 +733,12 @@ void VideoCodecTestFixtureImpl::PrintSettings(
   RTC_LOG(LS_INFO) << "==> Codec names";
   std::string encoder_name;
   std::string decoder_name;
-  task_queue->SendTask([this, &encoder_name, &decoder_name] {
-    encoder_name = encoder_->GetEncoderInfo().implementation_name;
-    decoder_name = decoders_.at(0)->ImplementationName();
-  });
+  task_queue->SendTask(
+      [this, &encoder_name, &decoder_name] {
+        encoder_name = encoder_->GetEncoderInfo().implementation_name;
+        decoder_name = decoders_.at(0)->ImplementationName();
+      },
+      RTC_FROM_HERE);
   RTC_LOG(LS_INFO) << "enc_impl_name: " << encoder_name;
   RTC_LOG(LS_INFO) << "dec_impl_name: " << decoder_name;
 }

@@ -100,6 +100,7 @@ PROXY_METHOD2(void,
               SetLocalDescription,
               SetSessionDescriptionObserver*,
               SessionDescriptionInterface*)
+PROXY_METHOD1(void, SetLocalDescription, SetSessionDescriptionObserver*)
 PROXY_METHOD2(void,
               SetRemoteDescription,
               SetSessionDescriptionObserver*,
@@ -113,6 +114,10 @@ PROXY_METHOD1(RTCError,
               SetConfiguration,
               const PeerConnectionInterface::RTCConfiguration&)
 PROXY_METHOD1(bool, AddIceCandidate, const IceCandidateInterface*)
+PROXY_METHOD2(void,
+              AddIceCandidate,
+              std::unique_ptr<IceCandidateInterface>,
+              std::function<void(RTCError)>)
 PROXY_METHOD1(bool, RemoveIceCandidates, const std::vector<cricket::Candidate>&)
 PROXY_METHOD1(RTCError, SetBitrate, const BitrateSettings&)
 PROXY_METHOD1(void, SetAudioPlayout, bool)
@@ -126,6 +131,7 @@ PROXY_METHOD0(IceConnectionState, ice_connection_state)
 PROXY_METHOD0(IceConnectionState, standardized_ice_connection_state)
 PROXY_METHOD0(PeerConnectionState, peer_connection_state)
 PROXY_METHOD0(IceGatheringState, ice_gathering_state)
+PROXY_METHOD0(absl::optional<bool>, can_trickle_ice_candidates)
 PROXY_METHOD2(bool,
               StartRtcEventLog,
               std::unique_ptr<RtcEventLogOutput>,

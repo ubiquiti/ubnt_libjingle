@@ -415,7 +415,7 @@ Call* Call::Create(const Call::Config& config,
       std::make_unique<RtpTransportControllerSend>(
           clock, config.event_log, config.network_state_predictor_factory,
           config.network_controller_factory, config.bitrate_config,
-          std::move(pacer_thread), config.task_queue_factory),
+          std::move(pacer_thread), config.task_queue_factory, config.trials),
       std::move(call_thread), config.task_queue_factory);
 }
 
@@ -465,6 +465,7 @@ Call::Call(Clock* clock,
       transport_send_ptr_(transport_send.get()),
       transport_send_(std::move(transport_send)) {
   RTC_DCHECK(config.event_log != nullptr);
+  RTC_DCHECK(config.trials != nullptr);
   worker_sequence_checker_.Detach();
 
   call_stats_->RegisterStatsObserver(&receive_side_cc_);
@@ -684,7 +685,8 @@ webrtc::AudioReceiveStream* Call::CreateAudioReceiveStream(
       CreateRtcLogStreamConfig(config)));
   AudioReceiveStream* receive_stream = new AudioReceiveStream(
       clock_, &audio_receiver_controller_, transport_send_ptr_->packet_router(),
-      module_process_thread_.get(), config, config_.audio_state, event_log_);
+      module_process_thread_.get(), config_.neteq_factory, config,
+      config_.audio_state, event_log_);
   {
     WriteLockScoped write_lock(*receive_crit_);
     receive_rtp_config_.emplace(config.rtp.remote_ssrc,
@@ -1042,8 +1044,15 @@ void Call::UpdateAggregateNetworkState() {
       ((have_video && video_network_state_ == kNetworkUp) ||
        (have_audio && audio_network_state_ == kNetworkUp));
 
-  RTC_LOG(LS_INFO) << "UpdateAggregateNetworkState: aggregate_state="
-                   << (aggregate_network_up ? "up" : "down");
+  if (aggregate_network_up != aggregate_network_up_) {
+    RTC_LOG(LS_INFO)
+        << "UpdateAggregateNetworkState: aggregate_state change to "
+        << (aggregate_network_up ? "up" : "down");
+  } else {
+    RTC_LOG(LS_VERBOSE)
+        << "UpdateAggregateNetworkState: aggregate_state remains at "
+        << (aggregate_network_up ? "up" : "down");
+  }
   aggregate_network_up_ = aggregate_network_up;
 
   transport_send_ptr_->OnNetworkAvailability(aggregate_network_up);
@@ -1342,8 +1351,8 @@ void Call::NotifyBweOfReceivedPacket(const RtpPacketReceived& packet,
   packet.GetHeader(&header);
 
   ReceivedPacket packet_msg;
-  packet_msg.size = DataSize::bytes(packet.payload_size());
-  packet_msg.receive_time = Timestamp::ms(packet.arrival_time_ms());
+  packet_msg.size = DataSize::Bytes(packet.payload_size());
+  packet_msg.receive_time = Timestamp::Millis(packet.arrival_time_ms());
   if (header.extension.hasAbsoluteSendTime) {
     packet_msg.send_time = header.extension.GetAbsoluteSendTimestamp();
   }

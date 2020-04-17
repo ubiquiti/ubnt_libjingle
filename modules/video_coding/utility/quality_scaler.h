@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "absl/types/optional.h"
+#include "api/video/video_adaptation_reason.h"
 #include "api/video_codecs/video_encoder.h"
 #include "rtc_base/experiments/quality_scaling_experiment.h"
 #include "rtc_base/numerics/moving_average.h"
@@ -28,18 +29,19 @@ namespace webrtc {
 
 // An interface for signaling requests to limit or increase the resolution or
 // framerate of the captured video stream.
+// TODO(hbos): Can we remove AdaptationObserverInterface in favor of
+// ResourceUsageListener? If we need to adapt that is because of resource usage.
+// A multi-stream and multi-resource aware solution needs to sparate the notion
+// of being resource constrained from the decision to downgrade a specific
+// stream.
 class AdaptationObserverInterface {
  public:
-  // Indicates if the adaptation is due to overuse of the CPU resources, or if
-  // the quality of the encoded frames have dropped too low.
-  enum AdaptReason : size_t { kQuality = 0, kCpu = 1 };
-  static const size_t kScaleReasonSize = 2;
   // Called to signal that we can handle larger or more frequent frames.
-  virtual void AdaptUp(AdaptReason reason) = 0;
+  virtual void AdaptUp(VideoAdaptationReason reason) = 0;
   // Called to signal that the source should reduce the resolution or framerate.
   // Returns false if a downgrade was requested but the request did not result
   // in a new limiting resolution or fps.
-  virtual bool AdaptDown(AdaptReason reason) = 0;
+  virtual bool AdaptDown(VideoAdaptationReason reason) = 0;
 
  protected:
   virtual ~AdaptationObserverInterface() {}
@@ -53,8 +55,7 @@ class QualityScaler {
   // Construct a QualityScaler with given |thresholds| and |observer|.
   // This starts the quality scaler periodically checking what the average QP
   // has been recently.
-  QualityScaler(rtc::TaskQueue* task_queue,
-                AdaptationObserverInterface* observer,
+  QualityScaler(AdaptationObserverInterface* observer,
                 VideoEncoder::QpThresholds thresholds);
   virtual ~QualityScaler();
   // Should be called each time a frame is dropped at encoding.
@@ -64,11 +65,11 @@ class QualityScaler {
   void ReportQp(int qp, int64_t time_sent_us);
 
   void SetQpThresholds(VideoEncoder::QpThresholds thresholds);
+  bool QpFastFilterLow() const;
 
   // The following members declared protected for testing purposes.
  protected:
-  QualityScaler(rtc::TaskQueue* task_queue,
-                AdaptationObserverInterface* observer,
+  QualityScaler(AdaptationObserverInterface* observer,
                 VideoEncoder::QpThresholds thresholds,
                 int64_t sampling_period_ms);
 

@@ -14,10 +14,10 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
+#include "api/ice_transport_factory.h"
 #include "api/transport/datagram_transport_interface.h"
 #include "api/transport/media/media_transport_interface.h"
 #include "p2p/base/ice_transport_internal.h"
-#include "p2p/base/no_op_dtls_transport.h"
 #include "p2p/base/port.h"
 #include "pc/datagram_rtp_transport.h"
 #include "pc/srtp_filter.h"
@@ -59,6 +59,13 @@ webrtc::RTCError VerifyCandidate(const cricket::Candidate& cand) {
     }
   }
 
+  // Disallow ICE-TCP with a private IP address.
+  if (cand.protocol() == cricket::TCP_PROTOCOL_NAME &&
+      cand.address().IsPrivateIP()) {
+    return webrtc::RTCError(webrtc::RTCErrorType::INVALID_PARAMETER,
+                            "candidate is TCP and has a private IP address");
+  }
+
   return webrtc::RTCError::OK();
 }
 
@@ -90,6 +97,7 @@ JsepTransportController::JsepTransportController(
   // The |transport_observer| is assumed to be non-null.
   RTC_DCHECK(config_.transport_observer);
   RTC_DCHECK(config_.rtcp_handler);
+  RTC_DCHECK(config_.ice_transport_factory);
 }
 
 JsepTransportController::~JsepTransportController() {
@@ -146,22 +154,12 @@ MediaTransportConfig JsepTransportController::GetMediaTransportConfig(
     return MediaTransportConfig();
   }
 
-  MediaTransportInterface* media_transport = nullptr;
-  if (config_.use_media_transport_for_media) {
-    media_transport = jsep_transport->media_transport();
-  }
-
   DatagramTransportInterface* datagram_transport = nullptr;
   if (config_.use_datagram_transport) {
     datagram_transport = jsep_transport->datagram_transport();
   }
 
-  // Media transport and datagram transports can not be used together.
-  RTC_DCHECK(!media_transport || !datagram_transport);
-
-  if (media_transport) {
-    return MediaTransportConfig(media_transport);
-  } else if (datagram_transport) {
+  if (datagram_transport) {
     return MediaTransportConfig(
         /*rtp_max_packet_size=*/datagram_transport->GetLargestDatagramSize());
   } else {
@@ -176,15 +174,6 @@ DataChannelTransportInterface* JsepTransportController::GetDataChannelTransport(
     return nullptr;
   }
   return jsep_transport->data_channel_transport();
-}
-
-MediaTransportState JsepTransportController::GetMediaTransportState(
-    const std::string& mid) const {
-  auto jsep_transport = GetJsepTransportForMid(mid);
-  if (!jsep_transport) {
-    return MediaTransportState::kPending;
-  }
-  return jsep_transport->media_transport_state();
 }
 
 cricket::DtlsTransportInternal* JsepTransportController::GetDtlsTransport(
@@ -444,26 +433,9 @@ void JsepTransportController::SetActiveResetSrtpParams(
 }
 
 void JsepTransportController::SetMediaTransportSettings(
-    bool use_media_transport_for_media,
-    bool use_media_transport_for_data_channels,
     bool use_datagram_transport,
     bool use_datagram_transport_for_data_channels,
     bool use_datagram_transport_for_data_channels_receive_only) {
-  RTC_DCHECK(use_media_transport_for_media ==
-                 config_.use_media_transport_for_media ||
-             jsep_transports_by_name_.empty())
-      << "You can only change media transport configuration before creating "
-         "the first transport.";
-
-  RTC_DCHECK(use_media_transport_for_data_channels ==
-                 config_.use_media_transport_for_data_channels ||
-             jsep_transports_by_name_.empty())
-      << "You can only change media transport configuration before creating "
-         "the first transport.";
-
-  config_.use_media_transport_for_media = use_media_transport_for_media;
-  config_.use_media_transport_for_data_channels =
-      use_media_transport_for_data_channels;
   config_.use_datagram_transport = use_datagram_transport;
   config_.use_datagram_transport_for_data_channels =
       use_datagram_transport_for_data_channels;
@@ -471,20 +443,33 @@ void JsepTransportController::SetMediaTransportSettings(
       use_datagram_transport_for_data_channels_receive_only;
 }
 
-std::unique_ptr<cricket::IceTransportInternal>
-JsepTransportController::CreateIceTransport(const std::string transport_name,
+void JsepTransportController::RollbackTransports() {
+  if (!network_thread_->IsCurrent()) {
+    network_thread_->Invoke<void>(RTC_FROM_HERE, [=] { RollbackTransports(); });
+    return;
+  }
+  RTC_DCHECK_RUN_ON(network_thread_);
+  for (auto&& mid : pending_mids_) {
+    RemoveTransportForMid(mid);
+  }
+  for (auto&& mid : pending_mids_) {
+    MaybeDestroyJsepTransport(mid);
+  }
+  pending_mids_.clear();
+}
+
+rtc::scoped_refptr<webrtc::IceTransportInterface>
+JsepTransportController::CreateIceTransport(const std::string& transport_name,
                                             bool rtcp) {
   int component = rtcp ? cricket::ICE_CANDIDATE_COMPONENT_RTCP
                        : cricket::ICE_CANDIDATE_COMPONENT_RTP;
 
-  if (config_.external_transport_factory) {
-    return config_.external_transport_factory->CreateIceTransport(
-        transport_name, component);
-  } else {
-    return std::make_unique<cricket::P2PTransportChannel>(
-        transport_name, component, port_allocator_, async_resolver_factory_,
-        config_.event_log);
-  }
+  IceTransportInit init;
+  init.set_port_allocator(port_allocator_);
+  init.set_async_resolver_factory(async_resolver_factory_);
+  init.set_event_log(config_.event_log);
+  return config_.ice_transport_factory->CreateIceTransport(
+      transport_name, component, std::move(init));
 }
 
 std::unique_ptr<cricket::DtlsTransportInternal>
@@ -499,16 +484,8 @@ JsepTransportController::CreateDtlsTransport(
   if (datagram_transport) {
     RTC_DCHECK(config_.use_datagram_transport ||
                config_.use_datagram_transport_for_data_channels);
-  } else if (config_.media_transport_factory &&
-             config_.use_media_transport_for_media &&
-             config_.use_media_transport_for_data_channels) {
-    // If media transport is used for both media and data channels,
-    // then we don't need to create DTLS.
-    // Otherwise, DTLS is still created.
-    dtls = std::make_unique<cricket::NoOpDtlsTransport>(ice,
-                                                        config_.crypto_options);
-  } else if (config_.external_transport_factory) {
-    dtls = config_.external_transport_factory->CreateDtlsTransport(
+  } else if (config_.dtls_transport_factory) {
+    dtls = config_.dtls_transport_factory->CreateDtlsTransport(
         ice, config_.crypto_options);
   } else {
     dtls = std::make_unique<cricket::DtlsTransport>(ice, config_.crypto_options,
@@ -628,7 +605,7 @@ RTCError JsepTransportController::ApplyDescription_n(
     bool local,
     SdpType type,
     const cricket::SessionDescription* description) {
-  RTC_DCHECK(network_thread_->IsCurrent());
+  RTC_DCHECK_RUN_ON(network_thread_);
   RTC_DCHECK(description);
 
   if (local) {
@@ -740,6 +717,9 @@ RTCError JsepTransportController::ApplyDescription_n(
                            "Failed to apply the description for " +
                                content_info.name + ": " + error.message());
     }
+  }
+  if (type == SdpType::kAnswer) {
+    pending_mids_.clear();
   }
   return RTCError::OK();
 }
@@ -897,17 +877,17 @@ bool JsepTransportController::SetTransportForMid(
   if (mid_to_transport_[mid] == jsep_transport) {
     return true;
   }
-
+  RTC_DCHECK_RUN_ON(network_thread_);
+  pending_mids_.push_back(mid);
   mid_to_transport_[mid] = jsep_transport;
   return config_.transport_observer->OnTransportChanged(
       mid, jsep_transport->rtp_transport(), jsep_transport->RtpDtlsTransport(),
-      jsep_transport->media_transport(),
       jsep_transport->data_channel_transport());
 }
 
 void JsepTransportController::RemoveTransportForMid(const std::string& mid) {
-  bool ret = config_.transport_observer->OnTransportChanged(
-      mid, nullptr, nullptr, nullptr, nullptr);
+  bool ret = config_.transport_observer->OnTransportChanged(mid, nullptr,
+                                                            nullptr, nullptr);
   // Calling OnTransportChanged with nullptr should always succeed, since it is
   // only expected to fail when adding media to a transport (not removing).
   RTC_DCHECK(ret);
@@ -1087,76 +1067,6 @@ cricket::JsepTransport* JsepTransportController::GetJsepTransportByName(
   return (it == jsep_transports_by_name_.end()) ? nullptr : it->second.get();
 }
 
-std::unique_ptr<webrtc::MediaTransportInterface>
-JsepTransportController::MaybeCreateMediaTransport(
-    const cricket::ContentInfo& content_info,
-    const cricket::SessionDescription& description,
-    bool local) {
-  if (config_.media_transport_factory == nullptr) {
-    return nullptr;
-  }
-
-  if (!config_.use_media_transport_for_media &&
-      !config_.use_media_transport_for_data_channels) {
-    return nullptr;
-  }
-
-  // Caller (offerer) media transport.
-  if (local) {
-    if (offer_media_transport_) {
-      RTC_LOG(LS_INFO) << "Offered media transport has now been activated.";
-      return std::move(offer_media_transport_);
-    } else {
-      RTC_LOG(LS_INFO)
-          << "Not returning media transport. Either SDES wasn't enabled, or "
-             "media transport didn't return an offer earlier.";
-      // Offer wasn't generated. Either because media transport didn't want it,
-      // or because SDES wasn't enabled.
-      return nullptr;
-    }
-  }
-
-  // Remote offer. If no x-mt lines, do not create media transport.
-  if (description.MediaTransportSettings().empty()) {
-    return nullptr;
-  }
-
-  // When bundle is enabled, two JsepTransports are created, and then
-  // the second transport is destroyed (right away).
-  // For media transport, we don't want to create the second
-  // media transport in the first place.
-  RTC_LOG(LS_INFO) << "Returning new, client media transport.";
-
-  RTC_DCHECK(!local)
-      << "If media transport is used, you must call "
-         "GenerateOrGetLastMediaTransportOffer before SetLocalDescription. You "
-         "also "
-         "must use kRtcpMuxPolicyRequire and kBundlePolicyMaxBundle with media "
-         "transport.";
-  MediaTransportSettings settings;
-  settings.is_caller = local;
-  if (config_.use_media_transport_for_media) {
-    settings.event_log = config_.event_log;
-  }
-
-  // Assume there is only one media transport (or if more, use the first one).
-  if (!local && !description.MediaTransportSettings().empty() &&
-      config_.media_transport_factory->GetTransportName() ==
-          description.MediaTransportSettings()[0].transport_name) {
-    settings.remote_transport_parameters =
-        description.MediaTransportSettings()[0].transport_setting;
-  }
-
-  auto media_transport_result =
-      config_.media_transport_factory->CreateMediaTransport(network_thread_,
-                                                            settings);
-
-  // TODO(sukhanov): Proper error handling.
-  RTC_CHECK(media_transport_result.ok());
-
-  return media_transport_result.MoveValue();
-}
-
 // TODO(sukhanov): Refactor to avoid code duplication for Media and Datagram
 // transports setup.
 std::unique_ptr<webrtc::DatagramTransportInterface>
@@ -1217,8 +1127,19 @@ JsepTransportController::MaybeCreateDatagramTransport(
       config_.media_transport_factory->CreateDatagramTransport(network_thread_,
                                                                settings);
 
-  // TODO(sukhanov): Proper error handling.
-  RTC_CHECK(datagram_transport_result.ok());
+  if (!datagram_transport_result.ok()) {
+    // Datagram transport negotiation will fail and we'll fall back to RTP.
+    return nullptr;
+  }
+
+  if (!datagram_transport_result.value()
+           ->SetRemoteTransportParameters(
+               transport_description->opaque_parameters->parameters)
+           .ok()) {
+    // Datagram transport negotiation failed (parameters are incompatible).
+    // Fall back to RTP.
+    return nullptr;
+  }
 
   return datagram_transport_result.MoveValue();
 }
@@ -1240,24 +1161,18 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
                     "SDES and DTLS-SRTP cannot be enabled at the same time.");
   }
 
-  std::unique_ptr<cricket::IceTransportInternal> ice =
+  rtc::scoped_refptr<webrtc::IceTransportInterface> ice =
       CreateIceTransport(content_info.name, /*rtcp=*/false);
-
-  std::unique_ptr<MediaTransportInterface> media_transport =
-      MaybeCreateMediaTransport(content_info, description, local);
-  if (media_transport) {
-    media_transport_created_once_ = true;
-    media_transport->Connect(ice.get());
-  }
+  RTC_DCHECK(ice);
 
   std::unique_ptr<DatagramTransportInterface> datagram_transport =
       MaybeCreateDatagramTransport(content_info, description, local);
   if (datagram_transport) {
-    datagram_transport->Connect(ice.get());
+    datagram_transport->Connect(ice->internal());
   }
 
   std::unique_ptr<cricket::DtlsTransportInternal> rtp_dtls_transport =
-      CreateDtlsTransport(content_info, ice.get(), nullptr);
+      CreateDtlsTransport(content_info, ice->internal(), nullptr);
 
   std::unique_ptr<cricket::DtlsTransportInternal> rtcp_dtls_transport;
   std::unique_ptr<RtpTransport> unencrypted_rtp_transport;
@@ -1265,15 +1180,15 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
   std::unique_ptr<DtlsSrtpTransport> dtls_srtp_transport;
   std::unique_ptr<RtpTransportInternal> datagram_rtp_transport;
 
-  std::unique_ptr<cricket::IceTransportInternal> rtcp_ice;
+  rtc::scoped_refptr<webrtc::IceTransportInterface> rtcp_ice;
   if (config_.rtcp_mux_policy !=
           PeerConnectionInterface::kRtcpMuxPolicyRequire &&
       content_info.type == cricket::MediaProtocolType::kRtp) {
-    RTC_DCHECK(media_transport == nullptr);
     RTC_DCHECK(datagram_transport == nullptr);
     rtcp_ice = CreateIceTransport(content_info.name, /*rtcp=*/true);
-    rtcp_dtls_transport = CreateDtlsTransport(content_info, rtcp_ice.get(),
-                                              /*datagram_transport=*/nullptr);
+    rtcp_dtls_transport =
+        CreateDtlsTransport(content_info, rtcp_ice->internal(),
+                            /*datagram_transport=*/nullptr);
   }
 
   // Only create a datagram RTP transport if the datagram transport should be
@@ -1290,8 +1205,8 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
                         "transport is used.";
     RTC_DCHECK(!rtcp_dtls_transport);
     datagram_rtp_transport = std::make_unique<DatagramRtpTransport>(
-        content_info.media_description()->rtp_header_extensions(), ice.get(),
-        datagram_transport.get());
+        content_info.media_description()->rtp_header_extensions(),
+        ice->internal(), datagram_transport.get());
   }
 
   if (config_.disable_encryption) {
@@ -1318,8 +1233,6 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
   DataChannelTransportInterface* data_channel_transport = nullptr;
   if (config_.use_datagram_transport_for_data_channels) {
     data_channel_transport = datagram_transport.get();
-  } else if (config_.use_media_transport_for_data_channels) {
-    data_channel_transport = media_transport.get();
   }
 
   std::unique_ptr<cricket::JsepTransport> jsep_transport =
@@ -1328,16 +1241,14 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
           std::move(unencrypted_rtp_transport), std::move(sdes_transport),
           std::move(dtls_srtp_transport), std::move(datagram_rtp_transport),
           std::move(rtp_dtls_transport), std::move(rtcp_dtls_transport),
-          std::move(sctp_transport), std::move(media_transport),
-          std::move(datagram_transport), data_channel_transport);
+          std::move(sctp_transport), std::move(datagram_transport),
+          data_channel_transport);
 
   jsep_transport->rtp_transport()->SignalRtcpPacketReceived.connect(
       this, &JsepTransportController::OnRtcpPacketReceived_n);
 
   jsep_transport->SignalRtcpMuxActive.connect(
       this, &JsepTransportController::UpdateAggregateStates_n);
-  jsep_transport->SignalMediaTransportStateChanged.connect(
-      this, &JsepTransportController::OnMediaTransportStateChanged_n);
   jsep_transport->SignalDataChannelTransportNegotiated.connect(
       this, &JsepTransportController::OnDataChannelTransportNegotiated_n);
   SetTransportForMid(content_info.name, jsep_transport.get());
@@ -1370,8 +1281,8 @@ void JsepTransportController::DestroyAllJsepTransports_n() {
   RTC_DCHECK(network_thread_->IsCurrent());
 
   for (const auto& jsep_transport : jsep_transports_by_name_) {
-    config_.transport_observer->OnTransportChanged(
-        jsep_transport.first, nullptr, nullptr, nullptr, nullptr);
+    config_.transport_observer->OnTransportChanged(jsep_transport.first,
+                                                   nullptr, nullptr, nullptr);
   }
 
   jsep_transports_by_name_.clear();
@@ -1542,18 +1453,14 @@ void JsepTransportController::OnTransportStateChanged_n(
   UpdateAggregateStates_n();
 }
 
-void JsepTransportController::OnMediaTransportStateChanged_n() {
-  UpdateAggregateStates_n();
-}
-
 void JsepTransportController::OnDataChannelTransportNegotiated_n(
     cricket::JsepTransport* transport,
     DataChannelTransportInterface* data_channel_transport) {
-  for (auto it : mid_to_transport_) {
+  for (const auto& it : mid_to_transport_) {
     if (it.second == transport) {
       config_.transport_observer->OnTransportChanged(
           it.first, transport->rtp_transport(), transport->RtpDtlsTransport(),
-          transport->media_transport(), data_channel_transport);
+          data_channel_transport);
     }
   }
 }
@@ -1570,10 +1477,6 @@ void JsepTransportController::UpdateAggregateStates_n() {
       PeerConnectionInterface::PeerConnectionState::kNew;
   cricket::IceGatheringState new_gathering_state = cricket::kIceGatheringNew;
   bool any_failed = false;
-
-  // TODO(http://bugs.webrtc.org/9719) If(when) media_transport disables
-  // dtls_transports entirely, the below line will have to be changed to account
-  // for the fact that dtls transports might be absent.
   bool all_connected = !dtls_transports.empty();
   bool all_completed = !dtls_transports.empty();
   bool any_gathering = false;
@@ -1601,35 +1504,6 @@ void JsepTransportController::UpdateAggregateStates_n() {
 
     dtls_state_counts[dtls->dtls_state()]++;
     ice_state_counts[dtls->ice_transport()->GetIceTransportState()]++;
-  }
-
-  // Don't indicate that the call failed or isn't connected due to media
-  // transport state unless the media transport is used for media.  If it's only
-  // used for data channels, it will signal those separately.
-  if (config_.use_media_transport_for_media || config_.use_datagram_transport) {
-    for (auto it = jsep_transports_by_name_.begin();
-         it != jsep_transports_by_name_.end(); ++it) {
-      auto jsep_transport = it->second.get();
-      if (!jsep_transport->media_transport()) {
-        continue;
-      }
-
-      // There is no 'kIceConnectionDisconnected', so we only need to handle
-      // connected and completed.
-      // We treat kClosed as failed, because if it happens before shutting down
-      // media transports it means that there was a failure.
-      // MediaTransportInterface allows to flip back and forth between kWritable
-      // and kPending, but there does not exist an implementation that does
-      // that, and the contract of jsep transport controller doesn't quite
-      // expect that. When this happens, we would go from connected to
-      // connecting state, but this may change in future.
-      any_failed |= jsep_transport->media_transport_state() ==
-                    webrtc::MediaTransportState::kClosed;
-      all_completed &= jsep_transport->media_transport_state() ==
-                       webrtc::MediaTransportState::kWritable;
-      all_connected &= jsep_transport->media_transport_state() ==
-                       webrtc::MediaTransportState::kWritable;
-    }
   }
 
   if (any_failed) {
@@ -1790,67 +1664,6 @@ void JsepTransportController::OnRtcpPacketReceived_n(
 void JsepTransportController::OnDtlsHandshakeError(
     rtc::SSLHandshakeError error) {
   SignalDtlsHandshakeError(error);
-}
-
-absl::optional<cricket::SessionDescription::MediaTransportSetting>
-JsepTransportController::GenerateOrGetLastMediaTransportOffer() {
-  if (media_transport_created_once_) {
-    RTC_LOG(LS_INFO) << "Not regenerating media transport for the new offer in "
-                        "existing session.";
-    return media_transport_offer_settings_;
-  }
-
-  RTC_LOG(LS_INFO) << "Generating media transport offer!";
-
-  absl::optional<std::string> transport_parameters;
-
-  // Check that media transport is supposed to be used.
-  // Note that ICE is not available when media transport is created. It will
-  // only be available in 'Connect'. This may be a potential server config, if
-  // we decide to use this peer connection as a caller, not as a callee.
-  // TODO(sukhanov): Avoid code duplication with CreateMedia/MediaTransport.
-  if (config_.use_media_transport_for_media ||
-      config_.use_media_transport_for_data_channels) {
-    RTC_DCHECK(config_.media_transport_factory != nullptr);
-    RTC_DCHECK(!config_.use_datagram_transport);
-    webrtc::MediaTransportSettings settings;
-    settings.is_caller = true;
-    settings.pre_shared_key = rtc::CreateRandomString(32);
-    if (config_.use_media_transport_for_media) {
-      settings.event_log = config_.event_log;
-    }
-    auto media_transport_or_error =
-        config_.media_transport_factory->CreateMediaTransport(network_thread_,
-                                                              settings);
-
-    if (media_transport_or_error.ok()) {
-      offer_media_transport_ = std::move(media_transport_or_error.value());
-      transport_parameters =
-          offer_media_transport_->GetTransportParametersOffer();
-    } else {
-      RTC_LOG(LS_INFO) << "Unable to create media transport, error="
-                       << media_transport_or_error.error().message();
-    }
-  }
-
-  if (!offer_media_transport_) {
-    RTC_LOG(LS_INFO) << "Media and data transports do not exist";
-    return absl::nullopt;
-  }
-
-  if (!transport_parameters) {
-    RTC_LOG(LS_INFO) << "Media transport didn't generate the offer";
-    // Media transport didn't generate the offer, and is not supposed to be
-    // used. Destroy the temporary media transport.
-    offer_media_transport_ = nullptr;
-    return absl::nullopt;
-  }
-
-  cricket::SessionDescription::MediaTransportSetting setting;
-  setting.transport_name = config_.media_transport_factory->GetTransportName();
-  setting.transport_setting = *transport_parameters;
-  media_transport_offer_settings_ = setting;
-  return setting;
 }
 
 absl::optional<cricket::OpaqueTransportParameters>

@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "api/array_view.h"
-#include "common_video/generic_frame_descriptor/generic_frame_info.h"
+#include "api/transport/rtp/dependency_descriptor.h"
 #include "rtc_base/bit_buffer.h"
 
 namespace webrtc {
@@ -50,6 +50,7 @@ class RtpDependencyDescriptorWriter {
   int StructureSizeBits() const;
   TemplateMatch CalculateMatch(TemplateIterator frame_template) const;
   void FindBestTemplate();
+  bool ShouldWriteActiveDecodeTargetsBitmask() const;
   bool HasExtendedFields() const;
   uint64_t TemplateId() const;
 

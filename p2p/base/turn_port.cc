@@ -16,9 +16,11 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/strings/match.h"
 #include "absl/types/optional.h"
+#include "api/transport/stun.h"
 #include "p2p/base/connection.h"
-#include "p2p/base/stun.h"
+#include "p2p/base/p2p_constants.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
@@ -540,11 +542,18 @@ Connection* TurnPort::CreateConnection(const Candidate& remote_candidate,
                                        CandidateOrigin origin) {
   // TURN-UDP can only connect to UDP candidates.
   if (!SupportsProtocol(remote_candidate.protocol())) {
-    return NULL;
+    return nullptr;
   }
 
   if (state_ == STATE_DISCONNECTED || state_ == STATE_RECEIVEONLY) {
-    return NULL;
+    return nullptr;
+  }
+
+  // If the remote endpoint signaled us an mDNS candidate, we do not form a pair
+  // with the relay candidate to avoid IP leakage in the CreatePermission
+  // request.
+  if (absl::EndsWith(remote_candidate.address().hostname(), LOCAL_TLD)) {
+    return nullptr;
   }
 
   // A TURN port will have two candiates, STUN and TURN. STUN may not
@@ -568,7 +577,7 @@ Connection* TurnPort::CreateConnection(const Candidate& remote_candidate,
       return conn;
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 bool TurnPort::FailAndPruneConnection(const rtc::SocketAddress& address) {
@@ -876,7 +885,8 @@ void TurnPort::OnAllocateError(int error_code, const std::string& reason) {
   thread()->Post(RTC_FROM_HERE, this, MSG_ALLOCATE_ERROR);
   SignalCandidateError(
       this,
-      IceCandidateErrorEvent(GetLocalAddress().ToSensitiveString(),
+      IceCandidateErrorEvent(GetLocalAddress().HostAsSensitiveURIString(),
+                             GetLocalAddress().port(),
                              ReconstructedServerUrl(true /* use_hostname */),
                              error_code, reason));
 }
@@ -1214,8 +1224,9 @@ bool TurnPort::CreateOrRefreshEntry(const rtc::SocketAddress& addr,
 
     if (webrtc::field_trial::IsEnabled("WebRTC-TurnAddMultiMapping")) {
       if (entry->get_remote_ufrag() != remote_ufrag) {
-        RTC_LOG(LS_INFO) << ToString() << ": remote ufrag updated."
-                         << " Sending new permission request";
+        RTC_LOG(LS_INFO) << ToString()
+                         << ": remote ufrag updated."
+                            " Sending new permission request";
         entry->set_remote_ufrag(remote_ufrag);
         entry->SendCreatePermissionRequest(0);
       }

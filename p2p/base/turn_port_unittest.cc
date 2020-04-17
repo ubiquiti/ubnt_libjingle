@@ -166,7 +166,7 @@ class TurnPortTest : public ::testing::Test,
     // Some code uses "last received time == 0" to represent "nothing received
     // so far", so we need to start the fake clock at a nonzero time...
     // TODO(deadbeef): Fix this.
-    fake_clock_.AdvanceTime(webrtc::TimeDelta::seconds(1));
+    fake_clock_.AdvanceTime(webrtc::TimeDelta::Seconds(1));
   }
 
   virtual void OnMessage(rtc::Message* msg) {
@@ -931,9 +931,9 @@ TEST_F(TurnPortTest,
   EXPECT_EQ_SIMULATED_WAIT(error_event_.error_code, STUN_ERROR_GLOBAL_FAILURE,
                            kSimulatedRtt, fake_clock_);
   ASSERT_NE(error_event_.error_text.find("."), std::string::npos);
-  ASSERT_NE(
-      error_event_.host_candidate.find(kLocalAddr2.HostAsSensitiveURIString()),
-      std::string::npos);
+  ASSERT_NE(error_event_.address.find(kLocalAddr2.HostAsSensitiveURIString()),
+            std::string::npos);
+  ASSERT_NE(error_event_.port, 0);
   std::string server_url =
       "turn:" + kTurnTcpIntAddr.ToString() + "?transport=tcp";
   ASSERT_EQ(error_event_.url, server_url);

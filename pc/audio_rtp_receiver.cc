@@ -76,8 +76,8 @@ bool AudioRtpReceiver::SetOutputVolume(double volume) {
   RTC_DCHECK(media_channel_);
   RTC_DCHECK(!stopped_);
   return worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
-    // TODO(bugs.webrtc.org/8694): Stop using 0 to mean unsignalled SSRC value.
-    return media_channel_->SetOutputVolume(ssrc_.value_or(0), volume);
+    return ssrc_ ? media_channel_->SetOutputVolume(*ssrc_, volume)
+                 : media_channel_->SetDefaultOutputVolume(volume);
   });
 }
 
@@ -112,19 +112,8 @@ RtpParameters AudioRtpReceiver::GetParameters() const {
     return RtpParameters();
   }
   return worker_thread_->Invoke<RtpParameters>(RTC_FROM_HERE, [&] {
-    // TODO(bugs.webrtc.org/8694): Stop using 0 to mean unsignalled SSRC value.
-    return media_channel_->GetRtpReceiveParameters(ssrc_.value_or(0));
-  });
-}
-
-bool AudioRtpReceiver::SetParameters(const RtpParameters& parameters) {
-  TRACE_EVENT0("webrtc", "AudioRtpReceiver::SetParameters");
-  if (!media_channel_ || stopped_) {
-    return false;
-  }
-  return worker_thread_->Invoke<bool>(RTC_FROM_HERE, [&] {
-    return media_channel_->SetRtpReceiveParameters(ssrc_.value_or(0),
-                                                   parameters);
+    return ssrc_ ? media_channel_->GetRtpReceiveParameters(*ssrc_)
+                 : media_channel_->GetDefaultRtpReceiveParameters();
   });
 }
 
@@ -164,12 +153,12 @@ void AudioRtpReceiver::RestartMediaChannel(absl::optional<uint32_t> ssrc) {
   }
 
   if (!stopped_) {
-    source_->Stop(media_channel_, ssrc_.value_or(0));
+    source_->Stop(media_channel_, ssrc_);
     delay_->OnStop();
   }
   ssrc_ = ssrc;
   stopped_ = false;
-  source_->Start(media_channel_, ssrc.value_or(0));
+  source_->Start(media_channel_, ssrc);
   delay_->OnStart(media_channel_, ssrc.value_or(0));
   Reconfigure();
 }
@@ -236,6 +225,19 @@ std::vector<RtpSource> AudioRtpReceiver::GetSources() const {
       RTC_FROM_HERE, [&] { return media_channel_->GetSources(*ssrc_); });
 }
 
+void AudioRtpReceiver::SetDepacketizerToDecoderFrameTransformer(
+    rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer) {
+  worker_thread_->Invoke<void>(
+      RTC_FROM_HERE, [this, frame_transformer = std::move(frame_transformer)] {
+        RTC_DCHECK_RUN_ON(worker_thread_);
+        frame_transformer_ = frame_transformer;
+        if (media_channel_ && ssrc_.has_value() && !stopped_) {
+          media_channel_->SetDepacketizerToDecoderFrameTransformer(
+              *ssrc_, frame_transformer);
+        }
+      });
+}
+
 void AudioRtpReceiver::Reconfigure() {
   if (!media_channel_ || stopped_) {
     RTC_LOG(LS_ERROR)
@@ -248,6 +250,16 @@ void AudioRtpReceiver::Reconfigure() {
   // Reattach the frame decryptor if we were reconfigured.
   MaybeAttachFrameDecryptorToMediaChannel(
       ssrc_, worker_thread_, frame_decryptor_, media_channel_, stopped_);
+
+  if (media_channel_ && ssrc_.has_value() && !stopped_) {
+    worker_thread_->Invoke<void>(RTC_FROM_HERE, [this] {
+      RTC_DCHECK_RUN_ON(worker_thread_);
+      if (!frame_transformer_)
+        return;
+      media_channel_->SetDepacketizerToDecoderFrameTransformer(
+          *ssrc_, frame_transformer_);
+    });
+  }
 }
 
 void AudioRtpReceiver::SetObserver(RtpReceiverObserverInterface* observer) {

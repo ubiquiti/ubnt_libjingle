@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
+#include <utility>
 
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "rtc_base/checks.h"
@@ -110,17 +112,17 @@ void RemoteEstimatorProxy::IncomingPacket(int64_t arrival_time_ms,
 
   if (network_state_estimator_ && header.extension.hasAbsoluteSendTime) {
     PacketResult packet_result;
-    packet_result.receive_time = Timestamp::ms(arrival_time_ms);
+    packet_result.receive_time = Timestamp::Millis(arrival_time_ms);
     // Ignore reordering of packets and assume they have approximately the same
     // send time.
     abs_send_timestamp_ += std::max(
         header.extension.GetAbsoluteSendTimeDelta(previous_abs_send_time_),
-        TimeDelta::ms(0));
+        TimeDelta::Millis(0));
     previous_abs_send_time_ = header.extension.absoluteSendTime;
     packet_result.sent_packet.send_time = abs_send_timestamp_;
     // TODO(webrtc:10742): Take IP header and transport overhead into account.
     packet_result.sent_packet.size =
-        DataSize::bytes(header.headerLength + payload_size);
+        DataSize::Bytes(header.headerLength + payload_size);
     packet_result.sent_packet.sequence_number = seq;
     network_state_estimator_->OnReceivedPacket(packet_result);
   }
@@ -187,13 +189,13 @@ void RemoteEstimatorProxy::SendPeriodicFeedbacks() {
   if (!periodic_window_start_seq_)
     return;
 
+  std::unique_ptr<rtcp::RemoteEstimate> remote_estimate;
   if (network_state_estimator_) {
     absl::optional<NetworkStateEstimate> state_estimate =
         network_state_estimator_->GetCurrentEstimate();
     if (state_estimate) {
-      rtcp::RemoteEstimate rtcp_estimate;
-      rtcp_estimate.SetEstimate(state_estimate.value());
-      feedback_sender_->SendNetworkStateEstimatePacket(&rtcp_estimate);
+      remote_estimate = std::make_unique<rtcp::RemoteEstimate>();
+      remote_estimate->SetEstimate(state_estimate.value());
     }
   }
 
@@ -202,13 +204,20 @@ void RemoteEstimatorProxy::SendPeriodicFeedbacks() {
        begin_iterator != packet_arrival_times_.cend();
        begin_iterator =
            packet_arrival_times_.lower_bound(*periodic_window_start_seq_)) {
-    rtcp::TransportFeedback feedback_packet;
+    auto feedback_packet = std::make_unique<rtcp::TransportFeedback>();
     periodic_window_start_seq_ = BuildFeedbackPacket(
         feedback_packet_count_++, media_ssrc_, *periodic_window_start_seq_,
-        begin_iterator, packet_arrival_times_.cend(), &feedback_packet);
+        begin_iterator, packet_arrival_times_.cend(), feedback_packet.get());
 
     RTC_DCHECK(feedback_sender_ != nullptr);
-    feedback_sender_->SendTransportFeedback(&feedback_packet);
+
+    std::vector<std::unique_ptr<rtcp::RtcpPacket>> packets;
+    if (remote_estimate) {
+      packets.push_back(std::move(remote_estimate));
+    }
+    packets.push_back(std::move(feedback_packet));
+
+    feedback_sender_->SendCombinedRtcpPacket(std::move(packets));
     // Note: Don't erase items from packet_arrival_times_ after sending, in case
     // they need to be re-sent after a reordering. Removal will be handled
     // by OnPacketArrival once packets are too old.
@@ -221,7 +230,9 @@ void RemoteEstimatorProxy::SendFeedbackOnRequest(
   if (feedback_request.sequence_count == 0) {
     return;
   }
-  rtcp::TransportFeedback feedback_packet(feedback_request.include_timestamps);
+
+  auto feedback_packet = std::make_unique<rtcp::TransportFeedback>(
+      feedback_request.include_timestamps);
 
   int64_t first_sequence_number =
       sequence_number - feedback_request.sequence_count + 1;
@@ -231,13 +242,15 @@ void RemoteEstimatorProxy::SendFeedbackOnRequest(
 
   BuildFeedbackPacket(feedback_packet_count_++, media_ssrc_,
                       first_sequence_number, begin_iterator, end_iterator,
-                      &feedback_packet);
+                      feedback_packet.get());
 
   // Clear up to the first packet that is included in this feedback packet.
   packet_arrival_times_.erase(packet_arrival_times_.begin(), begin_iterator);
 
   RTC_DCHECK(feedback_sender_ != nullptr);
-  feedback_sender_->SendTransportFeedback(&feedback_packet);
+  std::vector<std::unique_ptr<rtcp::RtcpPacket>> packets;
+  packets.push_back(std::move(feedback_packet));
+  feedback_sender_->SendCombinedRtcpPacket(std::move(packets));
 }
 
 int64_t RemoteEstimatorProxy::BuildFeedbackPacket(

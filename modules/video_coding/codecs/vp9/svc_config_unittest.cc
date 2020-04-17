@@ -19,22 +19,48 @@
 namespace webrtc {
 TEST(SvcConfig, NumSpatialLayers) {
   const size_t max_num_spatial_layers = 6;
+  const size_t first_active_layer = 0;
   const size_t num_spatial_layers = 2;
 
   std::vector<SpatialLayer> spatial_layers =
       GetSvcConfig(kMinVp9SpatialLayerWidth << (num_spatial_layers - 1),
                    kMinVp9SpatialLayerHeight << (num_spatial_layers - 1), 30,
-                   max_num_spatial_layers, 1, false);
+                   first_active_layer, max_num_spatial_layers, 1, false);
 
   EXPECT_EQ(spatial_layers.size(), num_spatial_layers);
 }
 
+TEST(SvcConfig, AlwaysSendsAtLeastOneLayer) {
+  const size_t max_num_spatial_layers = 6;
+  const size_t first_active_layer = 5;
+
+  std::vector<SpatialLayer> spatial_layers =
+      GetSvcConfig(kMinVp9SpatialLayerWidth, kMinVp9SpatialLayerHeight, 30,
+                   first_active_layer, max_num_spatial_layers, 1, false);
+  EXPECT_EQ(spatial_layers.size(), 1u);
+  EXPECT_EQ(spatial_layers.back().width, kMinVp9SpatialLayerWidth);
+}
+
+TEST(SvcConfig, SkipsInactiveLayers) {
+  const size_t num_spatial_layers = 4;
+  const size_t first_active_layer = 2;
+
+  std::vector<SpatialLayer> spatial_layers =
+      GetSvcConfig(kMinVp9SpatialLayerWidth << (num_spatial_layers - 1),
+                   kMinVp9SpatialLayerHeight << (num_spatial_layers - 1), 30,
+                   first_active_layer, num_spatial_layers, 1, false);
+  EXPECT_EQ(spatial_layers.size(), 2u);
+  EXPECT_EQ(spatial_layers.back().width,
+            kMinVp9SpatialLayerWidth << (num_spatial_layers - 1));
+}
+
 TEST(SvcConfig, BitrateThresholds) {
+  const size_t first_active_layer = 0;
   const size_t num_spatial_layers = 3;
   std::vector<SpatialLayer> spatial_layers =
       GetSvcConfig(kMinVp9SpatialLayerWidth << (num_spatial_layers - 1),
                    kMinVp9SpatialLayerHeight << (num_spatial_layers - 1), 30,
-                   num_spatial_layers, 1, false);
+                   first_active_layer, num_spatial_layers, 1, false);
 
   EXPECT_EQ(spatial_layers.size(), num_spatial_layers);
 
@@ -47,7 +73,7 @@ TEST(SvcConfig, BitrateThresholds) {
 
 TEST(SvcConfig, ScreenSharing) {
   std::vector<SpatialLayer> spatial_layers =
-      GetSvcConfig(1920, 1080, 30, 3, 3, true);
+      GetSvcConfig(1920, 1080, 30, 1, 3, 3, true);
 
   EXPECT_EQ(spatial_layers.size(), 3UL);
 

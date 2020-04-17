@@ -20,8 +20,8 @@
 #include "absl/types/optional.h"
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
+#include "api/frame_transformer_interface.h"
 #include "api/rtp_parameters.h"
-#include "api/transport/media/media_transport_interface.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_sink_interface.h"
@@ -40,15 +40,35 @@ class FrameEncryptorInterface;
 
 class VideoSendStream {
  public:
+  // Multiple StreamStats objects are present if simulcast is used (multiple
+  // kMedia streams) or if RTX or FlexFEC is negotiated. Multiple SVC layers, on
+  // the other hand, does not cause additional StreamStats.
   struct StreamStats {
+    enum class StreamType {
+      // A media stream is an RTP stream for audio or video. Retransmissions and
+      // FEC is either sent over the same SSRC or negotiated to be sent over
+      // separate SSRCs, in which case separate StreamStats objects exist with
+      // references to this media stream's SSRC.
+      kMedia,
+      // RTX streams are streams dedicated to retransmissions. They have a
+      // dependency on a single kMedia stream: |referenced_media_ssrc|.
+      kRtx,
+      // FlexFEC streams are streams dedicated to FlexFEC. They have a
+      // dependency on a single kMedia stream: |referenced_media_ssrc|.
+      kFlexfec,
+    };
+
     StreamStats();
     ~StreamStats();
 
     std::string ToString() const;
 
+    StreamType type = StreamType::kMedia;
+    // If |type| is kRtx or kFlexfec this value is present. The referenced SSRC
+    // is the kMedia stream that this stream is performing retransmissions or
+    // FEC for. If |type| is kMedia, this value is null.
+    absl::optional<uint32_t> referenced_media_ssrc;
     FrameCounts frame_counts;
-    bool is_rtx = false;
-    bool is_flexfec = false;
     int width = 0;
     int height = 0;
     // TODO(holmer): Move bitrate_bps out to the webrtc::Call layer.
@@ -82,6 +102,7 @@ class VideoSendStream {
     uint32_t frames_dropped_by_capturer = 0;
     uint32_t frames_dropped_by_encoder_queue = 0;
     uint32_t frames_dropped_by_rate_limiter = 0;
+    uint32_t frames_dropped_by_congestion_window = 0;
     uint32_t frames_dropped_by_encoder = 0;
     absl::optional<uint64_t> qp_sum;
     // Bitrate the encoder is currently configured to use due to bandwidth
@@ -116,7 +137,6 @@ class VideoSendStream {
    public:
     Config() = delete;
     Config(Config&&);
-    Config(Transport* send_transport, MediaTransportInterface* media_transport);
     explicit Config(Transport* send_transport);
 
     Config& operator=(Config&&);
@@ -138,8 +158,6 @@ class VideoSendStream {
 
     // Transport for outgoing packets.
     Transport* send_transport = nullptr;
-
-    MediaTransportInterface* media_transport = nullptr;
 
     // Expected delay needed by the renderer, i.e. the frame will be delivered
     // this many milliseconds, if possible, earlier than expected render time.
@@ -165,6 +183,8 @@ class VideoSendStream {
 
     // Per PeerConnection cryptography options.
     CryptoOptions crypto_options;
+
+    rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer;
 
    private:
     // Access to the copy constructor is private to force use of the Copy()

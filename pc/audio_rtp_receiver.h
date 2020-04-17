@@ -75,7 +75,6 @@ class AudioRtpReceiver : public ObserverInterface,
   std::string id() const override { return id_; }
 
   RtpParameters GetParameters() const override;
-  bool SetParameters(const RtpParameters& parameters) override;
 
   void SetFrameDecryptor(
       rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor) override;
@@ -105,6 +104,9 @@ class AudioRtpReceiver : public ObserverInterface,
 
   std::vector<RtpSource> GetSources() const override;
   int AttachmentId() const override { return attachment_id_; }
+  void SetDepacketizerToDecoderFrameTransformer(
+      rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer)
+      override;
 
  private:
   void RestartMediaChannel(absl::optional<uint32_t> ssrc);
@@ -129,6 +131,8 @@ class AudioRtpReceiver : public ObserverInterface,
   // Allows to thread safely change playout delay. Handles caching cases if
   // |SetJitterBufferMinimumDelay| is called before start.
   rtc::scoped_refptr<JitterBufferDelayInterface> delay_;
+  rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_
+      RTC_GUARDED_BY(worker_thread_);
 };
 
 }  // namespace webrtc

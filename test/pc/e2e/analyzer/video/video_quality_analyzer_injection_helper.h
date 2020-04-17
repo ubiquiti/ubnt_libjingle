@@ -22,9 +22,9 @@
 #include "api/video/video_sink_interface.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder_factory.h"
-#include "test/frame_generator.h"
 #include "test/pc/e2e/analyzer/video/encoded_image_data_injector.h"
 #include "test/pc/e2e/analyzer/video/id_generator.h"
+#include "test/test_video_capturer.h"
 #include "test/testsupport/video_frame_writer.h"
 
 namespace webrtc {
@@ -54,16 +54,15 @@ class VideoQualityAnalyzerInjectionHelper : public StatsObserverInterface {
   std::unique_ptr<VideoDecoderFactory> WrapVideoDecoderFactory(
       std::unique_ptr<VideoDecoderFactory> delegate) const;
 
-  // Wraps frame generator, so video quality analyzer will gain access to the
-  // captured frames. If |writer| in not nullptr, will dump captured frames
-  // with provided writer.
-  std::unique_ptr<test::FrameGenerator> WrapFrameGenerator(
-      const VideoConfig& config,
-      std::unique_ptr<test::FrameGenerator> delegate,
-      test::VideoFrameWriter* writer) const;
-  // Creates sink, that will allow video quality analyzer to get access to the
-  // rendered frames. If |writer| in not nullptr, will dump rendered frames
-  // with provided writer.
+  // Creates VideoFrame preprocessor, that will allow video quality analyzer to
+  // get access to the captured frames. If |writer| in not nullptr, will dump
+  // captured frames with provided writer.
+  std::unique_ptr<test::TestVideoCapturer::FramePreprocessor>
+  CreateFramePreprocessor(const VideoConfig& config,
+                          test::VideoFrameWriter* writer) const;
+  // Creates sink, that will allow video quality analyzer to get access to
+  // the rendered frames. If |writer| in not nullptr, will dump rendered
+  // frames with provided writer.
   std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>> CreateVideoSink(
       const VideoConfig& config,
       test::VideoFrameWriter* writer) const;

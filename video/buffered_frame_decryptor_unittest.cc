@@ -38,11 +38,9 @@ FrameDecryptorInterface::Result DecryptFail() {
 
 }  // namespace
 
-class BufferedFrameDecryptorTest
-    : public ::testing::Test,
-      public OnDecryptedFrameCallback,
-      public OnDecryptionStatusChangeCallback,
-      public video_coding::OnAssembledFrameCallback {
+class BufferedFrameDecryptorTest : public ::testing::Test,
+                                   public OnDecryptedFrameCallback,
+                                   public OnDecryptionStatusChangeCallback {
  public:
   // Implements the OnDecryptedFrameCallbackInterface
   void OnDecryptedFrame(
@@ -54,15 +52,13 @@ class BufferedFrameDecryptorTest
     ++decryption_status_change_count_;
   }
 
-  // Implements the OnAssembledFrameCallback interface.
-  void OnAssembledFrame(
-      std::unique_ptr<video_coding::RtpFrameObject> frame) override {}
-
   // Returns a new fake RtpFrameObject it abstracts the difficult construction
   // of the RtpFrameObject to simplify testing.
   std::unique_ptr<video_coding::RtpFrameObject> CreateRtpFrameObject(
       bool key_frame) {
     seq_num_++;
+    RTPVideoHeader rtp_video_header;
+    rtp_video_header.generic.emplace();
 
     // clang-format off
     return std::make_unique<video_coding::RtpFrameObject>(
@@ -79,9 +75,8 @@ class BufferedFrameDecryptorTest
         kVideoCodecGeneric,
         kVideoRotation_0,
         VideoContentType::UNSPECIFIED,
-        RTPVideoHeader(),
+        rtp_video_header,
         /*color_space=*/absl::nullopt,
-        RtpGenericFrameDescriptor(),
         RtpPacketInfos(),
         EncodedImageBuffer::Create(/*size=*/0));
     // clang-format on

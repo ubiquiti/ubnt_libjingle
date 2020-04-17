@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -121,7 +122,7 @@ void RtpPacket::CopyHeaderFrom(const RtpPacket& packet) {
   extensions_ = packet.extensions_;
   extension_entries_ = packet.extension_entries_;
   extensions_size_ = packet.extensions_size_;
-  buffer_.SetData(packet.data(), packet.headers_size());
+  buffer_ = packet.buffer_.Slice(0, packet.headers_size());
   // Reset payload and padding.
   payload_size_ = 0;
   padding_size_ = 0;
@@ -165,11 +166,15 @@ void RtpPacket::ZeroMutableExtensions() {
         break;
       }
       case RTPExtensionType::kRtpExtensionVideoTiming: {
-        // Nullify 3 last entries: packetization delay and 2 network timestamps.
-        // Each of them is 2 bytes.
-        memset(
-            WriteAt(extension.offset + VideoSendTiming::kPacerExitDeltaOffset),
-            0, 6);
+        // Nullify last entries, starting at pacer delay.
+        // These are set by pacer and SFUs
+        if (VideoTimingExtension::kPacerExitDeltaOffset < extension.length) {
+          memset(
+              WriteAt(extension.offset +
+                      VideoTimingExtension::kPacerExitDeltaOffset),
+              0,
+              extension.length - VideoTimingExtension::kPacerExitDeltaOffset);
+        }
         break;
       }
       case RTPExtensionType::kRtpExtensionTransportSequenceNumber:
@@ -193,7 +198,8 @@ void RtpPacket::ZeroMutableExtensions() {
       case RTPExtensionType::kRtpExtensionRepairedRtpStreamId:
       case RTPExtensionType::kRtpExtensionRtpStreamId:
       case RTPExtensionType::kRtpExtensionVideoContentType:
-      case RTPExtensionType::kRtpExtensionVideoRotation: {
+      case RTPExtensionType::kRtpExtensionVideoRotation:
+      case RTPExtensionType::kRtpExtensionInbandComfortNoise: {
         // Non-mutable extension. Don't change it.
         break;
       }
@@ -612,11 +618,6 @@ rtc::ArrayView<uint8_t> RtpPacket::AllocateExtension(ExtensionType type,
 }
 
 bool RtpPacket::HasExtension(ExtensionType type) const {
-  // TODO(webrtc:7990): Add support for empty extensions (length==0).
-  return !FindExtension(type).empty();
-}
-
-bool RtpPacket::IsExtensionReserved(ExtensionType type) const {
   uint8_t id = extensions_.GetId(type);
   if (id == ExtensionManager::kInvalidId) {
     // Extension not registered.

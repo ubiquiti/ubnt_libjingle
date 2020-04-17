@@ -23,9 +23,10 @@
 #include <utility>
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "modules/audio_coding/neteq/include/neteq.h"
+#include "api/neteq/neteq.h"
 #include "modules/audio_coding/neteq/tools/audio_sink.h"
 #include "modules/audio_coding/neteq/tools/fake_decode_from_file.h"
+#include "modules/audio_coding/neteq/tools/initial_packet_inserter_neteq_input.h"
 #include "modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "modules/audio_coding/neteq/tools/neteq_delay_analyzer.h"
 #include "modules/audio_coding/neteq/tools/neteq_event_log_input.h"
@@ -109,6 +110,7 @@ NetEqTestFactory::Config::~Config() = default;
 
 std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTestFromString(
     const std::string& input_string,
+    NetEqFactory* factory,
     const Config& config) {
   std::unique_ptr<NetEqInput> input(
       NetEqEventLogInput::CreateFromString(input_string, config.ssrc_filter));
@@ -116,11 +118,12 @@ std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTestFromString(
     std::cerr << "Error: Cannot parse input string" << std::endl;
     return nullptr;
   }
-  return InitializeTest(std::move(input), config);
+  return InitializeTest(std::move(input), factory, config);
 }
 
 std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTestFromFile(
     const std::string& input_file_name,
+    NetEqFactory* factory,
     const Config& config) {
   // Gather RTP header extensions in a map.
   NetEqPacketSourceInput::RtpHeaderExtensionMap rtp_ext_map = {
@@ -145,15 +148,45 @@ std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTestFromFile(
     std::cerr << "Error: Cannot open input file" << std::endl;
     return nullptr;
   }
-  return InitializeTest(std::move(input), config);
+  return InitializeTest(std::move(input), factory, config);
 }
 
 std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTest(
     std::unique_ptr<NetEqInput> input,
+    NetEqFactory* factory,
     const Config& config) {
   if (input->ended()) {
     std::cerr << "Error: Input is empty" << std::endl;
     return nullptr;
+  }
+
+  if (!config.field_trial_string.empty()) {
+    field_trials_ =
+        std::make_unique<ScopedFieldTrials>(config.field_trial_string);
+  }
+
+  // Skip some initial events/packets if requested.
+  if (config.skip_get_audio_events > 0) {
+    std::cout << "Skipping " << config.skip_get_audio_events
+              << " get_audio events" << std::endl;
+    if (!input->NextPacketTime() || !input->NextOutputEventTime()) {
+      std::cerr << "No events found" << std::endl;
+      return nullptr;
+    }
+    for (int i = 0; i < config.skip_get_audio_events; i++) {
+      input->AdvanceOutputEvent();
+      if (!input->NextOutputEventTime()) {
+        std::cerr << "Not enough get_audio events found" << std::endl;
+        return nullptr;
+      }
+    }
+    while (*input->NextPacketTime() < *input->NextOutputEventTime()) {
+      input->PopPacket();
+      if (!input->NextPacketTime()) {
+        std::cerr << "Not enough incoming packets found" << std::endl;
+        return nullptr;
+      }
+    }
   }
 
   // Check the sample rate.
@@ -167,6 +200,12 @@ std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTest(
                 << static_cast<int>(first_rtp_header->payloadType)
                 << " and SSRC 0x" << std::hex << first_rtp_header->ssrc
                 << std::dec << std::endl;
+      if (config.initial_dummy_packets > 0) {
+        std::cout << "Nr of initial dummy packets: "
+                  << config.initial_dummy_packets << std::endl;
+        input = std::make_unique<InitialPacketInserterNetEqInput>(
+            std::move(input), config.initial_dummy_packets, *sample_rate_hz);
+      }
       break;
     }
     // Discard this packet and move to the next. Keep track of discarded payload
@@ -269,10 +308,15 @@ std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTest(
     }
   }
 
-  // Create a text log file if needed.
+  // Create a text log output stream if needed.
   std::unique_ptr<std::ofstream> text_log;
-  if (config.textlog_filename.has_value()) {
+  if (config.textlog && config.textlog_filename.has_value()) {
+    // Write to file.
     text_log = std::make_unique<std::ofstream>(*config.textlog_filename);
+  } else if (config.textlog) {
+    // Print to stdout.
+    text_log = std::make_unique<std::ofstream>();
+    text_log->basic_ios<char>::rdbuf(std::cout.rdbuf());
   }
 
   NetEqTest::Callbacks callbacks;
@@ -289,9 +333,9 @@ std::unique_ptr<NetEqTest> NetEqTestFactory::InitializeTest(
   neteq_config.sample_rate_hz = *sample_rate_hz;
   neteq_config.max_packets_in_buffer = config.max_nr_packets_in_buffer;
   neteq_config.enable_fast_accelerate = config.enable_fast_accelerate;
-  return std::make_unique<NetEqTest>(neteq_config, decoder_factory, codecs,
-                                     std::move(text_log), std::move(input),
-                                     std::move(output), callbacks);
+  return std::make_unique<NetEqTest>(
+      neteq_config, decoder_factory, codecs, std::move(text_log), factory,
+      std::move(input), std::move(output), callbacks);
 }
 
 }  // namespace test
