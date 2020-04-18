@@ -152,7 +152,7 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
 #if TARGET_OS_TV
   initialized_ = true;
   return InitStatus::OK;
-#endif /* TARGET_OS_TV */
+#else /* TARGET_OS_TV */
   // Store the preferred sample rate and preferred number of channels already
   // here. They have not been set and confirmed yet since configureForWebRTC
   // is not called until audio is about to start. However, it makes sense to
@@ -167,6 +167,7 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
   UpdateAudioDeviceBuffer();
   initialized_ = true;
   return InitStatus::OK;
+#endif /* TARGET_OS_TV */
 }
 
 int32_t AudioDeviceIOS::Terminate() {
