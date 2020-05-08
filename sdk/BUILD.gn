@@ -702,12 +702,12 @@ if (is_ios || is_mac) {
       if(is_ios){
         if(ios_device_name != "macosx") {
           deps += [
-            "../modules/video_coding:webrtc_vp9_renamed",
+            "../modules/video_coding:webrtc_vp9",
           ]
         }
       } else {
         deps += [
-          "../modules/video_coding:webrtc_vp9_renamed",
+          "../modules/video_coding:webrtc_vp9",
         ]
       }
     }
