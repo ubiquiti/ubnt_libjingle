@@ -244,8 +244,6 @@ rtc_library("rtc_internal_video_codecs") {
     "../modules/video_coding:video_codec_interface",
     "../modules/video_coding:webrtc_h264",
     "../modules/video_coding:webrtc_multiplex",
-    "../modules/video_coding:webrtc_vp8",
-    "../modules/video_coding:webrtc_vp9",
     "../modules/video_coding/codecs/av1:libaom_av1_decoder",
     "../modules/video_coding/codecs/av1:libaom_av1_encoder",
     "../rtc_base:checks",
@@ -269,6 +267,20 @@ rtc_library("rtc_internal_video_codecs") {
     # targets depend on :rtc_encoder_simulcast_proxy directly.
     "engine/encoder_simulcast_proxy.h",
   ]
+  
+  if(is_ios){
+    if(ios_device_name != "macosx") {
+      deps += [
+        "../modules/video_coding:webrtc_vp8",
+        "../modules/video_coding:webrtc_vp9",
+      ]
+    }
+  } else {
+    deps += [
+      "../modules/video_coding:webrtc_vp8",
+      "../modules/video_coding:webrtc_vp9",
+    ]
+  }
 }
 
 rtc_library("rtc_audio_video") {
