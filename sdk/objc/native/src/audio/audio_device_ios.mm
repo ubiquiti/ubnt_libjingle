@@ -149,10 +149,10 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
 #if !defined(NDEBUG)
   LogDeviceInfo();
 #endif
-#if TARGET_OS_TV
+#if TARGET_OS_TV || TARGET_OS_MACCATALYST
   initialized_ = true;
   return InitStatus::OK;
-#else /* TARGET_OS_TV */
+#else /* TARGET_OS_TV || TARGET_OS_MACCATALYST*/
   // Store the preferred sample rate and preferred number of channels already
   // here. They have not been set and confirmed yet since configureForWebRTC
   // is not called until audio is about to start. However, it makes sense to
