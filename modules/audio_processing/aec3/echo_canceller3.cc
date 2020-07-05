@@ -213,6 +213,59 @@ void CopyBufferIntoFrame(const AudioBuffer& buffer,
 EchoCanceller3Config AdjustConfig(const EchoCanceller3Config& config) {
   EchoCanceller3Config adjusted_cfg = config;
 
+  if (linear_output_framer) {
+    RTC_DCHECK(linear_output_block);
+    linear_output_framer->InsertBlock(*linear_output_block);
+  }
+}
+
+void BufferRenderFrameContent(
+    std::vector<std::vector<std::vector<float>>>* render_frame,
+    size_t sub_frame_index,
+    FrameBlocker* render_blocker,
+    BlockProcessor* block_processor,
+    std::vector<std::vector<std::vector<float>>>* block,
+    std::vector<std::vector<rtc::ArrayView<float>>>* sub_frame_view) {
+  FillSubFrameView(render_frame, sub_frame_index, sub_frame_view);
+  render_blocker->InsertSubFrameAndExtractBlock(*sub_frame_view, block);
+  block_processor->BufferRender(*block);
+}
+
+void BufferRemainingRenderFrameContent(
+    FrameBlocker* render_blocker,
+    BlockProcessor* block_processor,
+    std::vector<std::vector<std::vector<float>>>* block) {
+  if (!render_blocker->IsBlockAvailable()) {
+    return;
+  }
+  render_blocker->ExtractBlock(block);
+  block_processor->BufferRender(*block);
+}
+
+void CopyBufferIntoFrame(const AudioBuffer& buffer,
+                         size_t num_bands,
+                         size_t num_channels,
+                         std::vector<std::vector<std::vector<float>>>* frame) {
+  RTC_DCHECK_EQ(num_bands, frame->size());
+  RTC_DCHECK_EQ(num_channels, (*frame)[0].size());
+  RTC_DCHECK_EQ(AudioBuffer::kSplitBandSize, (*frame)[0][0].size());
+  for (size_t band = 0; band < num_bands; ++band) {
+    for (size_t channel = 0; channel < num_channels; ++channel) {
+      rtc::ArrayView<const float> buffer_view(
+          &buffer.split_bands_const(channel)[band][0],
+          AudioBuffer::kSplitBandSize);
+      std::copy(buffer_view.begin(), buffer_view.end(),
+                (*frame)[band][channel].begin());
+    }
+  }
+}
+
+}  // namespace
+
+// TODO(webrtc:5298): Move this to a separate file.
+EchoCanceller3Config AdjustConfig(const EchoCanceller3Config& config) {
+  EchoCanceller3Config adjusted_cfg = config;
+
   if (field_trial::IsEnabled("WebRTC-Aec3UseShortConfigChangeDuration")) {
     adjusted_cfg.filter.config_change_duration_blocks = 10;
   }
