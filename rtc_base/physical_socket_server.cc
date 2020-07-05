@@ -51,6 +51,8 @@
 #include "rtc_base/null_socket_server.h"
 #include "rtc_base/time_utils.h"
 
+#define SOCKET_INITIAL_TTL      255
+
 #if defined(WEBRTC_LINUX)
 #include <linux/sockios.h>
 #endif
@@ -145,7 +147,12 @@ bool PhysicalSocket::Create(int family, int type) {
   if (udp_) {
     SetEnabledEvents(DE_READ | DE_WRITE);
   }
-  return s_ != INVALID_SOCKET;
+
+  bool ret = (s_ != INVALID_SOCKET);
+  if (ret) {
+    SetOption(OPT_TTL, SOCKET_INITIAL_TTL);
+  }
+  return ret;
 }
 
 SocketAddress PhysicalSocket::GetLocalAddress() const {
@@ -587,6 +594,10 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
 #endif
     case OPT_RTP_SENDTIME_EXTN_ID:
       return -1;  // No logging is necessary as this not a OS socket option.
+    case OPT_TTL:
+      *slevel = IPPROTO_IP;
+      *sopt = IP_TTL;
+      break;
     default:
       RTC_NOTREACHED();
       return -1;
