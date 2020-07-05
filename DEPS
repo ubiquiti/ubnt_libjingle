@@ -250,7 +250,7 @@ deps = {
     'condition': 'checkout_android',
   },
   'src/third_party/usrsctp/usrsctplib':
-    'https://github.com/ubiquiti/ubnt-usrsctp.git@v0.2.0-alpha.1',
+    'https://github.com/ubiquiti/ubnt-usrsctp.git@sync-upstream',
   # Dependency used by libjpeg-turbo.
   'src/third_party/yasm/binaries': {
     'url': 'https://chromium.googlesource.com/chromium/deps/yasm/binaries.git@52f9b3f4b0aa06da24ef8b123058bb61ee468881',
