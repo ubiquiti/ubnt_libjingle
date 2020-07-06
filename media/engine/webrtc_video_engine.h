@@ -169,9 +169,7 @@ class WebRtcVideoChannel : public VideoMediaChannel,
   void OnReadyToSend(bool ready) override;
   void OnNetworkRouteChanged(const std::string& transport_name,
                              const rtc::NetworkRoute& network_route) override;
-  void SetInterface(
-      NetworkInterface* iface,
-      const webrtc::MediaTransportConfig& media_transport_config) override;
+  void SetInterface(NetworkInterface* iface) override;
 
   // E2E Encrypted Video Frame API
   // Set a frame decryptor to a particular ssrc that will intercept all
@@ -357,7 +355,12 @@ class WebRtcVideoChannel : public VideoMediaChannel,
     void SetSend(bool send);
 
     const std::vector<uint32_t>& GetSsrcs() const;
-    VideoSenderInfo GetVideoSenderInfo(bool log_stats);
+    // Returns per ssrc VideoSenderInfos. Useful for simulcast scenario.
+    std::vector<VideoSenderInfo> GetPerLayerVideoSenderInfos(bool log_stats);
+    // Aggregates per ssrc VideoSenderInfos to single VideoSenderInfo for
+    // legacy reasons. Used in old GetStats API and track stats.
+    VideoSenderInfo GetAggregatedVideoSenderInfo(
+        const std::vector<VideoSenderInfo>& infos) const;
     void FillBitrateInfo(BandwidthEstimationInfo* bwe_info);
 
     void SetEncoderToPacketizerFrameTransformer(

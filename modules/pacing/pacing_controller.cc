@@ -20,6 +20,7 @@
 #include "modules/pacing/interval_budget.h"
 #include "modules/utility/include/process_thread.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
@@ -33,10 +34,9 @@ constexpr TimeDelta kCongestedPacketInterval = TimeDelta::Millis(500);
 // The maximum debt level, in terms of time, capped when sending packets.
 constexpr TimeDelta kMaxDebtInTime = TimeDelta::Millis(500);
 constexpr TimeDelta kMaxElapsedTime = TimeDelta::Seconds(2);
-constexpr DataSize kDefaultPaddingTarget = DataSize::Bytes(50);
 
 // Upper cap on process interval, in case process has not been called in a long
-// time.
+// time. Applies only to periodic mode.
 constexpr TimeDelta kMaxProcessingInterval = TimeDelta::Millis(30);
 
 constexpr int kFirstPriority = 0;
@@ -49,6 +49,14 @@ bool IsDisabled(const WebRtcKeyValueConfig& field_trials,
 bool IsEnabled(const WebRtcKeyValueConfig& field_trials,
                absl::string_view key) {
   return absl::StartsWith(field_trials.Lookup(key), "Enabled");
+}
+
+TimeDelta GetDynamicPaddingTarget(const WebRtcKeyValueConfig& field_trials) {
+  FieldTrialParameter<TimeDelta> padding_target("timedelta",
+                                                TimeDelta::Millis(5));
+  ParseFieldTrial({&padding_target},
+                  field_trials.Lookup("WebRTC-Pacer-DynamicPaddingTarget"));
+  return padding_target.Get();
 }
 
 int GetPriorityForType(RtpPacketMediaType type) {
@@ -102,6 +110,7 @@ PacingController::PacingController(Clock* clock,
           IsEnabled(*field_trials_, "WebRTC-Pacer-SmallFirstProbePacket")),
       ignore_transport_overhead_(
           IsEnabled(*field_trials_, "WebRTC-Pacer-IgnoreTransportOverhead")),
+      padding_target_duration_(GetDynamicPaddingTarget(*field_trials_)),
       min_packet_limit_(kDefaultMinPacketLimit),
       transport_overhead_per_packet_(DataSize::Zero()),
       last_timestamp_(clock_->CurrentTime()),
@@ -182,6 +191,10 @@ bool PacingController::Congested() const {
     return outstanding_data_ >= congestion_window_size_;
   }
   return false;
+}
+
+bool PacingController::IsProbing() const {
+  return prober_.is_probing();
 }
 
 Timestamp PacingController::CurrentTime() const {
@@ -390,7 +403,9 @@ void PacingController::ProcessPackets() {
     if (target_send_time.IsMinusInfinity()) {
       target_send_time = now;
     } else if (now < target_send_time) {
-      // We are too early, abort and regroup!
+      // We are too early, but if queue is empty still allow draining some debt.
+      TimeDelta elapsed_time = UpdateTimeAndGetElapsed(now);
+      UpdateBudgetWithElapsedTime(elapsed_time);
       return;
     }
 
@@ -425,7 +440,10 @@ void PacingController::ProcessPackets() {
       for (auto& packet : keepalive_packets) {
         keepalive_data_sent +=
             DataSize::Bytes(packet->payload_size() + packet->padding_size());
-        packet_sender_->SendRtpPacket(std::move(packet), PacedPacketInfo());
+        packet_sender_->SendPacket(std::move(packet), PacedPacketInfo());
+        for (auto& packet : packet_sender_->FetchFec()) {
+          EnqueuePacket(std::move(packet));
+        }
       }
       OnPaddingSent(keepalive_data_sent);
     }
@@ -544,8 +562,11 @@ void PacingController::ProcessPackets() {
       packet_size += DataSize::Bytes(rtp_packet->headers_size()) +
                      transport_overhead_per_packet_;
     }
-    packet_sender_->SendRtpPacket(std::move(rtp_packet), pacing_info);
 
+    packet_sender_->SendPacket(std::move(rtp_packet), pacing_info);
+    for (auto& packet : packet_sender_->FetchFec()) {
+      EnqueuePacket(std::move(packet));
+    }
     data_sent += packet_size;
 
     // Send done, update send/process time to the target send time.
@@ -605,7 +626,7 @@ DataSize PacingController::PaddingToAdd(
     return DataSize::Bytes(padding_budget_.bytes_remaining());
   } else if (padding_rate_ > DataRate::Zero() &&
              padding_debt_ == DataSize::Zero()) {
-    return kDefaultPaddingTarget;
+    return padding_target_duration_ * padding_rate_;
   }
   return DataSize::Zero();
 }

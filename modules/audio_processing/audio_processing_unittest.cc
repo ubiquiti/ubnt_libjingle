@@ -28,6 +28,7 @@
 #include "modules/audio_processing/audio_processing_impl.h"
 #include "modules/audio_processing/common.h"
 #include "modules/audio_processing/include/mock_audio_processing.h"
+#include "modules/audio_processing/test/audio_processing_builder_for_testing.h"
 #include "modules/audio_processing/test/protobuf_utils.h"
 #include "modules/audio_processing/test/test_utils.h"
 #include "rtc_base/arraysize.h"
@@ -426,7 +427,7 @@ ApmTest::ApmTest()
       far_file_(NULL),
       near_file_(NULL),
       out_file_(NULL) {
-  apm_.reset(AudioProcessingBuilder().Create());
+  apm_.reset(AudioProcessingBuilderForTesting().Create());
   AudioProcessing::Config apm_config = apm_->GetConfig();
   apm_config.gain_controller1.analog_gain_controller.enabled = false;
   apm_config.pipeline.maximum_internal_processing_rate = 48000;
@@ -961,49 +962,51 @@ TEST_F(ApmTest, GainControl) {
 }
 
 #if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
-TEST_F(ApmTest, GainControlDiesOnTooLowTargetLevelDbfs) {
+using ApmDeathTest = ApmTest;
+
+TEST_F(ApmDeathTest, GainControlDiesOnTooLowTargetLevelDbfs) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.target_level_dbfs = -1;
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, GainControlDiesOnTooHighTargetLevelDbfs) {
+TEST_F(ApmDeathTest, GainControlDiesOnTooHighTargetLevelDbfs) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.target_level_dbfs = 32;
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, GainControlDiesOnTooLowCompressionGainDb) {
+TEST_F(ApmDeathTest, GainControlDiesOnTooLowCompressionGainDb) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.compression_gain_db = -1;
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, GainControlDiesOnTooHighCompressionGainDb) {
+TEST_F(ApmDeathTest, GainControlDiesOnTooHighCompressionGainDb) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.compression_gain_db = 91;
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, GainControlDiesOnTooLowAnalogLevelLowerLimit) {
+TEST_F(ApmDeathTest, GainControlDiesOnTooLowAnalogLevelLowerLimit) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.analog_level_minimum = -1;
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, GainControlDiesOnTooHighAnalogLevelUpperLimit) {
+TEST_F(ApmDeathTest, GainControlDiesOnTooHighAnalogLevelUpperLimit) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.analog_level_maximum = 65536;
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, GainControlDiesOnInvertedAnalogLevelLimits) {
+TEST_F(ApmDeathTest, GainControlDiesOnInvertedAnalogLevelLimits) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.analog_level_minimum = 512;
@@ -1011,7 +1014,7 @@ TEST_F(ApmTest, GainControlDiesOnInvertedAnalogLevelLimits) {
   EXPECT_DEATH(apm_->ApplyConfig(config), "");
 }
 
-TEST_F(ApmTest, ApmDiesOnTooLowAnalogLevel) {
+TEST_F(ApmDeathTest, ApmDiesOnTooLowAnalogLevel) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.analog_level_minimum = 255;
@@ -1020,7 +1023,7 @@ TEST_F(ApmTest, ApmDiesOnTooLowAnalogLevel) {
   EXPECT_DEATH(apm_->set_stream_analog_level(254), "");
 }
 
-TEST_F(ApmTest, ApmDiesOnTooHighAnalogLevel) {
+TEST_F(ApmDeathTest, ApmDiesOnTooHighAnalogLevel) {
   auto config = apm_->GetConfig();
   config.gain_controller1.enabled = true;
   config.gain_controller1.analog_level_minimum = 255;
@@ -1176,7 +1179,7 @@ TEST_F(ApmTest, NoProcessingWhenAllComponentsDisabledFloat) {
   auto src_channels = &src[0];
   auto dest_channels = &dest[0];
 
-  apm_.reset(AudioProcessingBuilder().Create());
+  apm_.reset(AudioProcessingBuilderForTesting().Create());
   EXPECT_NOERR(apm_->ProcessStream(&src_channels, StreamConfig(sample_rate, 1),
                                    StreamConfig(sample_rate, 1),
                                    &dest_channels));
@@ -1637,7 +1640,7 @@ TEST_F(ApmTest, Process) {
     if (test->num_input_channels() != test->num_output_channels())
       continue;
 
-    apm_.reset(AudioProcessingBuilder().Create());
+    apm_.reset(AudioProcessingBuilderForTesting().Create());
     AudioProcessing::Config apm_config = apm_->GetConfig();
     apm_config.gain_controller1.analog_gain_controller.enabled = false;
     apm_->ApplyConfig(apm_config);
@@ -1806,7 +1809,8 @@ TEST_F(ApmTest, NoErrorsWithKeyboardChannel) {
       {AudioProcessing::kStereoAndKeyboard, AudioProcessing::kStereo},
   };
 
-  std::unique_ptr<AudioProcessing> ap(AudioProcessingBuilder().Create());
+  std::unique_ptr<AudioProcessing> ap(
+      AudioProcessingBuilderForTesting().Create());
   // Enable one component just to ensure some processing takes place.
   AudioProcessing::Config config;
   config.noise_suppression.enabled = true;
@@ -1932,7 +1936,8 @@ class AudioProcessingTest
                             size_t num_reverse_input_channels,
                             size_t num_reverse_output_channels,
                             const std::string& output_file_prefix) {
-    std::unique_ptr<AudioProcessing> ap(AudioProcessingBuilder().Create());
+    std::unique_ptr<AudioProcessing> ap(
+        AudioProcessingBuilderForTesting().Create());
     AudioProcessing::Config apm_config = ap->GetConfig();
     apm_config.gain_controller1.analog_gain_controller.enabled = false;
     ap->ApplyConfig(apm_config);
@@ -2316,7 +2321,8 @@ void RunApmRateAndChannelTest(
     rtc::ArrayView<const int> sample_rates_hz,
     rtc::ArrayView<const int> render_channel_counts,
     rtc::ArrayView<const int> capture_channel_counts) {
-  std::unique_ptr<AudioProcessing> apm(AudioProcessingBuilder().Create());
+  std::unique_ptr<AudioProcessing> apm(
+      AudioProcessingBuilderForTesting().Create());
   webrtc::AudioProcessing::Config apm_config;
   apm_config.echo_canceller.enabled = true;
   apm->ApplyConfig(apm_config);
@@ -2410,7 +2416,7 @@ TEST(RuntimeSettingTest, TestDefaultCtor) {
   EXPECT_EQ(AudioProcessing::RuntimeSetting::Type::kNotSpecified, s.type());
 }
 
-TEST(RuntimeSettingTest, TestCapturePreGain) {
+TEST(RuntimeSettingDeathTest, TestCapturePreGain) {
   using Type = AudioProcessing::RuntimeSetting::Type;
   {
     auto s = AudioProcessing::RuntimeSetting::CreateCapturePreGain(1.25f);
@@ -2425,7 +2431,7 @@ TEST(RuntimeSettingTest, TestCapturePreGain) {
 #endif
 }
 
-TEST(RuntimeSettingTest, TestCaptureFixedPostGain) {
+TEST(RuntimeSettingDeathTest, TestCaptureFixedPostGain) {
   using Type = AudioProcessing::RuntimeSetting::Type;
   {
     auto s = AudioProcessing::RuntimeSetting::CreateCaptureFixedPostGain(1.25f);
@@ -2455,7 +2461,7 @@ TEST(ApmConfiguration, EnablePostProcessing) {
   auto mock_post_processor =
       std::unique_ptr<CustomProcessing>(mock_post_processor_ptr);
   rtc::scoped_refptr<AudioProcessing> apm =
-      AudioProcessingBuilder()
+      AudioProcessingBuilderForTesting()
           .SetCapturePostProcessing(std::move(mock_post_processor))
           .Create();
 
@@ -2477,7 +2483,7 @@ TEST(ApmConfiguration, EnablePreProcessing) {
   auto mock_pre_processor =
       std::unique_ptr<CustomProcessing>(mock_pre_processor_ptr);
   rtc::scoped_refptr<AudioProcessing> apm =
-      AudioProcessingBuilder()
+      AudioProcessingBuilderForTesting()
           .SetRenderPreProcessing(std::move(mock_pre_processor))
           .Create();
 
@@ -2499,7 +2505,7 @@ TEST(ApmConfiguration, EnableCaptureAnalyzer) {
   auto mock_capture_analyzer =
       std::unique_ptr<CustomAudioAnalyzer>(mock_capture_analyzer_ptr);
   rtc::scoped_refptr<AudioProcessing> apm =
-      AudioProcessingBuilder()
+      AudioProcessingBuilderForTesting()
           .SetCaptureAnalyzer(std::move(mock_capture_analyzer))
           .Create();
 
@@ -2520,7 +2526,7 @@ TEST(ApmConfiguration, PreProcessingReceivesRuntimeSettings) {
   auto mock_pre_processor =
       std::unique_ptr<CustomProcessing>(mock_pre_processor_ptr);
   rtc::scoped_refptr<AudioProcessing> apm =
-      AudioProcessingBuilder()
+      AudioProcessingBuilderForTesting()
           .SetRenderPreProcessing(std::move(mock_pre_processor))
           .Create();
   apm->SetRuntimeSetting(
@@ -2565,7 +2571,7 @@ TEST(ApmConfiguration, EchoControlInjection) {
       new MyEchoControlFactory());
 
   rtc::scoped_refptr<AudioProcessing> apm =
-      AudioProcessingBuilder()
+      AudioProcessingBuilderForTesting()
           .SetEchoControlFactory(std::move(echo_control_factory))
           .Create(webrtc_config);
 
@@ -2589,7 +2595,7 @@ TEST(ApmConfiguration, EchoControlInjection) {
 std::unique_ptr<AudioProcessing> CreateApm(bool mobile_aec) {
   Config old_config;
   std::unique_ptr<AudioProcessing> apm(
-      AudioProcessingBuilder().Create(old_config));
+      AudioProcessingBuilderForTesting().Create(old_config));
   if (!apm) {
     return apm;
   }
@@ -2740,7 +2746,8 @@ TEST(ApmStatistics, ReportOutputRmsDbfs) {
     ptr[i] = 10000 * ((i % 3) - 1);
   }
 
-  std::unique_ptr<AudioProcessing> apm(AudioProcessingBuilder().Create());
+  std::unique_ptr<AudioProcessing> apm(
+      AudioProcessingBuilderForTesting().Create());
   apm->Initialize(processing_config);
 
   // If not enabled, no metric should be reported.
@@ -2793,7 +2800,8 @@ TEST(ApmStatistics, ReportHasVoice) {
     ptr[i] = 10000 * ((i % 3) - 1);
   }
 
-  std::unique_ptr<AudioProcessing> apm(AudioProcessingBuilder().Create());
+  std::unique_ptr<AudioProcessing> apm(
+      AudioProcessingBuilderForTesting().Create());
   apm->Initialize(processing_config);
 
   // If not enabled, no metric should be reported.

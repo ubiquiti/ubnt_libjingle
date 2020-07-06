@@ -112,10 +112,6 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
         VideoSendTiming timing;
         packet.GetExtension<VideoTimingExtension>(&timing);
         break;
-      case kRtpExtensionFrameMarking:
-        FrameMarking frame_marking;
-        packet.GetExtension<FrameMarkingExtension>(&frame_marking);
-        break;
       case kRtpExtensionRtpStreamId: {
         std::string rsid;
         packet.GetExtension<RtpStreamId>(&rsid);
@@ -134,11 +130,6 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
       case kRtpExtensionGenericFrameDescriptor00: {
         RtpGenericFrameDescriptor descriptor;
         packet.GetExtension<RtpGenericFrameDescriptorExtension00>(&descriptor);
-        break;
-      }
-      case kRtpExtensionGenericFrameDescriptor01: {
-        RtpGenericFrameDescriptor descriptor;
-        packet.GetExtension<RtpGenericFrameDescriptorExtension01>(&descriptor);
         break;
       }
       case kRtpExtensionColorSpace: {

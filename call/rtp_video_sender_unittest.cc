@@ -26,6 +26,7 @@
 #include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/mock_frame_transformer.h"
 #include "test/mock_transport.h"
 #include "test/scenario/scenario.h"
 #include "test/time_controller/simulated_time_controller.h"
@@ -55,7 +56,7 @@ const int kDependencyDescriptorExtensionId = 8;
 
 class MockRtcpIntraFrameObserver : public RtcpIntraFrameObserver {
  public:
-  MOCK_METHOD1(OnReceivedIntraFrameRequest, void(uint32_t));
+  MOCK_METHOD(void, OnReceivedIntraFrameRequest, (uint32_t), (override));
 };
 
 RtpSenderObservers CreateObservers(
@@ -195,6 +196,7 @@ class RtpVideoSenderTestFixture {
   const FieldTrialBasedConfig field_trials_;
   RtpTransportControllerSend transport_controller_;
   std::unique_ptr<ProcessThread> process_thread_;
+  // TODO(tommi): Use internal::CallStats.
   CallStats call_stats_;
   SendStatisticsProxy stats_proxy_;
   RateLimiter retransmission_rate_limiter_;
@@ -359,8 +361,10 @@ TEST(RtpVideoSenderTest, CreateWithPreviousStates) {
 TEST(RtpVideoSenderTest, FrameCountCallbacks) {
   class MockFrameCountObserver : public FrameCountObserver {
    public:
-    MOCK_METHOD2(FrameCountUpdated,
-                 void(const FrameCounts& frame_counts, uint32_t ssrc));
+    MOCK_METHOD(void,
+                FrameCountUpdated,
+                (const FrameCounts& frame_counts, uint32_t ssrc),
+                (override));
   } callback;
 
   RtpVideoSenderTestFixture test({kSsrc1}, {kRtxSsrc1}, kPayloadType, {},
@@ -674,8 +678,6 @@ TEST(RtpVideoSenderTest, EarlyRetransmits) {
 }
 
 TEST(RtpVideoSenderTest, SupportsDependencyDescriptor) {
-  test::ScopedFieldTrials trials("WebRTC-GenericDescriptor/Enabled/");
-
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
   test.router()->SetActive(true);
 
@@ -703,9 +705,9 @@ TEST(RtpVideoSenderTest, SupportsDependencyDescriptor) {
   codec_specific.template_structure.emplace();
   codec_specific.template_structure->num_decode_targets = 1;
   codec_specific.template_structure->templates = {
-      GenericFrameInfo::Builder().T(0).Dtis("S").Build(),
-      GenericFrameInfo::Builder().T(0).Dtis("S").Fdiffs({2}).Build(),
-      GenericFrameInfo::Builder().T(1).Dtis("D").Fdiffs({1}).Build(),
+      FrameDependencyTemplate().T(0).Dtis("S"),
+      FrameDependencyTemplate().T(0).Dtis("S").FrameDiffs({2}),
+      FrameDependencyTemplate().T(1).Dtis("D").FrameDiffs({1}),
   };
 
   // Send two tiny images, mapping to single RTP packets.
@@ -740,8 +742,6 @@ TEST(RtpVideoSenderTest, SupportsDependencyDescriptor) {
 }
 
 TEST(RtpVideoSenderTest, SupportsStoppingUsingDependencyDescriptor) {
-  test::ScopedFieldTrials trials("WebRTC-GenericDescriptor/Enabled/");
-
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
   test.router()->SetActive(true);
 
@@ -769,9 +769,9 @@ TEST(RtpVideoSenderTest, SupportsStoppingUsingDependencyDescriptor) {
   codec_specific.template_structure.emplace();
   codec_specific.template_structure->num_decode_targets = 1;
   codec_specific.template_structure->templates = {
-      GenericFrameInfo::Builder().T(0).Dtis("S").Build(),
-      GenericFrameInfo::Builder().T(0).Dtis("S").Fdiffs({2}).Build(),
-      GenericFrameInfo::Builder().T(1).Dtis("D").Fdiffs({1}).Build(),
+      FrameDependencyTemplate().T(0).Dtis("S"),
+      FrameDependencyTemplate().T(0).Dtis("S").FrameDiffs({2}),
+      FrameDependencyTemplate().T(1).Dtis("D").FrameDiffs({1}),
   };
 
   // Send two tiny images, mapping to single RTP packets.
@@ -825,17 +825,6 @@ TEST(RtpVideoSenderTest, CanSetZeroBitrateWithoutOverhead) {
 }
 
 TEST(RtpVideoSenderTest, SimulcastSenderRegistersFrameTransformers) {
-  class MockFrameTransformer : public FrameTransformerInterface {
-   public:
-    MOCK_METHOD3(TransformFrame,
-                 void(std::unique_ptr<video_coding::EncodedFrame> frame,
-                      std::vector<uint8_t> additional_data,
-                      uint32_t ssrc));
-    MOCK_METHOD2(RegisterTransformedFrameSinkCallback,
-                 void(rtc::scoped_refptr<TransformedFrameCallback>, uint32_t));
-    MOCK_METHOD1(UnregisterTransformedFrameSinkCallback, void(uint32_t));
-  };
-
   rtc::scoped_refptr<MockFrameTransformer> transformer =
       new rtc::RefCountedObject<MockFrameTransformer>();
 

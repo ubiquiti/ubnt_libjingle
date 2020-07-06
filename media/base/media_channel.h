@@ -26,7 +26,6 @@
 #include "api/media_stream_interface.h"
 #include "api/rtc_error.h"
 #include "api/rtp_parameters.h"
-#include "api/transport/media/media_transport_config.h"
 #include "api/transport/rtp/rtp_source.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_sink_interface.h"
@@ -195,15 +194,9 @@ class MediaChannel : public sigslot::has_slots<> {
 
   virtual cricket::MediaType media_type() const = 0;
 
-  // Sets the abstract interface class for sending RTP/RTCP data and
-  // interface for media transport (experimental). If media transport is
-  // provided, it should be used instead of RTP/RTCP.
-  // TODO(sukhanov): Currently media transport can co-exist with RTP/RTCP, but
-  // in the future we will refactor code to send all frames with media
-  // transport.
-  virtual void SetInterface(
-      NetworkInterface* iface,
-      const webrtc::MediaTransportConfig& media_transport_config);
+  // Sets the abstract interface class for sending RTP/RTCP data.
+  virtual void SetInterface(NetworkInterface* iface)
+      RTC_LOCKS_EXCLUDED(network_interface_crit_);
   // Called when a RTP packet is received.
   virtual void OnPacketReceived(rtc::CopyOnWriteBuffer packet,
                                 int64_t packet_time_us) = 0;
@@ -264,16 +257,9 @@ class MediaChannel : public sigslot::has_slots<> {
 
   int SetOption(NetworkInterface::SocketType type,
                 rtc::Socket::Option opt,
-                int option) {
+                int option) RTC_LOCKS_EXCLUDED(network_interface_crit_) {
     rtc::CritScope cs(&network_interface_crit_);
-    if (!network_interface_)
-      return -1;
-
-    return network_interface_->SetOption(type, opt, option);
-  }
-
-  const webrtc::MediaTransportConfig& media_transport_config() const {
-    return media_transport_config_;
+    return SetOptionLocked(type, opt, option);
   }
 
   // Corresponds to the SDP attribute extmap-allow-mixed, see RFC8285.
@@ -298,16 +284,27 @@ class MediaChannel : public sigslot::has_slots<> {
       rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer);
 
  protected:
+  int SetOptionLocked(NetworkInterface::SocketType type,
+                      rtc::Socket::Option opt,
+                      int option)
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(network_interface_crit_) {
+    if (!network_interface_)
+      return -1;
+    return network_interface_->SetOption(type, opt, option);
+  }
+
   bool DscpEnabled() const { return enable_dscp_; }
 
   // This is the DSCP value used for both RTP and RTCP channels if DSCP is
   // enabled. It can be changed at any time via |SetPreferredDscp|.
-  rtc::DiffServCodePoint PreferredDscp() const {
+  rtc::DiffServCodePoint PreferredDscp() const
+      RTC_LOCKS_EXCLUDED(network_interface_crit_) {
     rtc::CritScope cs(&network_interface_crit_);
     return preferred_dscp_;
   }
 
-  int SetPreferredDscp(rtc::DiffServCodePoint preferred_dscp) {
+  int SetPreferredDscp(rtc::DiffServCodePoint preferred_dscp)
+      RTC_LOCKS_EXCLUDED(network_interface_crit_) {
     rtc::CritScope cs(&network_interface_crit_);
     if (preferred_dscp == preferred_dscp_) {
       return 0;
@@ -322,16 +319,19 @@ class MediaChannel : public sigslot::has_slots<> {
   int UpdateDscp() RTC_EXCLUSIVE_LOCKS_REQUIRED(network_interface_crit_) {
     rtc::DiffServCodePoint value =
         enable_dscp_ ? preferred_dscp_ : rtc::DSCP_DEFAULT;
-    int ret = SetOption(NetworkInterface::ST_RTP, rtc::Socket::OPT_DSCP, value);
+    int ret =
+        SetOptionLocked(NetworkInterface::ST_RTP, rtc::Socket::OPT_DSCP, value);
     if (ret == 0) {
-      ret = SetOption(NetworkInterface::ST_RTCP, rtc::Socket::OPT_DSCP, value);
+      ret = SetOptionLocked(NetworkInterface::ST_RTCP, rtc::Socket::OPT_DSCP,
+                            value);
     }
     return ret;
   }
 
   bool DoSendPacket(rtc::CopyOnWriteBuffer* packet,
                     bool rtcp,
-                    const rtc::PacketOptions& options) {
+                    const rtc::PacketOptions& options)
+      RTC_LOCKS_EXCLUDED(network_interface_crit_) {
     rtc::CritScope cs(&network_interface_crit_);
     if (!network_interface_)
       return false;
@@ -349,7 +349,6 @@ class MediaChannel : public sigslot::has_slots<> {
       nullptr;
   rtc::DiffServCodePoint preferred_dscp_
       RTC_GUARDED_BY(network_interface_crit_) = rtc::DSCP_DEFAULT;
-  webrtc::MediaTransportConfig media_transport_config_;
   bool extmap_allow_mixed_ = false;
 };
 
@@ -569,6 +568,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
   int send_frame_height = 0;
   int framerate_input = 0;
   int framerate_sent = 0;
+  int aggregated_framerate_sent = 0;
   int nominal_bitrate = 0;
   int adapt_reason = 0;
   int adapt_changes = 0;
@@ -592,8 +592,11 @@ struct VideoSenderInfo : public MediaSenderInfo {
   bool has_entered_low_resolution = false;
   absl::optional<uint64_t> qp_sum;
   webrtc::VideoContentType content_type = webrtc::VideoContentType::UNSPECIFIED;
+  uint32_t frames_sent = 0;
   // https://w3c.github.io/webrtc-stats/#dom-rtcvideosenderstats-hugeframessent
   uint32_t huge_frames_sent = 0;
+  uint32_t aggregated_huge_frames_sent = 0;
+  absl::optional<std::string> rid;
 };
 
 struct VideoReceiverInfo : public MediaReceiverInfo {
@@ -713,11 +716,20 @@ struct VideoMediaInfo {
   ~VideoMediaInfo();
   void Clear() {
     senders.clear();
+    aggregated_senders.clear();
     receivers.clear();
     send_codecs.clear();
     receive_codecs.clear();
   }
+  // Each sender info represents one "outbound-rtp" stream.In non - simulcast,
+  // this means one info per RtpSender but if simulcast is used this means
+  // one info per simulcast layer.
   std::vector<VideoSenderInfo> senders;
+  // Used for legacy getStats() API's "ssrc" stats and modern getStats() API's
+  // "track" stats. If simulcast is used, instead of having one sender info per
+  // simulcast layer, the metrics of all layers of an RtpSender are aggregated
+  // into a single sender info per RtpSender.
+  std::vector<VideoSenderInfo> aggregated_senders;
   std::vector<VideoReceiverInfo> receivers;
   RtpCodecParametersMap send_codecs;
   RtpCodecParametersMap receive_codecs;

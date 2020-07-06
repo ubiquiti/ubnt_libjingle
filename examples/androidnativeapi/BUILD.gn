@@ -5,7 +5,7 @@ if (is_android) {
     testonly = true
     apk_name = "androidnativeapi"
     android_manifest = "AndroidManifest.xml"
-    min_sdk_version = 19
+    min_sdk_version = 21
     target_sdk_version = 27
 
     sources = [
@@ -16,6 +16,7 @@ if (is_android) {
     deps = [
       ":resources",
       "//modules/audio_device:audio_device_java",
+      "//rtc_base:base_java",
       "//sdk/android:camera_java",
       "//sdk/android:surfaceviewrenderer_java",
       "//sdk/android:video_api_java",

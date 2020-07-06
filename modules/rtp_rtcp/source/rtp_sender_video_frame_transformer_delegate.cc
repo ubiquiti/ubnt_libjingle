@@ -16,7 +16,6 @@
 #include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/source/rtp_descriptor_authentication.h"
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
-#include "modules/rtp_rtcp/source/transformable_encoded_frame.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 
 namespace webrtc {
@@ -44,6 +43,7 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
       uint32_t ssrc)
       : encoded_data_(encoded_image.GetEncodedData()),
         header_(video_header),
+        metadata_(header_),
         frame_type_(encoded_image._frameType),
         payload_type_(payload_type),
         codec_type_(codec_type),
@@ -76,6 +76,8 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
     return RtpDescriptorAuthentication(header_);
   }
 
+  const VideoFrameMetadata& GetMetadata() const override { return metadata_; }
+
   const RTPVideoHeader& GetHeader() const { return header_; }
   int GetPayloadType() const { return payload_type_; }
   absl::optional<VideoCodecType> GetCodecType() const { return codec_type_; }
@@ -92,6 +94,7 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
  private:
   rtc::scoped_refptr<EncodedImageBufferInterface> encoded_data_;
   const RTPVideoHeader header_;
+  const VideoFrameMetadata metadata_;
   const VideoFrameType frame_type_;
   const int payload_type_;
   const absl::optional<VideoCodecType> codec_type_ = absl::nullopt;
@@ -106,10 +109,12 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
 RTPSenderVideoFrameTransformerDelegate::RTPSenderVideoFrameTransformerDelegate(
     RTPSenderVideo* sender,
     rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
-    uint32_t ssrc)
+    uint32_t ssrc,
+    TaskQueueBase* send_transport_queue)
     : sender_(sender),
       frame_transformer_(std::move(frame_transformer)),
-      ssrc_(ssrc) {}
+      ssrc_(ssrc),
+      send_transport_queue_(send_transport_queue) {}
 
 void RTPSenderVideoFrameTransformerDelegate::Init() {
   frame_transformer_->RegisterTransformedFrameSinkCallback(
@@ -124,35 +129,18 @@ bool RTPSenderVideoFrameTransformerDelegate::TransformFrame(
     const RTPFragmentationHeader* fragmentation,
     RTPVideoHeader video_header,
     absl::optional<int64_t> expected_retransmission_time_ms) {
-  if (!encoder_queue_)
-    encoder_queue_ = TaskQueueBase::Current();
-  // TODO(bugs.webrtc.org/11380) remove once this version of TransformFrame() is
-  // deprecated.
-  frame_transformer_->TransformFrame(
-      std::make_unique<TransformableEncodedFrame>(
-          encoded_image.GetEncodedData(), video_header, payload_type,
-          codec_type, rtp_timestamp, encoded_image.capture_time_ms_,
-          fragmentation, expected_retransmission_time_ms),
-      RtpDescriptorAuthentication(video_header), ssrc_);
+  if (!encoder_queue_) {
+    // Save the current task queue to post the transformed frame for sending
+    // once it is transformed. When there is no current task queue, i.e.
+    // encoding is done on an external thread (for example in the case of
+    // hardware encoders), use the send transport queue instead.
+    TaskQueueBase* current = TaskQueueBase::Current();
+    encoder_queue_ = current ? current : send_transport_queue_;
+  }
   frame_transformer_->Transform(std::make_unique<TransformableVideoSenderFrame>(
       encoded_image, video_header, payload_type, codec_type, rtp_timestamp,
       fragmentation, expected_retransmission_time_ms, ssrc_));
   return true;
-}
-
-void RTPSenderVideoFrameTransformerDelegate::OnTransformedFrame(
-    std::unique_ptr<video_coding::EncodedFrame> frame) {
-  rtc::CritScope lock(&sender_lock_);
-
-  // The encoder queue gets destroyed after the sender; as long as the sender is
-  // alive, it's safe to post.
-  if (!sender_)
-    return;
-  rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate = this;
-  encoder_queue_->PostTask(ToQueuedTask(
-      [delegate = std::move(delegate), frame = std::move(frame)]() mutable {
-        delegate->SendVideo(std::move(frame));
-      }));
 }
 
 void RTPSenderVideoFrameTransformerDelegate::OnTransformedFrame(
@@ -168,23 +156,6 @@ void RTPSenderVideoFrameTransformerDelegate::OnTransformedFrame(
       [delegate = std::move(delegate), frame = std::move(frame)]() mutable {
         delegate->SendVideo(std::move(frame));
       }));
-}
-
-void RTPSenderVideoFrameTransformerDelegate::SendVideo(
-    std::unique_ptr<video_coding::EncodedFrame> frame) const {
-  RTC_CHECK(encoder_queue_->IsCurrent());
-  rtc::CritScope lock(&sender_lock_);
-  if (!sender_)
-    return;
-  auto* transformed_frame =
-      static_cast<TransformableEncodedFrame*>(frame.get());
-  sender_->SendVideo(
-      transformed_frame->PayloadType(), transformed_frame->codec_type(),
-      transformed_frame->Timestamp(), transformed_frame->capture_time_ms(),
-      transformed_frame->EncodedImage(),
-      transformed_frame->fragmentation_header(),
-      transformed_frame->video_header(),
-      transformed_frame->expected_retransmission_time_ms());
 }
 
 void RTPSenderVideoFrameTransformerDelegate::SendVideo(

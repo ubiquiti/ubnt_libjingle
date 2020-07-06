@@ -10,6 +10,7 @@
 
 #include "pc/peer_connection_factory.h"
 
+#include <cstdio>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -23,7 +24,6 @@
 #include "api/peer_connection_proxy.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/transport/field_trial_based_config.h"
-#include "api/transport/media/media_transport_interface.h"
 #include "api/turn_customizer.h"
 #include "api/units/data_rate.h"
 #include "api/video_track_source_proxy.h"
@@ -82,7 +82,6 @@ PeerConnectionFactory::PeerConnectionFactory(
           std::move(dependencies.network_state_predictor_factory)),
       injected_network_controller_factory_(
           std::move(dependencies.network_controller_factory)),
-      media_transport_factory_(std::move(dependencies.media_transport_factory)),
       neteq_factory_(std::move(dependencies.neteq_factory)),
       trials_(dependencies.trials ? std::move(dependencies.trials)
                                   : std::make_unique<FieldTrialBasedConfig>()) {
@@ -109,6 +108,10 @@ PeerConnectionFactory::PeerConnectionFactory(
       wraps_current_thread_ = true;
     }
   }
+  signaling_thread_->AllowInvokesToThread(worker_thread_);
+  signaling_thread_->AllowInvokesToThread(network_thread_);
+  worker_thread_->AllowInvokesToThread(network_thread_);
+  network_thread_->DisallowAllInvokes();
 }
 
 PeerConnectionFactory::~PeerConnectionFactory() {
