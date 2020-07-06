@@ -20,12 +20,14 @@
 #include "api/array_view.h"
 #include "api/frame_transformer_interface.h"
 #include "api/scoped_refptr.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/video_codec_type.h"
 #include "api/video/video_frame_type.h"
 #include "modules/include/module_common_types.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/absolute_capture_time_sender.h"
+#include "modules/rtp_rtcp/source/active_decode_targets_helper.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
 #include "modules/rtp_rtcp/source/rtp_sender_video_frame_transformer_delegate.h"
@@ -71,12 +73,17 @@ class RTPSenderVideo {
     RTPSender* rtp_sender = nullptr;
     FlexfecSender* flexfec_sender = nullptr;
     VideoFecGenerator* fec_generator = nullptr;
+    // Some FEC data is duplicated here in preparation of moving FEC to
+    // the egress stage.
+    absl::optional<VideoFecGenerator::FecType> fec_type;
+    size_t fec_overhead_bytes = 0;  // Per packet max FEC overhead.
     FrameEncryptorInterface* frame_encryptor = nullptr;
     bool require_frame_encryption = false;
     bool enable_retransmit_all_layers = false;
     absl::optional<int> red_payload_type;
     const WebRtcKeyValueConfig* field_trials = nullptr;
     rtc::scoped_refptr<FrameTransformerInterface> frame_transformer;
+    TaskQueueBase* send_transport_queue = nullptr;
   };
 
   explicit RTPSenderVideo(const Config& config);
@@ -112,13 +119,7 @@ class RTPSenderVideo {
   void SetVideoStructureUnderLock(
       const FrameDependencyStructure* video_structure);
 
-  // FlexFEC/ULPFEC.
-  // Set FEC rates, max frames before FEC is sent, and type of FEC masks.
-  void SetFecParameters(const FecProtectionParams& delta_params,
-                        const FecProtectionParams& key_params);
-
   uint32_t VideoBitrateSent() const;
-  uint32_t FecOverheadRate() const;
 
   // Returns the current packetization overhead rate, in bps. Note that this is
   // the payload overhead, eg the VP8 payload headers, not the RTP headers
@@ -191,6 +192,8 @@ class RTPSenderVideo {
 
   const absl::optional<int> red_payload_type_;
   VideoFecGenerator* const fec_generator_;
+  absl::optional<VideoFecGenerator::FecType> fec_type_;
+  const size_t fec_overhead_bytes_;  // Per packet max FEC overhead.
 
   rtc::CriticalSection stats_crit_;
   // Bitrate used for video payload and RTP headers.
@@ -212,6 +215,9 @@ class RTPSenderVideo {
   const bool generic_descriptor_auth_experiment_;
 
   AbsoluteCaptureTimeSender absolute_capture_time_sender_;
+  // Tracks updates to the active decode targets and decides when active decode
+  // targets bitmask should be attached to the dependency descriptor.
+  ActiveDecodeTargetsHelper active_decode_targets_tracker_;
 
   const rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate>
       frame_transformer_delegate_;

@@ -25,6 +25,7 @@
 #include "api/video/video_bitrate_allocator_factory.h"
 #include "api/video/video_codec_constants.h"
 #include "api/video_codecs/video_encoder.h"
+#include "call/adaptation/resource_adaptation_processor.h"
 #include "modules/video_coding/codecs/vp9/svc_rate_allocator.h"
 #include "modules/video_coding/include/video_codec_initializer.h"
 #include "rtc_base/arraysize.h"
@@ -37,7 +38,7 @@
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/field_trial.h"
-#include "video/adaptation/resource_adaptation_processor.h"
+#include "video/adaptation/video_stream_encoder_resource_manager.h"
 
 namespace webrtc {
 
@@ -200,6 +201,72 @@ bool VideoStreamEncoder::EncoderRateSettings::operator!=(
   return !(*this == rhs);
 }
 
+class VideoStreamEncoder::DegradationPreferenceManager
+    : public DegradationPreferenceProvider {
+ public:
+  DegradationPreferenceManager()
+      : degradation_preference_(DegradationPreference::DISABLED),
+        is_screenshare_(false),
+        effective_degradation_preference_(DegradationPreference::DISABLED) {}
+
+  ~DegradationPreferenceManager() override { RTC_DCHECK(listeners_.empty()); }
+
+  DegradationPreference degradation_preference() const override {
+    rtc::CritScope crit(&lock_);
+    return effective_degradation_preference_;
+  }
+
+  void SetDegradationPreference(DegradationPreference degradation_preference) {
+    rtc::CritScope crit(&lock_);
+    degradation_preference_ = degradation_preference;
+    MaybeUpdateEffectiveDegradationPreference();
+  }
+
+  void SetIsScreenshare(bool is_screenshare) {
+    rtc::CritScope crit(&lock_);
+    is_screenshare_ = is_screenshare;
+    MaybeUpdateEffectiveDegradationPreference();
+  }
+
+  void AddListener(DegradationPreferenceListener* listener) {
+    rtc::CritScope crit(&lock_);
+    RTC_DCHECK(absl::c_find(listeners_, listener) == listeners_.end());
+    listeners_.push_back(listener);
+  }
+
+  void RemoveListener(DegradationPreferenceListener* listener) {
+    rtc::CritScope crit(&lock_);
+    auto it = absl::c_find(listeners_, listener);
+    RTC_DCHECK(it != listeners_.end());
+    listeners_.erase(it);
+  }
+
+ private:
+  void MaybeUpdateEffectiveDegradationPreference()
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(&lock_) {
+    DegradationPreference effective_degradation_preference =
+        (is_screenshare_ &&
+         degradation_preference_ == DegradationPreference::BALANCED)
+            ? DegradationPreference::MAINTAIN_RESOLUTION
+            : degradation_preference_;
+
+    if (effective_degradation_preference != effective_degradation_preference_) {
+      effective_degradation_preference_ = effective_degradation_preference;
+      for (auto& listener : listeners_) {
+        listener->OnDegradationPreferenceUpdated(
+            effective_degradation_preference_);
+      }
+    }
+  }
+
+  rtc::CriticalSection lock_;
+  DegradationPreference degradation_preference_ RTC_GUARDED_BY(&lock_);
+  bool is_screenshare_ RTC_GUARDED_BY(&lock_);
+  DegradationPreference effective_degradation_preference_
+      RTC_GUARDED_BY(&lock_);
+  std::vector<DegradationPreferenceListener*> listeners_ RTC_GUARDED_BY(&lock_);
+};
+
 VideoStreamEncoder::VideoStreamEncoder(
     Clock* clock,
     uint32_t number_of_cores,
@@ -250,29 +317,70 @@ VideoStreamEncoder::VideoStreamEncoder(
       next_frame_types_(1, VideoFrameType::kVideoFrameDelta),
       frame_encode_metadata_writer_(this),
       experiment_groups_(GetExperimentGroups()),
-      next_frame_id_(0),
       encoder_switch_experiment_(ParseEncoderSwitchFieldTrial()),
       automatic_animation_detection_experiment_(
           ParseAutomatincAnimationDetectionFieldTrial()),
       encoder_switch_requested_(false),
-      video_source_sink_controller_(std::make_unique<VideoSourceSinkController>(
-          /*sink=*/this,
-          /*source=*/nullptr)),
+      input_state_provider_(encoder_stats_observer),
+      video_stream_adapter_(
+          std::make_unique<VideoStreamAdapter>(&input_state_provider_)),
       resource_adaptation_processor_(
           std::make_unique<ResourceAdaptationProcessor>(
-              clock_,
-              settings_.experiment_cpu_load_estimator,
-              std::move(overuse_detector),
               encoder_stats_observer,
-              /*adaptation_listener=*/this)),
+              video_stream_adapter_.get())),
+      degradation_preference_manager_(
+          std::make_unique<DegradationPreferenceManager>()),
+      adaptation_constraints_(),
+      adaptation_listeners_(),
+      stream_resource_manager_(&input_state_provider_,
+                               encoder_stats_observer,
+                               clock_,
+                               settings_.experiment_cpu_load_estimator,
+                               std::move(overuse_detector),
+                               degradation_preference_manager_.get()),
+      video_source_sink_controller_(/*sink=*/this,
+                                    /*source=*/nullptr),
+      resource_adaptation_queue_(task_queue_factory->CreateTaskQueue(
+          "ResourceAdaptationQueue",
+          TaskQueueFactory::Priority::NORMAL)),
       encoder_queue_(task_queue_factory->CreateTaskQueue(
           "EncoderQueue",
           TaskQueueFactory::Priority::NORMAL)) {
   RTC_DCHECK(encoder_stats_observer);
   RTC_DCHECK_GE(number_of_cores, 1);
 
-  for (auto& state : encoder_buffer_state_)
-    state.fill(std::numeric_limits<int64_t>::max());
+  stream_resource_manager_.Initialize(&encoder_queue_,
+                                      &resource_adaptation_queue_);
+
+  rtc::Event initialize_processor_event;
+  resource_adaptation_queue_.PostTask([this, &initialize_processor_event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    resource_adaptation_processor_->SetResourceAdaptationQueue(
+        resource_adaptation_queue_.Get());
+    stream_resource_manager_.SetAdaptationProcessor(
+        resource_adaptation_processor_.get(), video_stream_adapter_.get());
+    resource_adaptation_processor_->AddResourceLimitationsListener(
+        &stream_resource_manager_);
+    video_stream_adapter_->AddRestrictionsListener(&stream_resource_manager_);
+    video_stream_adapter_->AddRestrictionsListener(this);
+    degradation_preference_manager_->AddListener(
+        resource_adaptation_processor_.get());
+
+    // Add the stream resource manager's resources to the processor.
+    adaptation_constraints_ = stream_resource_manager_.AdaptationConstraints();
+    adaptation_listeners_ = stream_resource_manager_.AdaptationListeners();
+    for (auto& resource : stream_resource_manager_.MappedResources()) {
+      resource_adaptation_processor_->AddResource(resource);
+    }
+    for (auto* constraint : adaptation_constraints_) {
+      resource_adaptation_processor_->AddAdaptationConstraint(constraint);
+    }
+    for (auto* listener : adaptation_listeners_) {
+      resource_adaptation_processor_->AddAdaptationListener(listener);
+    }
+    initialize_processor_event.Set();
+  });
+  initialize_processor_event.Wait(rtc::Event::kForever);
 }
 
 VideoStreamEncoder::~VideoStreamEncoder() {
@@ -283,16 +391,43 @@ VideoStreamEncoder::~VideoStreamEncoder() {
 
 void VideoStreamEncoder::Stop() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  video_source_sink_controller_->SetSource(nullptr);
+  video_source_sink_controller_.SetSource(nullptr);
+
+  rtc::Event shutdown_adaptation_processor_event;
+  resource_adaptation_queue_.PostTask([this,
+                                       &shutdown_adaptation_processor_event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    if (resource_adaptation_processor_) {
+      for (auto& resource : stream_resource_manager_.MappedResources()) {
+        resource_adaptation_processor_->RemoveResource(resource);
+      }
+      for (auto* constraint : adaptation_constraints_) {
+        resource_adaptation_processor_->RemoveAdaptationConstraint(constraint);
+      }
+      for (auto* listener : adaptation_listeners_) {
+        resource_adaptation_processor_->RemoveAdaptationListener(listener);
+      }
+      video_stream_adapter_->RemoveRestrictionsListener(this);
+      video_stream_adapter_->RemoveRestrictionsListener(
+          &stream_resource_manager_);
+      resource_adaptation_processor_->RemoveResourceLimitationsListener(
+          &stream_resource_manager_);
+      stream_resource_manager_.SetAdaptationProcessor(nullptr, nullptr);
+      degradation_preference_manager_->RemoveListener(
+          resource_adaptation_processor_.get());
+      resource_adaptation_processor_.reset();
+    }
+    shutdown_adaptation_processor_event.Set();
+  });
+  shutdown_adaptation_processor_event.Wait(rtc::Event::kForever);
   encoder_queue_.PostTask([this] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
-    resource_adaptation_processor_->StopResourceAdaptation();
+    stream_resource_manager_.StopManagedResources();
     rate_allocator_ = nullptr;
     bitrate_observer_ = nullptr;
     ReleaseEncoder();
     shutdown_event_.Set();
   });
-
   shutdown_event_.Wait(rtc::Event::kForever);
 }
 
@@ -318,25 +453,76 @@ void VideoStreamEncoder::SetFecControllerOverride(
   });
 }
 
+void VideoStreamEncoder::AddAdaptationResource(
+    rtc::scoped_refptr<Resource> resource) {
+  // Map any externally added resources as kCpu for the sake of stats reporting.
+  // TODO(hbos): Make the manager map any unknown resources to kCpu and get rid
+  // of this MapResourceToReason() call.
+  rtc::Event map_resource_event;
+  encoder_queue_.PostTask([this, resource, &map_resource_event] {
+    RTC_DCHECK_RUN_ON(&encoder_queue_);
+    stream_resource_manager_.MapResourceToReason(resource,
+                                                 VideoAdaptationReason::kCpu);
+    map_resource_event.Set();
+  });
+  map_resource_event.Wait(rtc::Event::kForever);
+
+  // Add the resource to the processor.
+  rtc::Event add_resource_event;
+  resource_adaptation_queue_.PostTask([this, resource, &add_resource_event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    if (!resource_adaptation_processor_) {
+      // The VideoStreamEncoder was stopped and the processor destroyed before
+      // this task had a chance to execute. No action needed.
+      return;
+    }
+    resource_adaptation_processor_->AddResource(resource);
+    add_resource_event.Set();
+  });
+  add_resource_event.Wait(rtc::Event::kForever);
+}
+
+std::vector<rtc::scoped_refptr<Resource>>
+VideoStreamEncoder::GetAdaptationResources() {
+  std::vector<rtc::scoped_refptr<Resource>> resources;
+  rtc::Event event;
+  resource_adaptation_queue_.PostTask([this, &resources, &event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    if (!resource_adaptation_processor_) {
+      // The VideoStreamEncoder was stopped and the processor destroyed before
+      // this task had a chance to execute. No action needed.
+      return;
+    }
+    resources = resource_adaptation_processor_->GetResources();
+    event.Set();
+  });
+  event.Wait(rtc::Event::kForever);
+  return resources;
+}
+
 void VideoStreamEncoder::SetSource(
     rtc::VideoSourceInterface<VideoFrame>* source,
     const DegradationPreference& degradation_preference) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  video_source_sink_controller_->SetSource(source);
-  encoder_queue_.PostTask([this, source, degradation_preference] {
+  video_source_sink_controller_.SetSource(source);
+  input_state_provider_.OnHasInputChanged(source);
+
+  degradation_preference_manager_->SetDegradationPreference(
+      degradation_preference);
+  // This may trigger reconfiguring the QualityScaler on the encoder queue.
+  encoder_queue_.PostTask([this, degradation_preference] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
-    resource_adaptation_processor_->SetHasInputVideo(source);
-    resource_adaptation_processor_->SetDegradationPreference(
-        degradation_preference);
-    if (encoder_)
-      resource_adaptation_processor_->ConfigureQualityScaler(
+    stream_resource_manager_.SetDegradationPreferences(degradation_preference);
+    if (encoder_) {
+      stream_resource_manager_.ConfigureQualityScaler(
           encoder_->GetEncoderInfo());
+    }
   });
 }
 
 void VideoStreamEncoder::SetSink(EncoderSink* sink, bool rotation_applied) {
-  video_source_sink_controller_->SetRotationApplied(rotation_applied);
-  video_source_sink_controller_->PushSourceSinkSettings();
+  video_source_sink_controller_.SetRotationApplied(rotation_applied);
+  video_source_sink_controller_.PushSourceSinkSettings();
   encoder_queue_.PostTask([this, sink] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
     sink_ = sink;
@@ -349,7 +535,7 @@ void VideoStreamEncoder::SetStartBitrate(int start_bitrate_bps) {
     encoder_target_bitrate_bps_ =
         start_bitrate_bps != 0 ? absl::optional<uint32_t>(start_bitrate_bps)
                                : absl::nullopt;
-    resource_adaptation_processor_->SetStartBitrate(
+    stream_resource_manager_.SetStartBitrate(
         DataRate::BitsPerSec(start_bitrate_bps));
   });
 }
@@ -517,6 +703,13 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     RTC_LOG(LS_ERROR) << "Failed to create encoder configuration.";
   }
 
+  if (encoder_config_.codec_type == kVideoCodecVP9) {
+    // Spatial layers configuration might impose some parity restrictions,
+    // thus some cropping might be needed.
+    crop_width_ = last_frame_info_->width - codec.width;
+    crop_height_ = last_frame_info_->height - codec.height;
+  }
+
   char log_stream_buf[4 * 1024];
   rtc::SimpleStringBuilder log_stream(log_stream_buf);
   log_stream << "ReconfigureEncoder:\n";
@@ -566,12 +759,11 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     max_framerate = std::max(stream.max_framerate, max_framerate);
   }
   int alignment = encoder_->GetEncoderInfo().requested_resolution_alignment;
-  if (max_framerate !=
-          video_source_sink_controller_->frame_rate_upper_limit() ||
-      alignment != video_source_sink_controller_->resolution_alignment()) {
-    video_source_sink_controller_->SetFrameRateUpperLimit(max_framerate);
-    video_source_sink_controller_->SetResolutionAlignment(alignment);
-    video_source_sink_controller_->PushSourceSinkSettings();
+  if (max_framerate != video_source_sink_controller_.frame_rate_upper_limit() ||
+      alignment != video_source_sink_controller_.resolution_alignment()) {
+    video_source_sink_controller_.SetFrameRateUpperLimit(max_framerate);
+    video_source_sink_controller_.SetResolutionAlignment(alignment);
+    video_source_sink_controller_.PushSourceSinkSettings();
   }
 
   if (codec.maxBitrate == 0) {
@@ -636,8 +828,8 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     was_encode_called_since_last_initialization_ = false;
   }
 
-  resource_adaptation_processor_->SetEncoderSettings(EncoderSettings(
-      encoder_->GetEncoderInfo(), encoder_config_.Copy(), send_codec_));
+  // Inform dependents of updated encoder settings.
+  OnEncoderSettingsChanged();
 
   if (success) {
     next_frame_types_.clear();
@@ -654,8 +846,12 @@ void VideoStreamEncoder::ReconfigureEncoder() {
   }
 
   if (pending_encoder_creation_) {
-    resource_adaptation_processor_->StopResourceAdaptation();
-    resource_adaptation_processor_->StartResourceAdaptation(this);
+    // TODO(hbos): Stopping and restarting for backwards compatibility reasons.
+    // We may be able to change this to "EnsureStarted()" if it took care of
+    // reconfiguring the QualityScaler as well. (ConfigureQualityScaler() is
+    // invoked later in this method.)
+    stream_resource_manager_.StopManagedResources();
+    stream_resource_manager_.StartEncodeUsageResource();
     pending_encoder_creation_ = false;
   }
 
@@ -728,7 +924,17 @@ void VideoStreamEncoder::ReconfigureEncoder() {
       std::move(streams), is_svc, encoder_config_.content_type,
       encoder_config_.min_transmit_bitrate_bps);
 
-  resource_adaptation_processor_->ConfigureQualityScaler(info);
+  stream_resource_manager_.ConfigureQualityScaler(info);
+}
+
+void VideoStreamEncoder::OnEncoderSettingsChanged() {
+  EncoderSettings encoder_settings(encoder_->GetEncoderInfo(),
+                                   encoder_config_.Copy(), send_codec_);
+  stream_resource_manager_.SetEncoderSettings(encoder_settings);
+  input_state_provider_.OnEncoderSettingsChanged(encoder_settings);
+  bool is_screenshare = encoder_settings.encoder_config().content_type ==
+                        VideoEncoderConfig::ContentType::kScreen;
+  degradation_preference_manager_->SetIsScreenshare(is_screenshare);
 }
 
 void VideoStreamEncoder::OnFrame(const VideoFrame& video_frame) {
@@ -965,14 +1171,14 @@ void VideoStreamEncoder::SetEncoderRates(
     frame_encode_metadata_writer_.OnSetRates(
         rate_settings.rate_control.bitrate,
         static_cast<uint32_t>(rate_settings.rate_control.framerate_fps + 0.5));
-    resource_adaptation_processor_->SetEncoderRates(rate_settings.rate_control);
+    stream_resource_manager_.SetEncoderRates(rate_settings.rate_control);
   }
 }
 
 void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
                                                int64_t time_when_posted_us) {
   RTC_DCHECK_RUN_ON(&encoder_queue_);
-  resource_adaptation_processor_->OnFrame(video_frame);
+  input_state_provider_.OnFrameSizeObserved(video_frame.size());
 
   if (!last_frame_info_ || video_frame.width() != last_frame_info_->width ||
       video_frame.height() != last_frame_info_->height ||
@@ -1034,7 +1240,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
 
   if (DropDueToSize(video_frame.size())) {
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
-    resource_adaptation_processor_->OnFrameDroppedDueToSize();
+    stream_resource_manager_.OnFrameDroppedDueToSize();
     // Storing references to a native buffer risks blocking frame capture.
     if (video_frame.video_frame_buffer()->type() !=
         VideoFrameBuffer::Type::kNative) {
@@ -1048,7 +1254,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
     }
     return;
   }
-  resource_adaptation_processor_->OnMaybeEncodeFrame();
+  stream_resource_manager_.OnMaybeEncodeFrame();
 
   if (EncoderPaused()) {
     // Storing references to a native buffer risks blocking frame capture.
@@ -1119,8 +1325,7 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
   }
 
   if (encoder_info_ != info) {
-    resource_adaptation_processor_->SetEncoderSettings(EncoderSettings(
-        encoder_->GetEncoderInfo(), encoder_config_.Copy(), send_codec_));
+    OnEncoderSettingsChanged();
     RTC_LOG(LS_INFO) << "Encoder settings changed from "
                      << encoder_info_.ToString() << " to " << info.ToString();
   }
@@ -1232,8 +1437,7 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
   TRACE_EVENT_ASYNC_STEP0("webrtc", "Video", video_frame.render_time_ms(),
                           "Encode");
 
-  resource_adaptation_processor_->OnEncodeStarted(out_frame,
-                                                  time_when_posted_us);
+  stream_resource_manager_.OnEncodeStarted(out_frame, time_when_posted_us);
 
   RTC_DCHECK_LE(send_codec_.width, out_frame.width());
   RTC_DCHECK_LE(send_codec_.height, out_frame.height());
@@ -1414,48 +1618,8 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
     simulcast_id = encoded_image.SpatialIndex().value_or(0);
   }
 
-  std::unique_ptr<CodecSpecificInfo> codec_info_copy;
-  {
-    rtc::CritScope cs(&encoded_image_lock_);
-
-    if (codec_specific_info && codec_specific_info->generic_frame_info) {
-      codec_info_copy =
-          std::make_unique<CodecSpecificInfo>(*codec_specific_info);
-      GenericFrameInfo& generic_info = *codec_info_copy->generic_frame_info;
-      generic_info.frame_id = next_frame_id_++;
-
-      if (encoder_buffer_state_.size() <= static_cast<size_t>(simulcast_id)) {
-        RTC_LOG(LS_ERROR) << "At most " << encoder_buffer_state_.size()
-                          << " simulcast streams supported.";
-      } else {
-        std::array<int64_t, kMaxEncoderBuffers>& state =
-            encoder_buffer_state_[simulcast_id];
-        for (const CodecBufferUsage& buffer : generic_info.encoder_buffers) {
-          if (state.size() <= static_cast<size_t>(buffer.id)) {
-            RTC_LOG(LS_ERROR)
-                << "At most " << state.size() << " encoder buffers supported.";
-            break;
-          }
-
-          if (buffer.referenced) {
-            int64_t diff = generic_info.frame_id - state[buffer.id];
-            if (diff <= 0) {
-              RTC_LOG(LS_ERROR) << "Invalid frame diff: " << diff << ".";
-            } else if (absl::c_find(generic_info.frame_diffs, diff) ==
-                       generic_info.frame_diffs.end()) {
-              generic_info.frame_diffs.push_back(diff);
-            }
-          }
-
-          if (buffer.updated)
-            state[buffer.id] = generic_info.frame_id;
-        }
-      }
-    }
-  }
-
   EncodedImageCallback::Result result = sink_->OnEncodedImage(
-      image_copy, codec_info_copy ? codec_info_copy.get() : codec_specific_info,
+      image_copy, codec_specific_info,
       fragmentation_copy ? fragmentation_copy.get() : fragmentation);
 
   // We are only interested in propagating the meta-data about the image, not
@@ -1508,7 +1672,7 @@ void VideoStreamEncoder::OnDroppedFrame(DropReason reason) {
   sink_->OnDroppedFrame(reason);
   encoder_queue_.PostTask([this, reason] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
-    resource_adaptation_processor_->OnFrameDropped(reason);
+    stream_resource_manager_.OnFrameDropped(reason);
   });
 }
 
@@ -1607,7 +1771,7 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   if (target_bitrate.bps() != 0)
     encoder_target_bitrate_bps_ = target_bitrate.bps();
 
-  resource_adaptation_processor_->SetTargetBitrate(target_bitrate);
+  stream_resource_manager_.SetTargetBitrate(target_bitrate);
 
   if (video_suspension_changed) {
     RTC_LOG(LS_INFO) << "Video suspend state changed to: "
@@ -1624,7 +1788,13 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
 }
 
 bool VideoStreamEncoder::DropDueToSize(uint32_t pixel_count) const {
-  if (!resource_adaptation_processor_->DropInitialFrames() ||
+  bool simulcast_or_svc =
+      (send_codec_.codecType == VideoCodecType::kVideoCodecVP9 &&
+       send_codec_.VP9().numberOfSpatialLayers > 1) ||
+      send_codec_.numberOfSimulcastStreams > 1 ||
+      encoder_config_.simulcast_layers.size() > 1;
+
+  if (simulcast_or_svc || !stream_resource_manager_.DropInitialFrames() ||
       !encoder_target_bitrate_bps_.has_value()) {
     return false;
   }
@@ -1648,10 +1818,16 @@ bool VideoStreamEncoder::DropDueToSize(uint32_t pixel_count) const {
 }
 
 void VideoStreamEncoder::OnVideoSourceRestrictionsUpdated(
-    VideoSourceRestrictions restrictions) {
-  RTC_DCHECK_RUN_ON(&encoder_queue_);
-  video_source_sink_controller_->SetRestrictions(std::move(restrictions));
-  video_source_sink_controller_->PushSourceSinkSettings();
+    VideoSourceRestrictions restrictions,
+    const VideoAdaptationCounters& adaptation_counters,
+    rtc::scoped_refptr<Resource> reason,
+    const VideoSourceRestrictions& unfiltered_restrictions) {
+  RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+  std::string resource_name = reason ? reason->Name() : "<null>";
+  RTC_LOG(INFO) << "Updating sink restrictions from " << resource_name << " to "
+                << restrictions.ToString();
+  video_source_sink_controller_.SetRestrictions(std::move(restrictions));
+  video_source_sink_controller_.PushSourceSinkSettings();
 }
 
 void VideoStreamEncoder::RunPostEncode(const EncodedImage& encoded_image,
@@ -1696,8 +1872,8 @@ void VideoStreamEncoder::RunPostEncode(const EncodedImage& encoded_image,
     }
   }
 
-  resource_adaptation_processor_->OnEncodeCompleted(encoded_image, time_sent_us,
-                                                    encode_duration_us);
+  stream_resource_manager_.OnEncodeCompleted(encoded_image, time_sent_us,
+                                             encode_duration_us);
   if (bitrate_adjuster_) {
     bitrate_adjuster_->OnEncodedFrame(encoded_image, temporal_index);
   }
@@ -1852,7 +2028,7 @@ void VideoStreamEncoder::CheckForAnimatedContent(
   if (!automatic_animation_detection_experiment_.enabled ||
       encoder_config_.content_type !=
           VideoEncoderConfig::ContentType::kScreen ||
-      resource_adaptation_processor_->degradation_preference() !=
+      stream_resource_manager_.degradation_preference() !=
           DegradationPreference::BALANCED) {
     return;
   }
@@ -1910,16 +2086,100 @@ void VideoStreamEncoder::CheckForAnimatedContent(
       RTC_LOG(LS_INFO) << "Removing resolution cap due to no consistent "
                           "animation detection.";
     }
-    video_source_sink_controller_->SetPixelsPerFrameUpperLimit(
+    video_source_sink_controller_.SetPixelsPerFrameUpperLimit(
         should_cap_resolution ? absl::optional<size_t>(kMaxAnimationPixels)
                               : absl::nullopt);
-    video_source_sink_controller_->PushSourceSinkSettings();
+    video_source_sink_controller_.PushSourceSinkSettings();
   }
 }
 void VideoStreamEncoder::InjectAdaptationResource(
-    Resource* resource,
+    rtc::scoped_refptr<Resource> resource,
     VideoAdaptationReason reason) {
-  resource_adaptation_processor_->AddResource(resource, reason);
+  rtc::Event map_resource_event;
+  encoder_queue_.PostTask([this, resource, reason, &map_resource_event] {
+    RTC_DCHECK_RUN_ON(&encoder_queue_);
+    stream_resource_manager_.MapResourceToReason(resource, reason);
+    map_resource_event.Set();
+  });
+  map_resource_event.Wait(rtc::Event::kForever);
+
+  rtc::Event add_resource_event;
+  resource_adaptation_queue_.PostTask([this, resource, &add_resource_event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    if (!resource_adaptation_processor_) {
+      // The VideoStreamEncoder was stopped and the processor destroyed before
+      // this task had a chance to execute. No action needed.
+      return;
+    }
+    resource_adaptation_processor_->AddResource(resource);
+    add_resource_event.Set();
+  });
+  add_resource_event.Wait(rtc::Event::kForever);
+}
+
+void VideoStreamEncoder::InjectAdaptationConstraint(
+    AdaptationConstraint* adaptation_constraint) {
+  rtc::Event event;
+  resource_adaptation_queue_.PostTask([this, adaptation_constraint, &event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    if (!resource_adaptation_processor_) {
+      // The VideoStreamEncoder was stopped and the processor destroyed before
+      // this task had a chance to execute. No action needed.
+      return;
+    }
+    adaptation_constraints_.push_back(adaptation_constraint);
+    resource_adaptation_processor_->AddAdaptationConstraint(
+        adaptation_constraint);
+    event.Set();
+  });
+  event.Wait(rtc::Event::kForever);
+}
+
+void VideoStreamEncoder::InjectAdaptationListener(
+    AdaptationListener* adaptation_listener) {
+  rtc::Event event;
+  resource_adaptation_queue_.PostTask([this, adaptation_listener, &event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    if (!resource_adaptation_processor_) {
+      // The VideoStreamEncoder was stopped and the processor destroyed before
+      // this task had a chance to execute. No action needed.
+      return;
+    }
+    adaptation_listeners_.push_back(adaptation_listener);
+    resource_adaptation_processor_->AddAdaptationListener(adaptation_listener);
+    event.Set();
+  });
+  event.Wait(rtc::Event::kForever);
+}
+
+rtc::scoped_refptr<QualityScalerResource>
+VideoStreamEncoder::quality_scaler_resource_for_testing() {
+  RTC_DCHECK_RUN_ON(&encoder_queue_);
+  return stream_resource_manager_.quality_scaler_resource_for_testing();
+}
+
+void VideoStreamEncoder::AddRestrictionsListenerForTesting(
+    VideoSourceRestrictionsListener* restrictions_listener) {
+  rtc::Event event;
+  resource_adaptation_queue_.PostTask([this, restrictions_listener, &event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    RTC_DCHECK(resource_adaptation_processor_);
+    video_stream_adapter_->AddRestrictionsListener(restrictions_listener);
+    event.Set();
+  });
+  event.Wait(rtc::Event::kForever);
+}
+
+void VideoStreamEncoder::RemoveRestrictionsListenerForTesting(
+    VideoSourceRestrictionsListener* restrictions_listener) {
+  rtc::Event event;
+  resource_adaptation_queue_.PostTask([this, restrictions_listener, &event] {
+    RTC_DCHECK_RUN_ON(&resource_adaptation_queue_);
+    RTC_DCHECK(resource_adaptation_processor_);
+    video_stream_adapter_->RemoveRestrictionsListener(restrictions_listener);
+    event.Set();
+  });
+  event.Wait(rtc::Event::kForever);
 }
 
 }  // namespace webrtc

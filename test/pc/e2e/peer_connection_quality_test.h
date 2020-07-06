@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/test/audio_quality_analyzer_interface.h"
 #include "api/test/peerconnection_quality_test_fixture.h"
@@ -41,8 +42,6 @@ namespace webrtc_pc_e2e {
 class PeerConnectionE2EQualityTest
     : public PeerConnectionE2EQualityTestFixture {
  public:
-  using VideoGeneratorType =
-      PeerConnectionE2EQualityTestFixture::VideoGeneratorType;
   using RunParams = PeerConnectionE2EQualityTestFixture::RunParams;
   using VideoConfig = PeerConnectionE2EQualityTestFixture::VideoConfig;
   using VideoSimulcastConfig =
@@ -82,7 +81,8 @@ class PeerConnectionE2EQualityTest
   // For some functionality some field trials have to be enabled, so we will
   // enable them here.
   void SetupRequiredFieldTrials(const RunParams& run_params);
-  void OnTrackCallback(rtc::scoped_refptr<RtpTransceiverInterface> transceiver,
+  void OnTrackCallback(absl::string_view peer_name,
+                       rtc::scoped_refptr<RtpTransceiverInterface> transceiver,
                        std::vector<VideoConfig> remote_video_configs);
   // Have to be run on the signaling thread.
   void SetupCallOnSignalingThread(const RunParams& run_params);
@@ -95,6 +95,7 @@ class PeerConnectionE2EQualityTest
       const std::vector<rtc::scoped_refptr<TestVideoCapturerVideoTrackSource>>&
           sources);
   void TearDownCall();
+  void ReportGeneralTestResults();
   Timestamp Now() const;
 
   Clock* const clock_;
@@ -132,6 +133,9 @@ class PeerConnectionE2EQualityTest
   // This task queue will be created before call set up and will be destroyed
   // immediately before call tear down.
   std::unique_ptr<TaskQueueForTest> task_queue_;
+
+  bool alice_connected_ = false;
+  bool bob_connected_ = false;
 };
 
 }  // namespace webrtc_pc_e2e

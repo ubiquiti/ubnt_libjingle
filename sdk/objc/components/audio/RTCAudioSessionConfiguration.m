@@ -52,9 +52,9 @@ const double kRTCAudioSessionHighPerformanceIOBufferDuration = 0.02;
 // TODO(henrika): monitor this size and determine if it should be modified.
 const double kRTCAudioSessionLowComplexityIOBufferDuration = 0.06;
 
-static RTCAudioSessionConfiguration *gWebRTCConfiguration = nil;
+static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
 
-@implementation RTCAudioSessionConfiguration
+@implementation RTC_OBJC_TYPE (RTCAudioSessionConfiguration)
 
 @synthesize category = _category;
 @synthesize categoryOptions = _categoryOptions;
@@ -108,9 +108,9 @@ static RTCAudioSessionConfiguration *gWebRTCConfiguration = nil;
 }
 
 + (instancetype)currentConfiguration {
-  RTCAudioSession *session = [RTCAudioSession sharedInstance];
-  RTCAudioSessionConfiguration *config =
-      [[RTCAudioSessionConfiguration alloc] init];
+  RTC_OBJC_TYPE(RTCAudioSession) *session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
+  RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *config =
+      [[RTC_OBJC_TYPE(RTCAudioSessionConfiguration) alloc] init];
   config.category = session.category;
   config.categoryOptions = session.categoryOptions;
   config.mode = session.mode;
@@ -123,11 +123,11 @@ static RTCAudioSessionConfiguration *gWebRTCConfiguration = nil;
 
 + (instancetype)webRTCConfiguration {
   @synchronized(self) {
-    return (RTCAudioSessionConfiguration *)gWebRTCConfiguration;
+    return (RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *)gWebRTCConfiguration;
   }
 }
 
-+ (void)setWebRTCConfiguration:(RTCAudioSessionConfiguration *)configuration {
++ (void)setWebRTCConfiguration:(RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *)configuration {
   @synchronized(self) {
     gWebRTCConfiguration = configuration;
   }

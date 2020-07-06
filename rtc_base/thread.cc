@@ -34,6 +34,7 @@
 #include "rtc_base/critical_section.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/null_socket_server.h"
+#include "rtc_base/synchronization/sequence_checker.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
@@ -168,8 +169,8 @@ void ThreadManager::RegisterSendAndCheckForCycles(Thread* source,
   // We check the pre-existing who-sends-to-who graph for any path from target
   // to source. This loop is guaranteed to terminate because per the send graph
   // invariant, there are no cycles in the graph.
-  for (auto it = all_targets.begin(); it != all_targets.end(); ++it) {
-    const auto& targets = send_graph_[*it];
+  for (size_t i = 0; i < all_targets.size(); i++) {
+    const auto& targets = send_graph_[all_targets[i]];
     all_targets.insert(all_targets.end(), targets.begin(), targets.end());
   }
   RTC_CHECK_EQ(absl::c_count(all_targets, source), 0)
@@ -296,6 +297,21 @@ void ThreadManager::SetCurrentThread(Thread* thread) {
     RTC_DLOG(LS_ERROR) << "SetCurrentThread: Overwriting an existing value?";
   }
 #endif  // RTC_DLOG_IS_ON
+
+  if (thread) {
+    thread->EnsureIsCurrentTaskQueue();
+  } else {
+    Thread* current = CurrentThread();
+    if (current) {
+      // The current thread is being cleared, e.g. as a result of
+      // UnwrapCurrent() being called or when a thread is being stopped
+      // (see PreRun()). This signals that the Thread instance is being detached
+      // from the thread, which also means that TaskQueue::Current() must not
+      // return a pointer to the Thread instance.
+      current->ClearCurrentTaskQueue();
+    }
+  }
+
   SetCurrentThreadInternal(thread);
 }
 
@@ -824,7 +840,6 @@ void* Thread::PreRun(void* pv) {
   Thread* thread = static_cast<Thread*>(pv);
   ThreadManager::Instance()->SetCurrentThread(thread);
   rtc::SetCurrentThreadName(thread->name_.c_str());
-  CurrentTaskQueueSetter set_current_task_queue(thread);
 #if defined(WEBRTC_MAC)
   ScopedAutoReleasePool pool;
 #endif
@@ -878,6 +893,7 @@ void Thread::Send(const Location& posted_from,
   AutoThread thread;
   Thread* current_thread = Thread::Current();
   RTC_DCHECK(current_thread != nullptr);  // AutoThread ensures this
+  RTC_DCHECK(current_thread->IsInvokeToThreadAllowed(this));
 #if RTC_DCHECK_IS_ON
   ThreadManager::Instance()->RegisterSendAndCheckForCycles(current_thread,
                                                            this);
@@ -935,6 +951,17 @@ void Thread::InvokeInternal(const Location& posted_from,
   Send(posted_from, &handler);
 }
 
+// Called by the ThreadManager when being set as the current thread.
+void Thread::EnsureIsCurrentTaskQueue() {
+  task_queue_registration_ =
+      std::make_unique<TaskQueueBase::CurrentTaskQueueSetter>(this);
+}
+
+// Called by the ThreadManager when being set as the current thread.
+void Thread::ClearCurrentTaskQueue() {
+  task_queue_registration_.reset();
+}
+
 void Thread::QueuedTaskHandler::OnMessage(Message* msg) {
   RTC_DCHECK(msg);
   auto* data = static_cast<ScopedMessageData<webrtc::QueuedTask>*>(msg->pdata);
@@ -947,6 +974,50 @@ void Thread::QueuedTaskHandler::OnMessage(Message* msg) {
   // task. false means QueuedTask took the ownership.
   if (!task->Run())
     task.release();
+}
+
+void Thread::AllowInvokesToThread(Thread* thread) {
+#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+  if (!IsCurrent()) {
+    PostTask(webrtc::ToQueuedTask(
+        [thread, this]() { AllowInvokesToThread(thread); }));
+    return;
+  }
+  RTC_DCHECK_RUN_ON(this);
+  allowed_threads_.push_back(thread);
+  invoke_policy_enabled_ = true;
+#endif
+}
+
+void Thread::DisallowAllInvokes() {
+#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+  if (!IsCurrent()) {
+    PostTask(webrtc::ToQueuedTask([this]() { DisallowAllInvokes(); }));
+    return;
+  }
+  RTC_DCHECK_RUN_ON(this);
+  allowed_threads_.clear();
+  invoke_policy_enabled_ = true;
+#endif
+}
+
+// Returns true if no policies added or if there is at least one policy
+// that permits invocation to |target| thread.
+bool Thread::IsInvokeToThreadAllowed(rtc::Thread* target) {
+#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+  RTC_DCHECK_RUN_ON(this);
+  if (!invoke_policy_enabled_) {
+    return true;
+  }
+  for (const auto* thread : allowed_threads_) {
+    if (thread == target) {
+      return true;
+    }
+  }
+  return false;
+#else
+  return true;
+#endif
 }
 
 void Thread::PostTask(std::unique_ptr<webrtc::QueuedTask> task) {

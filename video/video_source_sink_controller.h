@@ -11,6 +11,8 @@
 #ifndef VIDEO_VIDEO_SOURCE_SINK_CONTROLLER_H_
 #define VIDEO_VIDEO_SOURCE_SINK_CONTROLLER_H_
 
+#include <string>
+
 #include "absl/types/optional.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_sink_interface.h"
@@ -53,9 +55,6 @@ class VideoSourceSinkController {
   rtc::VideoSinkWants CurrentSettingsToSinkWants() const
       RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
-  // TODO(hbos): If everything is handled on the same sequence (i.e.
-  // VideoStreamEncoder's encoder queue) then |crit_| can be replaced by
-  // sequence checker. Investigate if we want to do this.
   mutable rtc::CriticalSection crit_;
   rtc::VideoSinkInterface<VideoFrame>* const sink_;
   rtc::VideoSourceInterface<VideoFrame>* source_ RTC_GUARDED_BY(&crit_);
