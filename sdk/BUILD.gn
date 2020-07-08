@@ -166,7 +166,7 @@ if (is_ios || is_mac) {
 
     public_configs = [ ":common_config_objc" ]
 
-    if (is_ios) {
+    if (is_ios && (ios_device_name == "iphone")) {
       sources += [
         "objc/helpers/RTCCameraPreviewView.h",
         "objc/helpers/RTCCameraPreviewView.m",
@@ -419,10 +419,12 @@ if (is_ios || is_mac) {
           "objc/components/renderer/opengl/RTCNV12TextureCache.m",
         ]
         frameworks += [
-          "GLKit.framework",
           "OpenGLES.framework",
           "QuartzCore.framework",
         ]
+        if(ios_device_name != "macosx") {
+          frameworks += [ "GLKit.framework" ]
+        }
       } else if (is_mac) {
         frameworks += [
           "CoreMedia.framework",
@@ -622,10 +624,22 @@ if (is_ios || is_mac) {
         ":native_video",
         ":videocodec_objc",
         ":videotoolbox_objc",
-        ":vp8",
-        ":vp9",
         ":vpx_codec_constants",
       ]
+
+      if(is_ios){
+        if(ios_device_name != "macosx") {
+          deps += [
+            ":vp8",
+            ":vp9",
+          ]
+        }
+      } else {
+        deps += [
+          ":vp8",
+          ":vp9",
+        ]
+      }
     }
 
     rtc_library("vpx_codec_constants") {
@@ -654,8 +668,19 @@ if (is_ios || is_mac) {
       deps = [
         ":base_objc",
         ":wrapped_native_codec_objc",
-        "../modules/video_coding:webrtc_vp8",
       ]
+
+      if(is_ios){
+        if(ios_device_name != "macosx") {
+          deps += [
+            "../modules/video_coding:webrtc_vp8",
+          ]
+        }
+      } else {
+        deps += [
+          "../modules/video_coding:webrtc_vp8",
+        ]
+      }
     }
 
     rtc_library("vp9") {
@@ -672,8 +697,19 @@ if (is_ios || is_mac) {
         ":base_objc",
         ":wrapped_native_codec_objc",
         "../media:rtc_media_base",
-        "../modules/video_coding:webrtc_vp9",
       ]
+
+      if(is_ios){
+        if(ios_device_name != "macosx") {
+          deps += [
+            "../modules/video_coding:webrtc_vp9",
+          ]
+        }
+      } else {
+        deps += [
+          "../modules/video_coding:webrtc_vp9",
+        ]
+      }
     }
 
     # Build the PeerConnectionFactory without audio/video support.
@@ -928,7 +964,6 @@ if (is_ios || is_mac) {
         ":mediasource_objc",
         ":native_api",
         ":native_video",
-        ":video_objc",
         ":videoframebuffer_objc",
         ":videorendereradapter_objc",
         ":videosource_objc",
@@ -964,7 +999,12 @@ if (is_ios || is_mac) {
       ]
 
       if (is_ios) {
+        if(ios_device_name == "iphone"){
+          deps += [ ":video_objc" ]
+        }
         deps += [ ":native_api_audio_device_module" ]
+      } else {
+        deps += [ ":video_objc" ]
       }
     }
 
@@ -1264,7 +1304,6 @@ if (is_ios || is_mac) {
           "objc/base/RTCYUVPlanarBuffer.h",
           "objc/components/audio/RTCAudioSession.h",
           "objc/components/audio/RTCAudioSessionConfiguration.h",
-          "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCFileVideoCapturer.h",
           "objc/components/renderer/metal/RTCMTLVideoView.h",
           "objc/components/renderer/opengl/RTCEAGLVideoView.h",
@@ -1278,7 +1317,6 @@ if (is_ios || is_mac) {
           "objc/components/video_codec/RTCVideoEncoderFactoryH264.h",
           "objc/components/video_codec/RTCVideoEncoderH264.h",
           "objc/components/video_frame_buffer/RTCCVPixelBuffer.h",
-          "objc/helpers/RTCCameraPreviewView.h",
           "objc/helpers/RTCDispatcher.h",
           "objc/helpers/UIDevice+RTCDevice.h",
           "objc/api/peerconnection/RTCAudioSource.h",
@@ -1325,6 +1363,13 @@ if (is_ios || is_mac) {
           "objc/api/video_frame_buffer/RTCNativeMutableI420Buffer.h",
         ]
 
+        if(ios_device_name == "iphone") {
+          common_objc_headers += [
+            "objc/components/capturer/RTCCameraVideoCapturer.h",
+            "objc/helpers/RTCCameraPreviewView.h"
+          ]
+        }
+
         if (!build_with_chromium) {
           common_objc_headers += [
             "objc/api/logging/RTCCallbackLogger.h",
@@ -1342,18 +1387,27 @@ if (is_ios || is_mac) {
         ]
 
         deps = [
-          ":audio_objc",
           ":base_objc",
-          ":default_codec_factory_objc",
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
-          ":ui_objc",
-          ":videocapture_objc",
           ":videocodec_objc",
           ":videotoolbox_objc",
           "../rtc_base:rtc_base_approved",
         ]
+        
+        if(ios_device_name != "macosx") {
+          deps += [ ":default_codec_factory_objc" ]
+        }
+
+        if(ios_device_name == "iphone") {
+          deps += [
+            ":audio_objc",
+            ":ui_objc",
+            ":videocapture_objc"
+          ]
+        }
+
         if (rtc_use_metal_rendering) {
           deps += [ ":metal_objc" ]
         }
@@ -1367,9 +1421,12 @@ if (is_ios || is_mac) {
         frameworks = [
           "AVFoundation.framework",
           "CoreGraphics.framework",
-          "CoreMedia.framework",
-          "GLKit.framework",
+          "CoreMedia.framework"
         ]
+
+        if(ios_device_name != "macosx") {
+          frameworks += [ "GLKit.framework" ]
+        }
 
         configs += [
           "..:common_objc",
@@ -1477,7 +1534,6 @@ if (is_ios || is_mac) {
 
         deps = [
           ":base_objc",
-          ":default_codec_factory_objc",
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
@@ -1487,6 +1543,17 @@ if (is_ios || is_mac) {
           ":videotoolbox_objc",
           "../rtc_base:rtc_base_approved",
         ]
+        if(is_ios){
+          if(ios_device_name != "macosx") {
+            deps += [
+              ":default_codec_factory_objc",
+            ]
+          }
+        } else {
+          deps += [
+            ":default_codec_factory_objc",
+          ]
+        }
         if (rtc_use_metal_rendering) {
           deps += [ ":metal_objc" ]
         }
@@ -1592,6 +1659,10 @@ if (is_ios || is_mac) {
 
       configs += [ "..:common_objc" ]
 
+      if(is_ios && (ios_device_name != "macosx")) {
+        frameworks = [ "UIKit.framework" ]
+      }
+
       public_configs = [ ":common_config_objc" ]
 
       deps = [
@@ -1678,8 +1749,12 @@ if (is_ios || is_mac) {
         "CoreFoundation.framework",
         "CoreMedia.framework",
         "CoreVideo.framework",
-        "VideoToolbox.framework",
+        "VideoToolbox.framework"
       ]
+
+      if(is_ios && (ios_device_name != "macosx")) {
+        frameworks += ["UIKit.framework"]
+      }
     }
   }
 }

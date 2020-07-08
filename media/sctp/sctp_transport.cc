@@ -266,6 +266,26 @@ class SctpTransport::UsrSctpWrapper {
     // AF_CONN use of sctp.
     usrsctp_init(0, &UsrSctpWrapper::OnSctpOutboundPacket, &DebugSctpPrintf);
 
+    //make sure we have LOTS of small buffer instances available. If
+    //that is exhausted, then EWOULDBLOCK will happen more often
+    usrsctp_sysctl_set_sctp_max_chunks_on_queue(128 * 1024);
+
+    //properly sized send/recv space. It is *** greatly *** influencing
+    //the throughput via congestion control algorithm (CC). On a high latency
+    //line, for example 200ms, the 256KB send space (kSctpSendBufferSize)
+    //will cap the throughput to a theoretical
+    //(256*1024*8)/0.2/1000000 = 10.48mbps.
+    //The receiving space will also dictate the CC's via Advertised Receiver
+    //Window Credit (ARWND) field which is received from the other side as
+    //part of SACK chunks
+    fprintf(stderr,"Setup send/recv space to 8MB/8MB and switch to SCTP_CC_HTCP\n");
+    usrsctp_sysctl_set_sctp_recvspace(8*1024*1024);
+    usrsctp_sysctl_set_sctp_sendspace(8*1024*1024);
+
+    //select a better CC algorithm. The default one (SCTP_CC_RFC2581)
+    //has way less throughput
+    usrsctp_sysctl_set_sctp_default_cc_module(SCTP_CC_HTCP);
+
     // To turn on/off detailed SCTP debugging. You will also need to have the
     // SCTP_DEBUG cpp defines flag, which can be turned on in media/BUILD.gn.
     // usrsctp_sysctl_set_sctp_debug_on(SCTP_DEBUG_ALL);

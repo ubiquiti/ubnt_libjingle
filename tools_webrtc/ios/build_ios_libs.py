@@ -33,7 +33,7 @@ SDK_OUTPUT_DIR = os.path.join(SRC_DIR, 'out_ios_libs')
 SDK_FRAMEWORK_NAME = 'WebRTC.framework'
 
 DEFAULT_ARCHS = ENABLED_ARCHS = ['arm64', 'arm', 'x64', 'x86']
-IOS_DEPLOYMENT_TARGET = '10.0'
+IOS_DEPLOYMENT_TARGET = '10.1'
 LIBVPX_BUILD_VP9 = False
 
 sys.path.append(os.path.join(SCRIPT_DIR, '..', 'libs'))
@@ -57,6 +57,8 @@ def _ParseArgs():
   parser.add_argument('-o', '--output-dir', default=SDK_OUTPUT_DIR,
       help='Specifies a directory to output the build artifacts to. '
            'If specified together with -c, deletes the dir.')
+  parser.add_argument('-t', '--ios-deployment-target', default=IOS_DEPLOYMENT_TARGET,
+      help='Specifies the min version of the iOS device SDK.')
   parser.add_argument('-r', '--revision', type=int, default=0,
       help='Specifies a revision number to embed if building the framework.')
   parser.add_argument('-e', '--bitcode', action='store_true', default=False,
@@ -157,15 +159,17 @@ def main():
     return 0
 
   gn_target_name = 'framework_objc'
-  if not args.bitcode:
-    gn_args.append('enable_dsyms=true')
-  gn_args.append('enable_stripping=true')
 
+  if args.build_config == 'release':
+    gn_args.append('enable_stripping=true')
+  else:
+    gn_args.append('enable_stripping=false')
+  gn_args.append('enable_dsyms=true')
 
   # Build all architectures.
   for arch in architectures:
     BuildWebRTC(args.output_dir, arch, args.build_config, gn_target_name,
-                IOS_DEPLOYMENT_TARGET, LIBVPX_BUILD_VP9, args.bitcode,
+                args.ios_deployment_target, LIBVPX_BUILD_VP9, args.bitcode,
                 args.use_goma, gn_args)
 
   # Create FAT archive.

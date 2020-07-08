@@ -60,8 +60,6 @@ rtc_library("frame_generator_impl") {
     "../modules/video_coding:video_codec_interface",
     "../modules/video_coding:video_coding_utility",
     "../modules/video_coding:webrtc_h264",
-    "../modules/video_coding:webrtc_vp8",
-    "../modules/video_coding:webrtc_vp9",
     "../rtc_base",
     "../rtc_base:checks",
     "../rtc_base:criticalsection",
@@ -72,6 +70,21 @@ rtc_library("frame_generator_impl") {
     "../rtc_base/system:file_wrapper",
     "../system_wrappers",
   ]
+  
+  if(is_ios){
+    if(ios_device_name != "macosx") {
+      deps += [
+        "../modules/video_coding:webrtc_vp8",
+        "../modules/video_coding:webrtc_vp9",
+      ]
+    }
+  } else {
+    deps += [
+      "../modules/video_coding:webrtc_vp8",
+      "../modules/video_coding:webrtc_vp9"
+    ]
+  }
+  
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
@@ -364,8 +377,6 @@ rtc_library("video_test_support") {
     "../modules/video_coding:video_codec_interface",
     "../modules/video_coding:video_coding_utility",
     "../modules/video_coding:webrtc_h264",
-    "../modules/video_coding:webrtc_vp8",
-    "../modules/video_coding:webrtc_vp9",
     "../rtc_base:checks",
     "../rtc_base:criticalsection",
     "../rtc_base:logging",
@@ -379,8 +390,18 @@ rtc_library("video_test_support") {
   if (!is_ios) {
     deps += [ "//third_party:jpeg" ]
     sources += [ "testsupport/jpeg_frame_writer.cc" ]
+    deps += [
+      "../modules/video_coding:webrtc_vp8",
+      "../modules/video_coding:webrtc_vp9",
+    ]
   } else {
     sources += [ "testsupport/jpeg_frame_writer_ios.cc" ]
+    if(ios_device_name != "macosx") {
+      deps += [
+        "../modules/video_coding:webrtc_vp8",
+        "../modules/video_coding:webrtc_vp9",
+      ]
+    }
   }
 
   if (is_android) {

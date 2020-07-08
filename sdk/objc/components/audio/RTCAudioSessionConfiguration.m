@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#import "TargetConditionals.h"
 #import "RTCAudioSessionConfiguration.h"
 #import "RTCAudioSession.h"
 
@@ -70,7 +71,9 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // nonmixable, hence activating the session will interrupt any other
     // audio sessions which are also nonmixable.
     _category = AVAudioSessionCategoryPlayAndRecord;
+#if !TARGET_OS_TV
     _categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth;
+#endif /* !TARGET_OS_TV */
 
     // Specify mode for two-way voice communication (e.g. VoIP).
     _mode = AVAudioSessionModeVoiceChat;
