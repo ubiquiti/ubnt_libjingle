@@ -594,8 +594,13 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
     case OPT_RTP_SENDTIME_EXTN_ID:
       return -1;  // No logging is necessary as this not a OS socket option.
     case OPT_TTL:
-      *slevel = IPPROTO_IP;
-      *sopt = IP_TTL;
+        if (family_ == AF_INET6) {
+          *slevel = IPPROTO_IPV6;
+          *sopt = IPV6_UNICAST_HOPS;
+        } else {
+          *slevel = IPPROTO_IP;
+          *sopt = IP_TTL;
+        }
       break;
     default:
       RTC_NOTREACHED();
