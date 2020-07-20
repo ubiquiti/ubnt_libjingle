@@ -129,7 +129,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
   SocketAddress GetLocalAddress() const override;
   SocketAddress GetRemoteAddress() const override;
 
-  int Bind(const SocketAddress& bind_addr) override;
+  int Bind(const SocketAddress& bind_addr, int interfaceIndex) override;
   int Connect(const SocketAddress& addr) override;
 
   int GetError() const override;

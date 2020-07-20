@@ -184,7 +184,7 @@ SocketAddress PhysicalSocket::GetRemoteAddress() const {
   return address;
 }
 
-int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
+int PhysicalSocket::Bind(const SocketAddress& bind_addr, int interfaceIndex) {
   SocketAddress copied_bind_addr = bind_addr;
   // If a network binder is available, use it to bind a socket to an interface
   // instead of bind(), since this is more reliable on an OS with a weak host
@@ -222,12 +222,21 @@ int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
   sockaddr* addr = reinterpret_cast<sockaddr*>(&addr_storage);
   int err = ::bind(s_, addr, static_cast<int>(len));
   UpdateLastError();
+  if(err != 0)
+    return err;
 #if !defined(NDEBUG)
   if (0 == err) {
     dbg_addr_ = "Bound @ ";
     dbg_addr_.append(GetLocalAddress().ToString());
   }
 #endif
+  if(interfaceIndex > 0) {
+    err = SetOption(OPT_IFACE_BIND, interfaceIndex);
+    if(err != 0) {
+      RTC_LOG(LS_WARNING) << "Binding socket to network interface index "
+                            << interfaceIndex << " failed";
+    }
+  }
   return err;
 }
 
@@ -594,13 +603,22 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
     case OPT_RTP_SENDTIME_EXTN_ID:
       return -1;  // No logging is necessary as this not a OS socket option.
     case OPT_TTL:
-        if (family_ == AF_INET6) {
-          *slevel = IPPROTO_IPV6;
-          *sopt = IPV6_UNICAST_HOPS;
-        } else {
-          *slevel = IPPROTO_IP;
-          *sopt = IP_TTL;
-        }
+      if (family_ == AF_INET6) {
+        *slevel = IPPROTO_IPV6;
+        *sopt = IPV6_UNICAST_HOPS;
+      } else {
+        *slevel = IPPROTO_IP;
+        *sopt = IP_TTL;
+      }
+      break;
+    case OPT_IFACE_BIND:
+      if (family_ == AF_INET6) {
+        *slevel = IPPROTO_IPV6;
+        *sopt = IPV6_BOUND_IF;
+      } else {
+        *slevel = IPPROTO_IP;
+        *sopt = IP_BOUND_IF;
+      }
       break;
     default:
       RTC_NOTREACHED();
