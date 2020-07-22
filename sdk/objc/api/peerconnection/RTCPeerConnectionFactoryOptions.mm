@@ -41,7 +41,7 @@ void setNetworkBit(webrtc::PeerConnectionFactoryInterface::Options* options,
 }
 
 - (void)setupActiveInterfaces:(NSArray *)activeInterfaces {
-  self.activeInterfaces = [NSKeyedUnarchiver unarchiveObjectWithData:[NSKeyedArchiver archivedDataWithRootObject:activeInterfaces]];
+  self.activeInterfaces = [activeInterfaces copy];
 }
 
 - (webrtc::PeerConnectionFactoryInterface::Options)nativeOptions {
