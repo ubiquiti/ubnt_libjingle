@@ -31,7 +31,11 @@ RTC_OBJC_EXPORT
 
 @property(nonatomic, assign) BOOL ignoreEthernetNetworkAdapter;
 
+@property (nonatomic, strong) NSMutableArray *activeInterfaces;
+
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
+
+- (void)setupActiveInterfaces:(NSArray *)activeInterfaces;
 
 @end
 

@@ -34,9 +34,14 @@ void setNetworkBit(webrtc::PeerConnectionFactoryInterface::Options* options,
 @synthesize ignoreCellularNetworkAdapter = _ignoreCellularNetworkAdapter;
 @synthesize ignoreWiFiNetworkAdapter = _ignoreWiFiNetworkAdapter;
 @synthesize ignoreEthernetNetworkAdapter = _ignoreEthernetNetworkAdapter;
+@synthesize activeInterfaces = _activeInterfaces;
 
 - (instancetype)init {
   return [super init];
+}
+
+- (void)setupActiveInterfaces:(NSArray *)activeInterfaces {
+  self.activeInterfaces = [NSKeyedUnarchiver unarchiveObjectWithData:[NSKeyedArchiver archivedDataWithRootObject:activeInterfaces]];
 }
 
 - (webrtc::PeerConnectionFactoryInterface::Options)nativeOptions {
@@ -49,6 +54,13 @@ void setNetworkBit(webrtc::PeerConnectionFactoryInterface::Options* options,
   setNetworkBit(&options, rtc::ADAPTER_TYPE_CELLULAR, self.ignoreCellularNetworkAdapter);
   setNetworkBit(&options, rtc::ADAPTER_TYPE_WIFI, self.ignoreWiFiNetworkAdapter);
   setNetworkBit(&options, rtc::ADAPTER_TYPE_ETHERNET, self.ignoreEthernetNetworkAdapter);
+
+  if(self.activeInterfaces!=nil) {
+    std::map<std::string, bool> temp;
+    for (NSString *interface in self.activeInterfaces)
+      temp[[interface UTF8String]]=true;
+    options.activeInterfaces=temp;
+  }
 
   return options;
 }

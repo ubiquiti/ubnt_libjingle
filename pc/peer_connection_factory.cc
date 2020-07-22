@@ -286,6 +286,11 @@ PeerConnectionFactory::CreatePeerConnection(
       rtc::Bind(&cricket::PortAllocator::SetNetworkIgnoreMask,
                 dependencies.allocator.get(), options_.network_ignore_mask));
 
+  network_thread_->Invoke<void>(
+      RTC_FROM_HERE,
+      rtc::Bind(&cricket::PortAllocator::SetActiveInterfaces,
+                dependencies.allocator.get(), options_.activeInterfaces));
+
   std::unique_ptr<RtcEventLog> event_log =
       worker_thread_->Invoke<std::unique_ptr<RtcEventLog>>(
           RTC_FROM_HERE,

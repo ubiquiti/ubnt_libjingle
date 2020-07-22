@@ -400,6 +400,7 @@ class RTC_EXPORT PortAllocator : public sigslot::has_slots<> {
   // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
   // loopback interfaces.
   virtual void SetNetworkIgnoreMask(int network_ignore_mask) = 0;
+  virtual void SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) = 0;
 
   std::unique_ptr<PortAllocatorSession> CreateSession(
       const std::string& content_name,
