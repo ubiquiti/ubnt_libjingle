@@ -218,6 +218,14 @@ void BasicPortAllocator::SetNetworkIgnoreMask(int network_ignore_mask) {
   network_ignore_mask_ = network_ignore_mask;
 }
 
+void BasicPortAllocator::SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) {
+  // TODO(phoglund): implement support for other types than loopback.
+  // See https://code.google.com/p/webrtc/issues/detail?id=4288.
+  // Then remove set_network_ignore_list from NetworkManager.
+  CheckRunOnValidThreadIfInitialized();
+  activeInterfaces_ = activeInterfaces;
+}
+
 PortAllocatorSession* BasicPortAllocator::CreateSessionInternal(
     const std::string& content_name,
     int component,
@@ -759,6 +767,32 @@ std::vector<rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
     }
     ++it;
   }
+
+  //if we don't have the network in the list of active interfaces, remove it
+  const std::map<std::string, bool> &active=allocator_->GetActiveInterfaces();
+  if(active.size()!=0){
+    fprintf(stderr,"----- Allowed interfaces! ------\n");
+    for(const auto &allowed:active){
+      fprintf(stderr,"%s\n",allowed.first.c_str());
+    }
+
+    fprintf(stderr,"----- Available interfaces ------\n");
+    for(const auto &network:networks){
+      fprintf(stderr,"%s\n",network->name().c_str());
+    }
+    for (auto it = networks.begin(); it != networks.end();) {
+      if(active.find((*it)->name())==active.end())
+        it=networks.erase(it);
+      else
+        ++it;
+    }
+
+    fprintf(stderr,"----- Remaining interfaces ------\n");
+    for(const auto &network:networks){
+      fprintf(stderr,"%s\n",network->name().c_str());
+    }
+  }
+  
   return networks;
 }
 
@@ -1235,7 +1269,7 @@ AllocationSequence::AllocationSequence(BasicPortAllocatorSession* session,
 void AllocationSequence::Init() {
   if (IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET)) {
     udp_socket_.reset(session_->socket_factory()->CreateUdpSocket(
-        rtc::SocketAddress(network_->GetBestIP(), 0),
+        rtc::SocketAddress(network_->GetBestIP(), 0), network_->index(),
         session_->allocator()->min_port(), session_->allocator()->max_port()));
     if (udp_socket_) {
       udp_socket_->SignalReadPacket.connect(this,

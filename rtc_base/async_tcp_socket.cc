@@ -50,7 +50,7 @@ AsyncSocket* AsyncTCPSocketBase::ConnectSocket(
     const rtc::SocketAddress& bind_address,
     const rtc::SocketAddress& remote_address) {
   std::unique_ptr<rtc::AsyncSocket> owned_socket(socket);
-  if (socket->Bind(bind_address) < 0) {
+  if (socket->Bind(bind_address, -1) < 0) {
     RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
     return nullptr;
   }

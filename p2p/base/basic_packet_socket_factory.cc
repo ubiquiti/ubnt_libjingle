@@ -42,6 +42,7 @@ BasicPacketSocketFactory::~BasicPacketSocketFactory() {}
 
 AsyncPacketSocket* BasicPacketSocketFactory::CreateUdpSocket(
     const SocketAddress& address,
+    int interfaceIndex,
     uint16_t min_port,
     uint16_t max_port) {
   // UDP sockets are simple.
@@ -50,7 +51,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateUdpSocket(
   if (!socket) {
     return NULL;
   }
-  if (BindSocket(socket, address, min_port, max_port) < 0) {
+  if (BindSocket(socket, address, interfaceIndex, min_port, max_port) < 0) {
     RTC_LOG(LS_ERROR) << "UDP bind failed with error " << socket->GetError();
     delete socket;
     return NULL;
@@ -75,7 +76,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateServerTcpSocket(
     return NULL;
   }
 
-  if (BindSocket(socket, local_address, min_port, max_port) < 0) {
+  if (BindSocket(socket, local_address, -1, min_port, max_port) < 0) {
     RTC_LOG(LS_ERROR) << "TCP bind failed with error " << socket->GetError();
     delete socket;
     return NULL;
@@ -109,7 +110,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateClientTcpSocket(
     return NULL;
   }
 
-  if (BindSocket(socket, local_address, 0, 0) < 0) {
+  if (BindSocket(socket, local_address, -1, 0, 0) < 0) {
     // Allow BindSocket to fail if we're binding to the ANY address, since this
     // is mostly redundant in the first place. The socket will be bound when we
     // call Connect() instead.
@@ -194,16 +195,17 @@ AsyncResolverInterface* BasicPacketSocketFactory::CreateAsyncResolver() {
 
 int BasicPacketSocketFactory::BindSocket(AsyncSocket* socket,
                                          const SocketAddress& local_address,
+                                         int interfaceIndex,
                                          uint16_t min_port,
                                          uint16_t max_port) {
   int ret = -1;
   if (min_port == 0 && max_port == 0) {
     // If there's no port range, let the OS pick a port for us.
-    ret = socket->Bind(local_address);
+    ret = socket->Bind(local_address, interfaceIndex);
   } else {
     // Otherwise, try to find a port in the provided range.
     for (int port = min_port; ret < 0 && port <= max_port; ++port) {
-      ret = socket->Bind(SocketAddress(local_address.ipaddr(), port));
+      ret = socket->Bind(SocketAddress(local_address.ipaddr(), port), interfaceIndex);
     }
   }
   return ret;

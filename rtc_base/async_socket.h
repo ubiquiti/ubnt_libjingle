@@ -54,7 +54,7 @@ class AsyncSocketAdapter : public AsyncSocket, public sigslot::has_slots<> {
   void Attach(AsyncSocket* socket);
   SocketAddress GetLocalAddress() const override;
   SocketAddress GetRemoteAddress() const override;
-  int Bind(const SocketAddress& addr) override;
+  int Bind(const SocketAddress& addr, int interfaceIndex) override;
   int Connect(const SocketAddress& addr) override;
   int Send(const void* pv, size_t cb) override;
   int SendTo(const void* pv, size_t cb, const SocketAddress& addr) override;

@@ -54,6 +54,7 @@ class RTC_EXPORT PacketSocketFactory {
   virtual ~PacketSocketFactory() = default;
 
   virtual AsyncPacketSocket* CreateUdpSocket(const SocketAddress& address,
+                                             int interfaceIndex,
                                              uint16_t min_port,
                                              uint16_t max_port) = 0;
   virtual AsyncPacketSocket* CreateServerTcpSocket(

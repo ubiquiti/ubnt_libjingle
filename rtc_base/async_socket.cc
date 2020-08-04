@@ -46,8 +46,8 @@ SocketAddress AsyncSocketAdapter::GetRemoteAddress() const {
   return socket_->GetRemoteAddress();
 }
 
-int AsyncSocketAdapter::Bind(const SocketAddress& addr) {
-  return socket_->Bind(addr);
+int AsyncSocketAdapter::Bind(const SocketAddress& addr, int interfaceIndex) {
+  return socket_->Bind(addr, interfaceIndex);
 }
 
 int AsyncSocketAdapter::Connect(const SocketAddress& addr) {
