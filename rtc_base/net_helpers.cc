@@ -36,9 +36,10 @@ namespace rtc {
 int ResolveHostname(const std::string& hostname,
                     int family,
                     std::vector<IPAddress>* addresses) {
+  RTC_LOG(LS_INFO) << "#-> " << __func__ << "() hostname=" << hostname << " family=" << family;
 #ifdef __native_client__
   RTC_NOTREACHED();
-  RTC_LOG(LS_WARNING) << "ResolveHostname() is not implemented for NaCl";
+  RTC_LOG(LS_INFO) << (void*)this << "ResolveHostname() is not implemented for NaCl";
   return -1;
 #else   // __native_client__
   if (!addresses) {
@@ -68,6 +69,7 @@ int ResolveHostname(const std::string& hostname,
   hints.ai_flags = AI_ADDRCONFIG;
   int ret = getaddrinfo(hostname.c_str(), nullptr, &hints, &result);
   if (ret != 0) {
+    RTC_LOG(LS_INFO) << "<-# " << __func__ << "() hostname=" << hostname << " ret=" << ret;
     return ret;
   }
   struct addrinfo* cursor = result;
@@ -75,11 +77,13 @@ int ResolveHostname(const std::string& hostname,
     if (family == AF_UNSPEC || cursor->ai_family == family) {
       IPAddress ip;
       if (IPFromAddrInfo(cursor, &ip)) {
+        RTC_LOG(LS_INFO) << "    " << __func__ << "() hostname=" << hostname << " addr=" << ip.ToString() << " family=" << cursor->ai_family;
         addresses->push_back(ip);
       }
     }
   }
   freeaddrinfo(result);
+  RTC_LOG(LS_INFO) << "<-# " << __func__ << "() hostname=" << hostname << " addresses->size()=" << addresses->size() << " family=" << family;
   return 0;
 #endif  // !__native_client__
 }
@@ -93,6 +97,7 @@ AsyncResolver::~AsyncResolver() {
 void AsyncResolver::Start(const SocketAddress& addr) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   RTC_DCHECK(!destroy_called_);
+  RTC_LOG(LS_INFO) << (void*)this << "#-> AsyncResolver::" << __func__<< " family=" << addr.family();
   addr_ = addr;
   webrtc::TaskQueueBase* current_task_queue = webrtc::TaskQueueBase::Current();
   popup_thread_ = Thread::Create();
@@ -102,27 +107,43 @@ void AsyncResolver::Start(const SocketAddress& addr) {
         std::vector<IPAddress> addresses;
         int error =
             ResolveHostname(addr.hostname().c_str(), addr.family(), &addresses);
+
+        RTC_LOG(LS_INFO) << (void*)this << "    AsyncResolver::" << __func__<< " ResolveHostname()=" << error << " family=" << addr.family() <<" size=" << addresses.size();
+
         current_task_queue->PostTask(webrtc::ToQueuedTask(
             std::move(flag), [this, error, addresses = std::move(addresses)] {
               RTC_DCHECK_RUN_ON(&sequence_checker_);
               ResolveDone(std::move(addresses), error);
             }));
       }));
+  RTC_LOG(LS_INFO) << (void*)this << "<-# AsyncResolver::" << __func__;
 }
 
 bool AsyncResolver::GetResolvedAddress(int family, SocketAddress* addr) const {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   RTC_DCHECK(!destroy_called_);
+
+  RTC_LOG(LS_INFO) << (void*)this << "#-> AsyncResolver::" << __func__<< " family=" << family;
+
   if (error_ != 0 || addresses_.empty())
+  {
+    RTC_LOG(LS_INFO) << (void*)this << " <-# AsyncResolver::" << __func__ << " FAILED! error_=" << error_ << " addresses_.size()=" << addresses_.size();
     return false;
+  }
 
   *addr = addr_;
   for (size_t i = 0; i < addresses_.size(); ++i) {
     if (family == addresses_[i].family()) {
       addr->SetResolvedIP(addresses_[i]);
+      RTC_LOG(LS_INFO) << (void*)this << "<-# AsyncResolver::" << __func__<< " TRUE";
       return true;
     }
+    else {
+      RTC_LOG(LS_INFO) << (void*)this << "    AsyncResolver::" << __func__<< " family=" << addresses_[i].family() << " instead of " << family;
+    }
   }
+
+  RTC_LOG(LS_INFO) << (void*)this << "<-# AsyncResolver::" << __func__<< " FALSE!";
   return false;
 }
 
@@ -148,11 +169,13 @@ const std::vector<IPAddress>& AsyncResolver::addresses() const {
 }
 
 void AsyncResolver::ResolveDone(std::vector<IPAddress> addresses, int error) {
+  RTC_LOG(LS_INFO) << (void*)this << "#-> AsyncResolver::" << __func__<< " " << error;
   addresses_ = addresses;
   error_ = error;
   recursion_check_ = true;
   SignalDone(this);
   MaybeSelfDestruct();
+  RTC_LOG(LS_INFO) << (void*)this << "<-# AsyncResolver::" << __func__ << " addresses_.size()=" << addresses_.size();
 }
 
 void AsyncResolver::MaybeSelfDestruct() {

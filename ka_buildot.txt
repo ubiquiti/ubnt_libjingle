@@ -1,0 +1,2 @@
+karlis@black:~/libjingle-build$ docker run  --rm  --tty --interactive -v "$(dirname $SSH_AUTH_SOCK):/home/ubnt/.ssh-agent:rw" -v "${PWD}:/build:rw" --network host --privileged -e "SSH_AUTH_SOCK=/home/ubnt/.ssh-agent/$(basename $SSH_AUTH_SOCK)" --dns 10.28.42.11 googlewebrtcbuild
+

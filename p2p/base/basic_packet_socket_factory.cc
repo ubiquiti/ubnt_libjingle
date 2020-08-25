@@ -212,10 +212,21 @@ int BasicPacketSocketFactory::BindSocket(AsyncSocket* socket,
   if (min_port == 0 && max_port == 0) {
     // If there's no port range, let the OS pick a port for us.
     ret = socket->Bind(local_address, interfaceIndex);
+    if (ret<0) {
+        RTC_LOG(LS_ERROR) << "   BasicPacketSocketFactory::BindSocket FAILED! #1 interfaceIndex=" << interfaceIndex
+                          << " addr=" << local_address.ToString().c_str();
+    }
   } else {
     // Otherwise, try to find a port in the provided range.
     for (int port = min_port; ret < 0 && port <= max_port; ++port) {
       ret = socket->Bind(SocketAddress(local_address.ipaddr(), port), interfaceIndex);
+      if (ret<0) {
+          RTC_LOG(LS_ERROR) << "   BasicPacketSocketFactory::BindSocket FAILED! #2 interfaceIndex=" << interfaceIndex
+                       << " addr=" << local_address.ToString().c_str()
+                       << " min_port=" << min_port
+                       << " max_port=" << max_port
+                       << " port=" << port;
+      }
     }
   }
   return ret;

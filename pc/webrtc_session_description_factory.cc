@@ -375,6 +375,13 @@ void WebRtcSessionDescriptionFactory::InternalCreateOffer(
       }
     }
   }
+
+  RTC_LOG(LS_INFO) << "########vvvvvvvvv########## OFFER ##############vvvvvvv###########";
+  std::string offer_string;
+  offer->ToString(&offer_string);
+  RTC_LOG(LS_INFO) << offer_string;
+  RTC_LOG(LS_INFO) << "########^^^^^^^^########### OFFER ###############^^^^^###########";
+
   PostCreateSessionDescriptionSucceeded(request.observer, std::move(offer));
 }
 
@@ -436,6 +443,13 @@ void WebRtcSessionDescriptionFactory::InternalCreateAnswer(
       }
     }
   }
+
+  RTC_LOG(LS_INFO) << "########vvvvvvvvv########## ANSWER ##############vvvvvvv###########";
+  std::string answer_string;
+  answer->ToString(&answer_string);
+  RTC_LOG(LS_INFO) << answer_string;
+  RTC_LOG(LS_INFO) << "########^^^^^^^^########### ANSWER ###############^^^^^###########";
+
   PostCreateSessionDescriptionSucceeded(request.observer, std::move(answer));
 }
 

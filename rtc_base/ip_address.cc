@@ -148,6 +148,8 @@ std::string IPAddress::ToString() const {
 }
 
 std::string IPAddress::ToSensitiveString() const {
+  return ToString();
+/*
 #if !defined(NDEBUG)
   // Return non-stripped in debug.
   return ToString();
@@ -176,6 +178,7 @@ std::string IPAddress::ToSensitiveString() const {
   }
   return std::string();
 #endif
+*/
 }
 
 IPAddress IPAddress::Normalized() const {

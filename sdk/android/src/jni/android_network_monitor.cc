@@ -284,6 +284,8 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
     const rtc::IPAddress& address) {
   RTC_DCHECK_RUN_ON(network_thread_);
 
+  RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() android_sdk=" << android_sdk_int_ << " socket_fd=" << socket_fd << " addr=" << address.ToString().c_str();
+
   // Android prior to Lollipop didn't have support for binding sockets to
   // networks. This may also occur if there is no connectivity manager
   // service.
@@ -301,10 +303,12 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
   absl::optional<NetworkHandle> network_handle =
       FindNetworkHandleFromAddress(address);
   if (!network_handle) {
+    RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() NetworkBindingResult::ADDRESS_NOT_FOUND";
     return rtc::NetworkBindingResult::ADDRESS_NOT_FOUND;
   }
 
   if (*network_handle == 0 /* NETWORK_UNSPECIFIED */) {
+    RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() NetworkBindingResult::NOT_IMPLEMENTED";
     return rtc::NetworkBindingResult::NOT_IMPLEMENTED;
   }
 
@@ -336,6 +340,12 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
       return rtc::NetworkBindingResult::NOT_IMPLEMENTED;
     }
     rv = marshmallowSetNetworkForSocket(*network_handle, socket_fd);
+    if (rv) {
+        RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() android_sdk=" << android_sdk_int_
+                << " socket_fd=" << socket_fd
+                << " addr=" << address.ToString().c_str()
+                << " marshmallowSetNetworkForSocket rv=" << rv;
+    }
   } else {
     // NOTE: This relies on Android implementation details, but it won't
     // change because Lollipop is already released.
@@ -365,6 +375,12 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
       return rtc::NetworkBindingResult::NOT_IMPLEMENTED;
     }
     rv = lollipopSetNetworkForSocket(*network_handle, socket_fd);
+    if (rv) {
+        RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() android_sdk=" << android_sdk_int_
+                << " socket_fd=" << socket_fd
+                << " addr=" << address.ToString().c_str()
+                << " lollipopSetNetworkForSocket rv=" << rv;
+    }
   }
 
   // If |network| has since disconnected, |rv| will be ENONET. Surface this as
