@@ -299,6 +299,10 @@ AsyncSocket::ConnState PhysicalSocket::GetState() const {
 int PhysicalSocket::GetOption(Option opt, int* value) {
   int slevel;
   int sopt;
+#ifdef __ANDROID__
+  if(opt == OPT_IFACE_BIND)
+    return 0;
+#endif
   if (TranslateOption(opt, &slevel, &sopt) == -1)
     return -1;
   socklen_t optlen = sizeof(*value);
@@ -322,6 +326,10 @@ int PhysicalSocket::GetOption(Option opt, int* value) {
 int PhysicalSocket::SetOption(Option opt, int value) {
   int slevel;
   int sopt;
+#ifdef __ANDROID__
+  if(opt == OPT_IFACE_BIND)
+    return 0;
+#endif
   if (TranslateOption(opt, &slevel, &sopt) == -1)
     return -1;
   if (opt == OPT_DONTFRAGMENT) {
@@ -611,6 +619,11 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
         *sopt = IP_TTL;
       }
       break;
+#ifndef __ANDROID__
+    // for some obscure reason, android does not support
+    // this. And it did, I clearly remember having a version
+    // with this code working just fine. This is not a
+    // critical option tho, so we just skip it
     case OPT_IFACE_BIND:
       if (family_ == AF_INET6) {
         *slevel = IPPROTO_IPV6;
@@ -620,6 +633,7 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
         *sopt = IP_BOUND_IF;
       }
       break;
+#endif
     default:
       RTC_NOTREACHED();
       return -1;

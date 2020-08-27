@@ -142,6 +142,7 @@ public class PeerConnectionFactory {
     static final int ADAPTER_TYPE_LOOPBACK = 1 << 4;
     static final int ADAPTER_TYPE_ANY = 1 << 5;
 
+    public List<String> activeInterfaces;
     public int networkIgnoreMask;
     public boolean disableEncryption;
     public boolean disableNetworkMonitor;
@@ -149,6 +150,11 @@ public class PeerConnectionFactory {
     @CalledByNative("Options")
     int getNetworkIgnoreMask() {
       return networkIgnoreMask;
+    }
+
+    @CalledByNative("Options")
+    List<String> getActiveInterfaces() {
+      return activeInterfaces;
     }
 
     @CalledByNative("Options")
