@@ -17,6 +17,7 @@
 #include <memory>
 #include <utility>
 
+#include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/audio/audio_mixer.h"
 #include "api/rtp_headers.h"
@@ -51,7 +52,7 @@ class AudioIngress : public AudioMixer::Source {
   ~AudioIngress() override;
 
   // Start or stop receiving operation of AudioIngress.
-  void StartPlay() { playing_ = true; }
+  bool StartPlay();
   void StopPlay() {
     playing_ = false;
     output_audio_level_.ResetLevelFullRange();
@@ -68,26 +69,20 @@ class AudioIngress : public AudioMixer::Source {
   void ReceivedRTPPacket(rtc::ArrayView<const uint8_t> rtp_packet);
   void ReceivedRTCPPacket(rtc::ArrayView<const uint8_t> rtcp_packet);
 
-  // Retrieve highest speech output level in last 100 ms.  Note that
-  // this isn't RMS but absolute raw audio level on int16_t sample unit.
-  // Therefore, the return value will vary between 0 ~ 0xFFFF. This type of
-  // value may be useful to be used for measuring active speaker gauge.
-  int GetSpeechOutputLevelFullRange() const {
+  // See comments on LevelFullRange, TotalEnergy, TotalDuration from
+  // audio/audio_level.h.
+  int GetOutputAudioLevel() const {
     return output_audio_level_.LevelFullRange();
   }
-
-  // Returns network round trip time (RTT) measued by RTCP exchange with
-  // remote media endpoint. RTT value -1 indicates that it's not initialized.
-  int64_t GetRoundTripTime();
+  double GetOutputTotalEnergy() { return output_audio_level_.TotalEnergy(); }
+  double GetOutputTotalDuration() {
+    return output_audio_level_.TotalDuration();
+  }
 
   NetworkStatistics GetNetworkStatistics() const {
     NetworkStatistics stats;
-    acm_receiver_.GetNetworkStatistics(&stats);
-    return stats;
-  }
-  AudioDecodingCallStats GetDecodingStatistics() const {
-    AudioDecodingCallStats stats;
-    acm_receiver_.GetDecodingCallStatistics(&stats);
+    acm_receiver_.GetNetworkStatistics(&stats,
+                                       /*get_and_clear_legacy_stats=*/false);
     return stats;
   }
 
@@ -107,6 +102,10 @@ class AudioIngress : public AudioMixer::Source {
   }
 
  private:
+  // Returns network round trip time (RTT) measued by RTCP exchange with
+  // remote media endpoint. Returns absl::nullopt when it's not initialized.
+  absl::optional<int64_t> GetRoundTripTime();
+
   // Indicates AudioIngress status as caller invokes Start/StopPlaying.
   // If not playing, incoming RTP data processing is skipped, thus
   // producing no data to output device.

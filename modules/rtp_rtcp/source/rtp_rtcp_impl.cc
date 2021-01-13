@@ -536,15 +536,6 @@ int32_t ModuleRtpRtcpImpl::SetRTCPApplicationSpecificData(
   return -1;
 }
 
-void ModuleRtpRtcpImpl::SetRtcpXrRrtrStatus(bool enable) {
-  rtcp_receiver_.SetRtcpXrRrtrStatus(enable);
-  rtcp_sender_.SendRtcpXrReceiverReferenceTime(enable);
-}
-
-bool ModuleRtpRtcpImpl::RtcpXrRrtrStatus() const {
-  return rtcp_sender_.RtcpXrReceiverReferenceTime();
-}
-
 // TODO(asapersson): Replace this method with the one below.
 int32_t ModuleRtpRtcpImpl::DataCountersRTP(size_t* bytes_sent,
                                            uint32_t* packets_sent) const {
@@ -727,19 +718,6 @@ void ModuleRtpRtcpImpl::SetRemoteSSRC(const uint32_t ssrc) {
   rtcp_receiver_.SetRemoteSSRC(ssrc);
 }
 
-void ModuleRtpRtcpImpl::BitrateSent(uint32_t* total_rate,
-                                    uint32_t* video_rate,
-                                    uint32_t* fec_rate,
-                                    uint32_t* nack_rate) const {
-  RtpSendRates send_rates = rtp_sender_->packet_sender.GetSendRates();
-  *total_rate = send_rates.Sum().bps<uint32_t>();
-  if (video_rate)
-    *video_rate = 0;
-  if (fec_rate)
-    *fec_rate = 0;
-  *nack_rate = send_rates[RtpPacketMediaType::kRetransmission].bps<uint32_t>();
-}
-
 RtpSendRates ModuleRtpRtcpImpl::GetSendRates() const {
   return rtp_sender_->packet_sender.GetSendRates();
 }
@@ -804,7 +782,7 @@ bool ModuleRtpRtcpImpl::LastReceivedNTP(
 
 void ModuleRtpRtcpImpl::set_rtt_ms(int64_t rtt_ms) {
   {
-    rtc::CritScope cs(&critical_section_rtt_);
+    MutexLock lock(&mutex_rtt_);
     rtt_ms_ = rtt_ms;
   }
   if (rtp_sender_) {
@@ -813,7 +791,7 @@ void ModuleRtpRtcpImpl::set_rtt_ms(int64_t rtt_ms) {
 }
 
 int64_t ModuleRtpRtcpImpl::rtt_ms() const {
-  rtc::CritScope cs(&critical_section_rtt_);
+  MutexLock lock(&mutex_rtt_);
   return rtt_ms_;
 }
 

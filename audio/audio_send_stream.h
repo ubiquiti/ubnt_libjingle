@@ -21,7 +21,6 @@
 #include "call/audio_state.h"
 #include "call/bitrate_allocator.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/experiments/struct_parameters_parser.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/synchronization/mutex.h"
@@ -75,6 +74,11 @@ class AudioSendStream final : public webrtc::AudioSendStream,
                   RtcEventLog* event_log,
                   const absl::optional<RtpState>& suspended_rtp_state,
                   std::unique_ptr<voe::ChannelSendInterface> channel_send);
+
+  AudioSendStream() = delete;
+  AudioSendStream(const AudioSendStream&) = delete;
+  AudioSendStream& operator=(const AudioSendStream&) = delete;
+
   ~AudioSendStream() override;
 
   // webrtc::AudioSendStream implementation.
@@ -151,7 +155,6 @@ class AudioSendStream final : public webrtc::AudioSendStream,
   rtc::RaceChecker audio_capture_race_checker_;
   rtc::TaskQueue* worker_queue_;
 
-  const bool audio_send_side_bwe_;
   const bool allocate_audio_without_feedback_;
   const bool force_no_audio_feedback_ = allocate_audio_without_feedback_;
   const bool enable_audio_alr_probing_;
@@ -206,8 +209,6 @@ class AudioSendStream final : public webrtc::AudioSendStream,
   size_t total_packet_overhead_bytes_ RTC_GUARDED_BY(worker_queue_) = 0;
   absl::optional<std::pair<TimeDelta, TimeDelta>> frame_length_range_
       RTC_GUARDED_BY(worker_queue_);
-
-  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(AudioSendStream);
 };
 }  // namespace internal
 }  // namespace webrtc

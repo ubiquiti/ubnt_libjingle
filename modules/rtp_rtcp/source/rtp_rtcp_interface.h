@@ -144,6 +144,10 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
     // overhead.
     bool enable_rtx_padding_prioritization = true;
 
+    // Estimate RTT as non-sender as described in
+    // https://tools.ietf.org/html/rfc3611#section-4.4 and #section-4.5
+    bool non_sender_rtt_measurement = false;
+
    private:
     RTC_DISALLOW_COPY_AND_ASSIGN(Configuration);
   };
@@ -267,13 +271,6 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
   // bitrate estimate since the stream participates in the bitrate allocation.
   virtual void SetAsPartOfAllocation(bool part_of_allocation) = 0;
 
-  // TODO(sprang): Remove when all call sites have been moved to
-  // GetSendRates(). Fetches the current send bitrates in bits/s.
-  virtual void BitrateSent(uint32_t* total_rate,
-                           uint32_t* video_rate,
-                           uint32_t* fec_rate,
-                           uint32_t* nack_rate) const = 0;
-
   // Returns bitrate sent (post-pacing) per packet type.
   virtual RtpSendRates GetSendRates() const = 0;
 
@@ -376,12 +373,6 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
   // that pair.
   virtual std::vector<ReportBlockData> GetLatestReportBlockData() const = 0;
 
-  // (XR) Sets Receiver Reference Time Report (RTTR) status.
-  virtual void SetRtcpXrRrtrStatus(bool enable) = 0;
-
-  // Returns current Receiver Reference Time Report (RTTR) status.
-  virtual bool RtcpXrRrtrStatus() const = 0;
-
   // (REMB) Receiver Estimated Max Bitrate.
   // Schedules sending REMB on next and following sender/receiver reports.
   void SetRemb(int64_t bitrate_bps, std::vector<uint32_t> ssrcs) override = 0;
@@ -405,9 +396,6 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
   // Store the sent packets, needed to answer to a Negative acknowledgment
   // requests.
   virtual void SetStorePacketsStatus(bool enable, uint16_t numberToStore) = 0;
-
-  // Returns true if the module is configured to store packets.
-  virtual bool StorePackets() const = 0;
 
   virtual void SetVideoBitrateAllocation(
       const VideoBitrateAllocation& bitrate) = 0;

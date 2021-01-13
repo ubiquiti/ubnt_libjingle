@@ -14,11 +14,16 @@
 #include <utility>
 
 #include "absl/types/optional.h"
+#include "api/scoped_refptr.h"
 #include "api/video/video_adaptation_reason.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_config.h"
+#include "call/adaptation/adaptation_constraint.h"
 #include "call/adaptation/encoder_settings.h"
+#include "call/adaptation/test/fake_frame_rate_provider.h"
+#include "call/adaptation/test/fake_resource.h"
+#include "call/adaptation/test/fake_video_stream_input_state_provider.h"
 #include "call/adaptation/video_source_restrictions.h"
 #include "call/adaptation/video_stream_input_state.h"
 #include "rtc_base/string_encode.h"
@@ -28,6 +33,11 @@
 #include "test/testsupport/rtc_expect_death.h"
 
 namespace webrtc {
+
+using ::testing::_;
+using ::testing::DoAll;
+using ::testing::Return;
+using ::testing::SaveArg;
 
 namespace {
 
@@ -49,28 +59,6 @@ std::string BalancedFieldTrialConfig() {
          rtc::ToString(kBalancedMediumFrameRateFps) + "|" +
          rtc::ToString(kBalancedHighFrameRateFps) + "/";
 }
-
-class FakeVideoStreamInputStateProvider : public VideoStreamInputStateProvider {
- public:
-  FakeVideoStreamInputStateProvider()
-      : VideoStreamInputStateProvider(nullptr) {}
-  virtual ~FakeVideoStreamInputStateProvider() = default;
-
-  void SetInputState(int input_pixels,
-                     int input_fps,
-                     int min_pixels_per_frame) {
-    VideoStreamInputState input_state;
-    input_state.set_has_input(true);
-    input_state.set_frame_size_pixels(input_pixels);
-    input_state.set_frames_per_second(input_fps);
-    input_state.set_min_pixels_per_frame(min_pixels_per_frame);
-    fake_input_state_ = input_state;
-  }
-  VideoStreamInputState InputState() override { return fake_input_state_; }
-
- private:
-  VideoStreamInputState fake_input_state_;
-};
 
 // Responsible for adjusting the inputs to VideoStreamAdapter (SetInput), such
 // as pixels and frame rate, according to the most recent source restrictions.
@@ -129,7 +117,7 @@ class FakeVideoStreamAdapterListner : public VideoSourceRestrictionsListener {
       VideoSourceRestrictions restrictions,
       const VideoAdaptationCounters& adaptation_counters,
       rtc::scoped_refptr<Resource> reason,
-      const VideoSourceRestrictions& unfiltered_restrictions) {
+      const VideoSourceRestrictions& unfiltered_restrictions) override {
     calls_++;
     last_restrictions_ = unfiltered_restrictions;
   }
@@ -145,18 +133,33 @@ class FakeVideoStreamAdapterListner : public VideoSourceRestrictionsListener {
   VideoSourceRestrictions last_restrictions_;
 };
 
+class MockAdaptationConstraint : public AdaptationConstraint {
+ public:
+  MOCK_METHOD(bool,
+              IsAdaptationUpAllowed,
+              (const VideoStreamInputState& input_state,
+               const VideoSourceRestrictions& restrictions_before,
+               const VideoSourceRestrictions& restrictions_after),
+              (const, override));
+
+  // MOCK_METHOD(std::string, Name, (), (const, override));
+  std::string Name() const override { return "MockAdaptationConstraint"; }
+};
+
 }  // namespace
 
 class VideoStreamAdapterTest : public ::testing::Test {
  public:
   VideoStreamAdapterTest()
       : field_trials_(BalancedFieldTrialConfig()),
-        input_state_provider_(),
-        adapter_(&input_state_provider_) {}
+        resource_(FakeResource::Create("FakeResource")),
+        adapter_(&input_state_provider_, &encoder_stats_observer_) {}
 
  protected:
   webrtc::test::ScopedFieldTrials field_trials_;
   FakeVideoStreamInputStateProvider input_state_provider_;
+  rtc::scoped_refptr<Resource> resource_;
+  testing::StrictMock<MockVideoStreamEncoderObserver> encoder_stats_observer_;
   VideoStreamAdapter adapter_;
 };
 
@@ -172,7 +175,6 @@ TEST_F(VideoStreamAdapterTest, MaintainFramerate_DecreasesPixelsToThreeFifths) {
                                       kDefaultMinPixelsPerFrame);
   Adaptation adaptation = adapter_.GetAdaptationDown();
   EXPECT_EQ(Adaptation::Status::kValid, adaptation.status());
-  EXPECT_FALSE(adaptation.min_pixel_limit_reached());
   adapter_.ApplyAdaptation(adaptation, nullptr);
   EXPECT_EQ(static_cast<size_t>((kInputPixels * 3) / 5),
             adapter_.source_restrictions().max_pixels_per_frame());
@@ -189,6 +191,7 @@ TEST_F(VideoStreamAdapterTest,
   adapter_.SetDegradationPreference(DegradationPreference::MAINTAIN_FRAMERATE);
   input_state_provider_.SetInputState(kMinPixelsPerFrame + 1, 30,
                                       kMinPixelsPerFrame);
+  EXPECT_CALL(encoder_stats_observer_, OnMinPixelLimitReached());
   // Even though we are above kMinPixelsPerFrame, because adapting down would
   // have exceeded the limit, we are said to have reached the limit already.
   // This differs from the frame rate adaptation logic, which would have clamped
@@ -196,7 +199,6 @@ TEST_F(VideoStreamAdapterTest,
   // step.
   Adaptation adaptation = adapter_.GetAdaptationDown();
   EXPECT_EQ(Adaptation::Status::kLimitReached, adaptation.status());
-  EXPECT_TRUE(adaptation.min_pixel_limit_reached());
 }
 
 TEST_F(VideoStreamAdapterTest, MaintainFramerate_IncreasePixelsToFiveThirds) {
@@ -514,6 +516,7 @@ TEST_F(VideoStreamAdapterTest, Balanced_LimitReached) {
             adapter_.GetAdaptationUp().status());
   // Adapting down once result in restricted frame rate, in this case we reach
   // the lowest possible frame rate immediately: kBalancedLowFrameRateFps.
+  EXPECT_CALL(encoder_stats_observer_, OnMinPixelLimitReached()).Times(2);
   fake_stream.ApplyAdaptation(adapter_.GetAdaptationDown());
   EXPECT_EQ(static_cast<double>(kBalancedLowFrameRateFps),
             adapter_.source_restrictions().max_frame_rate());
@@ -870,6 +873,45 @@ TEST_F(VideoStreamAdapterTest,
             adapter_.GetAdaptDownResolution().status());
 }
 
+TEST_F(VideoStreamAdapterTest, AdaptationConstraintAllowsAdaptationsUp) {
+  testing::StrictMock<MockAdaptationConstraint> adaptation_constraint;
+  adapter_.SetDegradationPreference(DegradationPreference::MAINTAIN_FRAMERATE);
+  adapter_.AddAdaptationConstraint(&adaptation_constraint);
+  input_state_provider_.SetInputState(1280 * 720, 30,
+                                      kDefaultMinPixelsPerFrame);
+  FakeVideoStream fake_stream(&adapter_, &input_state_provider_, 1280 * 720, 30,
+                              kDefaultMinPixelsPerFrame);
+  // Adapt down once so we can adapt up later.
+  auto first_adaptation = adapter_.GetAdaptationDown();
+  fake_stream.ApplyAdaptation(first_adaptation);
+
+  EXPECT_CALL(adaptation_constraint,
+              IsAdaptationUpAllowed(_, first_adaptation.restrictions(), _))
+      .WillOnce(Return(true));
+  EXPECT_EQ(Adaptation::Status::kValid, adapter_.GetAdaptationUp().status());
+  adapter_.RemoveAdaptationConstraint(&adaptation_constraint);
+}
+
+TEST_F(VideoStreamAdapterTest, AdaptationConstraintDisallowsAdaptationsUp) {
+  testing::StrictMock<MockAdaptationConstraint> adaptation_constraint;
+  adapter_.SetDegradationPreference(DegradationPreference::MAINTAIN_FRAMERATE);
+  adapter_.AddAdaptationConstraint(&adaptation_constraint);
+  input_state_provider_.SetInputState(1280 * 720, 30,
+                                      kDefaultMinPixelsPerFrame);
+  FakeVideoStream fake_stream(&adapter_, &input_state_provider_, 1280 * 720, 30,
+                              kDefaultMinPixelsPerFrame);
+  // Adapt down once so we can adapt up later.
+  auto first_adaptation = adapter_.GetAdaptationDown();
+  fake_stream.ApplyAdaptation(first_adaptation);
+
+  EXPECT_CALL(adaptation_constraint,
+              IsAdaptationUpAllowed(_, first_adaptation.restrictions(), _))
+      .WillOnce(Return(false));
+  EXPECT_EQ(Adaptation::Status::kRejectedByConstraint,
+            adapter_.GetAdaptationUp().status());
+  adapter_.RemoveAdaptationConstraint(&adaptation_constraint);
+}
+
 // Death tests.
 // Disabled on Android because death tests misbehave on Android, see
 // base/test/gtest_util.h.
@@ -878,7 +920,8 @@ TEST_F(VideoStreamAdapterTest,
 TEST(VideoStreamAdapterDeathTest,
      SetDegradationPreferenceInvalidatesAdaptations) {
   FakeVideoStreamInputStateProvider input_state_provider;
-  VideoStreamAdapter adapter(&input_state_provider);
+  testing::StrictMock<MockVideoStreamEncoderObserver> encoder_stats_observer_;
+  VideoStreamAdapter adapter(&input_state_provider, &encoder_stats_observer_);
   adapter.SetDegradationPreference(DegradationPreference::MAINTAIN_FRAMERATE);
   input_state_provider.SetInputState(1280 * 720, 30, kDefaultMinPixelsPerFrame);
   Adaptation adaptation = adapter.GetAdaptationDown();
@@ -888,7 +931,8 @@ TEST(VideoStreamAdapterDeathTest,
 
 TEST(VideoStreamAdapterDeathTest, AdaptDownInvalidatesAdaptations) {
   FakeVideoStreamInputStateProvider input_state_provider;
-  VideoStreamAdapter adapter(&input_state_provider);
+  testing::StrictMock<MockVideoStreamEncoderObserver> encoder_stats_observer_;
+  VideoStreamAdapter adapter(&input_state_provider, &encoder_stats_observer_);
   adapter.SetDegradationPreference(DegradationPreference::MAINTAIN_RESOLUTION);
   input_state_provider.SetInputState(1280 * 720, 30, kDefaultMinPixelsPerFrame);
   Adaptation adaptation = adapter.GetAdaptationDown();

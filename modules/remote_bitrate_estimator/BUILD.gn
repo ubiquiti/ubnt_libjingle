@@ -9,7 +9,6 @@
 import("../../webrtc.gni")
 
 rtc_library("remote_bitrate_estimator") {
-  visibility = [ "*" ]
   sources = [
     "aimd_rate_control.cc",
     "aimd_rate_control.h",
@@ -116,7 +115,6 @@ if (rtc_include_tests) {
     deps = [
       ":remote_bitrate_estimator",
       "..:module_api_public",
-      "../..:webrtc_common",
       "../../api/transport:field_trial_based_config",
       "../../api/transport:mock_network_control",
       "../../api/transport:network_control",

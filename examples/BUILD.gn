@@ -27,6 +27,7 @@ group("examples") {
       ":AppRTCMobile",
       ":AppRTCMobile_test_apk",
       ":libwebrtc_unity",
+      "androidvoip",
     ]
 
     # TODO(sakal): We include some code from the tests. Remove this dependency
@@ -44,7 +45,7 @@ group("examples") {
     deps += [ ":AppRTCMobile" ]
   }
 
-  if (is_linux || is_win) {
+  if (is_linux || is_chromeos || is_win) {
     deps += [
       ":peerconnection_server",
       ":stunserver",
@@ -129,6 +130,7 @@ if (is_android) {
       "androidapp/src/org/appspot/apprtc/util/AsyncHttpURLConnection.java",
     ]
 
+    resources_package = "org.appspot.apprtc"
     deps = [
       ":AppRTCMobile_resources",
       "../rtc_base:base_java",
@@ -186,9 +188,9 @@ if (is_android) {
       "androidapp/res/values/strings.xml",
       "androidapp/res/xml/preferences.xml",
     ]
-    custom_package = "org.appspot.apprtc"
 
     # Needed for Bazel converter.
+    custom_package = "org.appspot.apprtc"
     resource_dirs = [ "androidapp/res" ]
     assert(resource_dirs != [])  # Mark as used.
   }
@@ -207,6 +209,7 @@ if (is_android) {
 
     deps = [
       ":AppRTCMobile_javalib",
+      "../sdk/android:base_java",
       "../sdk/android:camera_java",
       "../sdk/android:libjingle_peerconnection_java",
       "../sdk/android:peerconnection_java",
@@ -230,13 +233,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/common/ARDUtilities.m",
     ]
     public_configs = [ ":apprtc_common_config" ]
-
-    if (is_ios) {
-      # iOS must use WebRTC.framework which is dynamically linked.
-      deps = [ "../sdk:framework_objc+link" ]
-    } else {
-      deps = [ "../sdk:mac_framework_objc+link" ]
-    }
+    deps = [ "../sdk:base_objc" ]
   }
 
   config("apprtc_signaling_config") {
@@ -295,17 +292,16 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
     deps = [
       ":apprtc_common",
       ":socketrocket",
+      "../sdk:base_objc",
+      "../sdk:default_codec_factory_objc",
+      "../sdk:file_logger_objc",
+      "../sdk:helpers_objc",
+      "../sdk:mediaconstraints_objc",
+      "../sdk:peerconnectionfactory_base_objc",
+      "../sdk:videocapture_objc",
+      "../sdk:videoframebuffer_objc",
+      "../sdk:videosource_objc",
     ]
-
-    if (is_ios) {
-      # iOS must use WebRTC.framework which is dynamically linked.
-      deps += [
-        "../sdk:framework_objc+link",
-        "../sdk:ios_framework_bundle",
-      ]
-    } else {
-      deps += [ "../sdk:mac_framework_objc+link" ]
-    }
     frameworks = [
       "CoreMedia.framework",
       "QuartzCore.framework",
@@ -344,9 +340,19 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       deps = [
         ":apprtc_common",
         ":apprtc_signaling",
-        "../sdk:framework_objc+link",
-        "../sdk:ios_framework_bundle",
+        "../sdk:audio_session_objc",
+        "../sdk:base_objc",
+        "../sdk:helpers_objc",
+        "../sdk:mediaconstraints_objc",
+        "../sdk:peerconnectionfactory_base_objc",
+        "../sdk:peerconnectionfactory_base_objc",
+        "../sdk:ui_objc",
+        "../sdk:videocapture_objc",
+        "../sdk:videocodec_objc",
       ]
+      if (rtc_use_metal_rendering) {
+        deps += [ "../sdk:metal_objc" ]
+      }
 
       frameworks = [ "AVFoundation.framework" ]
     }
@@ -547,7 +553,15 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       deps = [
         ":apprtc_common",
         ":apprtc_signaling",
-        "../sdk:mac_framework_objc+link",
+        "../sdk:base_objc",
+        "../sdk:helpers_objc",
+        "../sdk:mediaconstraints_objc",
+        "../sdk:metal_objc",
+        "../sdk:peerconnectionfactory_base_objc",
+        "../sdk:peerconnectionfactory_base_objc",
+        "../sdk:ui_objc",
+        "../sdk:videocapture_objc",
+        "../sdk:videocodec_objc",
       ]
     }
 
@@ -632,14 +646,16 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
           ":AppRTCMobile_lib",
           ":apprtc_signaling",
           "../rtc_base",
-          "../sdk:framework_objc+link",
-          "../sdk:ios_framework_bundle",
+          "../sdk:mediaconstraints_objc",
+          "../sdk:peerconnectionfactory_base_objc",
+          "../sdk:videocapture_objc",
           "//build/config/ios:xctest",
           "//third_party/ocmock",
         ]
       }
 
-      rtc_ios_xctest_test("apprtcmobile_tests") {
+      rtc_test("apprtcmobile_tests") {
+        is_xctest = true
         info_plist = "objc/AppRTCMobile/ios/Info.plist"
         sources = [ "objc/AppRTCMobile/tests/main.mm" ]
         deps = [
@@ -654,7 +670,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
   }
 }
 
-if (is_linux || is_win) {
+if (is_linux || is_chromeos || is_win) {
   rtc_executable("peerconnection_client") {
     testonly = true
     sources = [
@@ -674,11 +690,12 @@ if (is_linux || is_win) {
       "../api:scoped_refptr",
       "../api/audio:audio_mixer_api",
       "../api/audio_codecs:audio_codecs_api",
-      "../api/video:video_frame_i420",
+      "../api/video:video_frame",
       "../api/video:video_rtp_headers",
       "../api/video_codecs:video_codecs_api",
       "../media:rtc_media_base",
       "../p2p:rtc_p2p",
+      "../pc:video_track_source",
       "../rtc_base:checks",
       "../rtc_base/third_party/sigslot",
       "../system_wrappers:field_trial",
@@ -696,9 +713,12 @@ if (is_linux || is_win) {
         "peerconnection/client/main_wnd.h",
       ]
       configs += [ "//build/config/win:windowed" ]
-      deps += [ "../media:rtc_media_base" ]
+      deps += [
+        "../media:rtc_media_base",
+        "../rtc_base:win32",
+      ]
     }
-    if (is_linux) {
+    if (is_linux || is_chromeos) {
       sources += [
         "peerconnection/client/linux/main.cc",
         "peerconnection/client/linux/main_wnd.cc",
@@ -826,6 +846,7 @@ if (is_win || is_android) {
       "../modules/video_capture:video_capture_module",
       "../pc:libjingle_peerconnection",
       "../pc:peerconnection",
+      "../pc:video_track_source",
       "../rtc_base",
       "../test:platform_video_capturer",
       "../test:video_test_common",
@@ -848,6 +869,7 @@ if (is_android) {
       "../sdk/android:camera_java",
       "../sdk/android:libjingle_peerconnection_java",
       "../sdk/android:peerconnection_java",
+      "../sdk/android:video_api_java",
       "../sdk/android:video_java",
       "//third_party/android_deps:com_android_support_support_annotations_java",
     ]

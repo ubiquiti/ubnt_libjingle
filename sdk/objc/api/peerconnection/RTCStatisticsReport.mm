@@ -37,12 +37,9 @@ NSObject *ValueFromStatsMember(const RTCStatsMemberInterface *member) {
       case RTCStatsMemberInterface::kSequenceBool: {
         std::vector<bool> sequence = *member->cast_to<RTCStatsMember<std::vector<bool>>>();
         NSMutableArray *array = [NSMutableArray arrayWithCapacity:sequence.size()];
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wrange-loop-analysis"
-        for (const auto &item : sequence) {
+        for (auto item : sequence) {
           [array addObject:[NSNumber numberWithBool:item]];
         }
-#pragma clang diagnostic pop
         return [array copy];
       }
       case RTCStatsMemberInterface::kSequenceInt32: {

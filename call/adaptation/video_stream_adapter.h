@@ -20,12 +20,15 @@
 #include "api/adaptation/resource.h"
 #include "api/rtp_parameters.h"
 #include "api/video/video_adaptation_counters.h"
+#include "api/video/video_stream_encoder_observer.h"
+#include "call/adaptation/adaptation_constraint.h"
 #include "call/adaptation/degradation_preference_provider.h"
 #include "call/adaptation/video_source_restrictions.h"
 #include "call/adaptation/video_stream_input_state.h"
 #include "call/adaptation/video_stream_input_state_provider.h"
 #include "modules/video_coding/utility/quality_scaler.h"
 #include "rtc_base/experiments/balanced_degradation_settings.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -54,6 +57,7 @@ VideoSourceRestrictions FilterRestrictionsByDegradationPreference(
     VideoSourceRestrictions source_restrictions,
     DegradationPreference degradation_preference);
 
+int GetLowerResolutionThan(int pixel_count);
 int GetHigherResolutionThan(int pixel_count);
 
 // Either represents the next VideoSourceRestrictions the VideoStreamAdapter
@@ -76,6 +80,8 @@ class Adaptation final {
     kInsufficientInput,
     // Adaptation disabled via degradation preference.
     kAdaptationDisabled,
+    // Adaptation up was rejected by a VideoAdaptationConstraint.
+    kRejectedByConstraint,
   };
 
   static const char* StatusToString(Status status);
@@ -84,8 +90,6 @@ class Adaptation final {
   const VideoStreamInputState& input_state() const;
   const VideoSourceRestrictions& restrictions() const;
   const VideoAdaptationCounters& counters() const;
-  // Used for stats reporting.
-  bool min_pixel_limit_reached() const;
 
  private:
   friend class VideoStreamAdapter;
@@ -94,13 +98,9 @@ class Adaptation final {
   Adaptation(int validation_id,
              VideoSourceRestrictions restrictions,
              VideoAdaptationCounters counters,
-             VideoStreamInputState input_state,
-             bool min_pixel_limit_reached);
+             VideoStreamInputState input_state);
   // Constructor when adaptation is not valid. Status MUST NOT be kValid.
-  Adaptation(int validation_id,
-             Status invalid_status,
-             VideoStreamInputState input_state,
-             bool min_pixel_limit_reached);
+  Adaptation(int validation_id, Status invalid_status);
 
   // An Adaptation can become invalidated if the state of VideoStreamAdapter is
   // modified before the Adaptation is applied. To guard against this, this ID
@@ -108,7 +108,6 @@ class Adaptation final {
   // TODO(https://crbug.com/webrtc/11700): Remove the validation_id_.
   const int validation_id_;
   const Status status_;
-  const bool min_pixel_limit_reached_;
   // Input state when adaptation was made.
   const VideoStreamInputState input_state_;
   const VideoSourceRestrictions restrictions_;
@@ -123,8 +122,8 @@ class Adaptation final {
 // 3. Modify the stream's restrictions in one of the valid ways.
 class VideoStreamAdapter {
  public:
-  explicit VideoStreamAdapter(
-      VideoStreamInputStateProvider* input_state_provider);
+  VideoStreamAdapter(VideoStreamInputStateProvider* input_state_provider,
+                     VideoStreamEncoderObserver* encoder_stats_observer);
   ~VideoStreamAdapter();
 
   VideoSourceRestrictions source_restrictions() const;
@@ -135,6 +134,8 @@ class VideoStreamAdapter {
       VideoSourceRestrictionsListener* restrictions_listener);
   void RemoveRestrictionsListener(
       VideoSourceRestrictionsListener* restrictions_listener);
+  void AddAdaptationConstraint(AdaptationConstraint* adaptation_constraint);
+  void RemoveAdaptationConstraint(AdaptationConstraint* adaptation_constraint);
 
   // TODO(hbos): Setting the degradation preference should not clear
   // restrictions! This is not defined in the spec and is unexpected, there is a
@@ -164,6 +165,7 @@ class VideoStreamAdapter {
 
  private:
   void BroadcastVideoRestrictionsUpdate(
+      const VideoStreamInputState& input_state,
       const rtc::scoped_refptr<Resource>& resource);
 
   bool HasSufficientInputForAdaptation(const VideoStreamInputState& input_state)
@@ -175,10 +177,15 @@ class VideoStreamAdapter {
       const VideoStreamInputState& input_state) const
       RTC_RUN_ON(&sequence_checker_);
   RestrictionsOrState GetAdaptationDownStep(
-      const VideoStreamInputState& input_state) const
+      const VideoStreamInputState& input_state,
+      const RestrictionsWithCounters& current_restrictions) const
       RTC_RUN_ON(&sequence_checker_);
   RestrictionsOrState GetAdaptDownResolutionStepForBalanced(
       const VideoStreamInputState& input_state) const
+      RTC_RUN_ON(&sequence_checker_);
+  RestrictionsOrState AdaptIfFpsDiffInsufficient(
+      const VideoStreamInputState& input_state,
+      const RestrictionsWithCounters& restrictions) const
       RTC_RUN_ON(&sequence_checker_);
 
   Adaptation GetAdaptationUp(const VideoStreamInputState& input_state) const
@@ -209,10 +216,13 @@ class VideoStreamAdapter {
       const VideoStreamInputState& input_state) const
       RTC_RUN_ON(&sequence_checker_);
 
-  SequenceChecker sequence_checker_ RTC_GUARDED_BY(&sequence_checker_);
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_
+      RTC_GUARDED_BY(&sequence_checker_);
   // Gets the input state which is the basis of all adaptations.
   // Thread safe.
   VideoStreamInputStateProvider* input_state_provider_;
+  // Used to signal when min pixel limit has been reached.
+  VideoStreamEncoderObserver* const encoder_stats_observer_;
   // Decides the next adaptation target in DegradationPreference::BALANCED.
   const BalancedDegradationSettings balanced_settings_;
   // To guard against applying adaptations that have become invalidated, an
@@ -243,6 +253,8 @@ class VideoStreamAdapter {
       RTC_GUARDED_BY(&sequence_checker_);
 
   std::vector<VideoSourceRestrictionsListener*> restrictions_listeners_
+      RTC_GUARDED_BY(&sequence_checker_);
+  std::vector<AdaptationConstraint*> adaptation_constraints_
       RTC_GUARDED_BY(&sequence_checker_);
 
   RestrictionsWithCounters current_restrictions_

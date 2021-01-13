@@ -22,12 +22,14 @@
 #include "rtc_base/null_socket_server.h"
 #include "rtc_base/physical_socket_server.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "test/testsupport/rtc_expect_death.h"
 
 #if defined(WEBRTC_WIN)
 #include <comdef.h>  // NOLINT
+
 #endif
 
 namespace rtc {
@@ -94,7 +96,7 @@ class SocketClient : public TestGenerator, public sigslot::has_slots<> {
 };
 
 // Receives messages and sends on a socket.
-class MessageClient : public MessageHandler, public TestGenerator {
+class MessageClient : public MessageHandlerAutoCleanup, public TestGenerator {
  public:
   MessageClient(Thread* pth, Socket* socket) : socket_(socket) {}
 
@@ -161,17 +163,17 @@ class AtomicBool {
  public:
   explicit AtomicBool(bool value = false) : flag_(value) {}
   AtomicBool& operator=(bool value) {
-    CritScope scoped_lock(&cs_);
+    webrtc::MutexLock scoped_lock(&mutex_);
     flag_ = value;
     return *this;
   }
   bool get() const {
-    CritScope scoped_lock(&cs_);
+    webrtc::MutexLock scoped_lock(&mutex_);
     return flag_;
   }
 
  private:
-  CriticalSection cs_;
+  mutable webrtc::Mutex mutex_;
   bool flag_;
 };
 
@@ -413,18 +415,18 @@ TEST(ThreadTest, ThreeThreadsInvoke) {
     explicit LockedBool(bool value) : value_(value) {}
 
     void Set(bool value) {
-      CritScope lock(&crit_);
+      webrtc::MutexLock lock(&mutex_);
       value_ = value;
     }
 
     bool Get() {
-      CritScope lock(&crit_);
+      webrtc::MutexLock lock(&mutex_);
       return value_;
     }
 
    private:
-    CriticalSection crit_;
-    bool value_ RTC_GUARDED_BY(crit_);
+    webrtc::Mutex mutex_;
+    bool value_ RTC_GUARDED_BY(mutex_);
   };
 
   struct LocalFuncs {
@@ -447,7 +449,6 @@ TEST(ThreadTest, ThreeThreadsInvoke) {
                                       Thread* thread1,
                                       Thread* thread2,
                                       LockedBool* out) {
-      CriticalSection crit;
       LockedBool async_invoked(false);
 
       invoker->AsyncInvoke<void>(
@@ -573,7 +574,7 @@ TEST_F(ThreadQueueTest, DisposeNotLocked) {
   EXPECT_FALSE(was_locked);
 }
 
-class DeletedMessageHandler : public MessageHandler {
+class DeletedMessageHandler : public MessageHandlerAutoCleanup {
  public:
   explicit DeletedMessageHandler(bool* deleted) : deleted_(deleted) {}
   ~DeletedMessageHandler() override { *deleted_ = true; }
@@ -663,12 +664,13 @@ TEST(ThreadManager, ProcessAllMessageQueuesWithClearedQueue) {
   ThreadManager::ProcessAllMessageQueuesForTesting();
 }
 
-class RefCountedHandler : public MessageHandler, public rtc::RefCountInterface {
+class RefCountedHandler : public MessageHandlerAutoCleanup,
+                          public rtc::RefCountInterface {
  public:
   void OnMessage(Message* msg) override {}
 };
 
-class EmptyHandler : public MessageHandler {
+class EmptyHandler : public MessageHandlerAutoCleanup {
  public:
   void OnMessage(Message* msg) override {}
 };

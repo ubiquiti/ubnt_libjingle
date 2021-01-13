@@ -20,12 +20,12 @@
 #include <vector>
 
 #include "api/array_view.h"
+#include "api/numerics/samples_stats_counter.h"
 #include "api/test/video_quality_analyzer_interface.h"
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
 #include "rtc_base/event.h"
-#include "rtc_base/numerics/samples_stats_counter.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "system_wrappers/include/clock.h"
@@ -170,6 +170,14 @@ struct DefaultVideoQualityAnalyzerOptions {
   // Tells DefaultVideoQualityAnalyzer if heavy metrics like PSNR and SSIM have
   // to be computed or not.
   bool heavy_metrics_computation_enabled = true;
+  // If true DefaultVideoQualityAnalyzer will try to adjust frames before
+  // computing PSNR and SSIM for them. In some cases picture may be shifted by
+  // a few pixels after the encode/decode step. Those difference is invisible
+  // for a human eye, but it affects the metrics. So the adjustment is used to
+  // get metrics that are closer to how human persepts the video. This feature
+  // significantly slows down the comparison, so turn it on only when it is
+  // needed.
+  bool adjust_cropping_before_comparing_frames = false;
   // Amount of frames that are queued in the DefaultVideoQualityAnalyzer from
   // the point they were captured to the point they were rendered on all
   // receivers per stream.
@@ -183,11 +191,6 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
       webrtc::Clock* clock,
       DefaultVideoQualityAnalyzerOptions options =
           DefaultVideoQualityAnalyzerOptions());
-  // Keep for backward compatibility during migration. Will be removed soon.
-  explicit DefaultVideoQualityAnalyzer(
-      bool heavy_metrics_computation_enabled = true,
-      size_t max_frames_in_flight_per_stream_count =
-          kDefaultMaxFramesInFlightPerStream);
   ~DefaultVideoQualityAnalyzer() override;
 
   void Start(std::string test_case_name,
@@ -218,6 +221,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   void OnDecoderError(absl::string_view peer_name,
                       uint16_t frame_id,
                       int32_t error_code) override;
+  void RegisterParticipantInCall(absl::string_view peer_name) override;
   void Stop() override;
   std::string GetStreamLabel(uint16_t frame_id) override;
   void OnStatsReports(
@@ -234,6 +238,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   // obtained by calling GetKnownVideoStreams()
   std::map<StatsKey, StreamStats> GetStats() const;
   AnalyzerStats GetAnalyzerStats() const;
+  double GetCpuUsagePercent();
 
  private:
   struct FrameStats {
@@ -305,11 +310,17 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
     size_t owner() const { return owner_; }
 
     void PushBack(uint16_t frame_id) { frame_ids_.PushBack(frame_id); }
-    // Crash if state is empty.
+    // Crash if state is empty. Guarantees that there can be no alive frames
+    // that are not in the owner queue
     uint16_t PopFront(size_t peer);
     bool IsEmpty(size_t peer) const { return frame_ids_.IsEmpty(peer); }
     // Crash if state is empty.
     uint16_t Front(size_t peer) const { return frame_ids_.Front(peer).value(); }
+
+    // When new peer is added - all current alive frames will be sent to it as
+    // well. So we need to register them as expected by copying owner_ head to
+    // the new head.
+    void AddPeer() { frame_ids_.AddHead(owner_); }
 
     size_t GetAliveFramesCount() { return frame_ids_.size(owner_); }
     uint16_t MarkNextAliveFrameAsDead();
@@ -375,6 +386,8 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
     bool RemoveFrame();
     void SetFrameId(uint16_t id);
 
+    void AddPeer() { ++peers_count_; }
+
     std::vector<size_t> GetPeersWhichDidntReceive() const;
     bool HaveAllPeersReceived() const;
 
@@ -421,7 +434,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
    private:
     const size_t stream_;
     const size_t owner_;
-    const size_t peers_count_;
+    size_t peers_count_;
     absl::optional<VideoFrame> frame_;
 
     // Frame events timestamp.
@@ -497,7 +510,6 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   void StopMeasuringCpuProcessTime();
   void StartExcludingCpuThreadTime();
   void StopExcludingCpuThreadTime();
-  double GetCpuUsagePercent();
 
   // TODO(titovartem) restore const when old constructor will be removed.
   DefaultVideoQualityAnalyzerOptions options_;

@@ -15,10 +15,10 @@
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "api/numerics/samples_stats_counter.h"
 #include "api/test/audio_quality_analyzer_interface.h"
 #include "api/test/track_id_stream_info_map.h"
 #include "api/units/time_delta.h"
-#include "rtc_base/numerics/samples_stats_counter.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "test/testsupport/perf_test.h"
 
@@ -30,6 +30,7 @@ struct AudioStreamStats {
   SamplesStatsCounter accelerate_rate;
   SamplesStatsCounter preemptive_rate;
   SamplesStatsCounter speech_expand_rate;
+  SamplesStatsCounter average_jitter_buffer_delay_ms;
   SamplesStatsCounter preferred_buffer_size_ms;
 };
 
@@ -52,6 +53,7 @@ class DefaultAudioQualityAnalyzer : public AudioQualityAnalyzerInterface {
     uint64_t removed_samples_for_acceleration = 0;
     uint64_t inserted_samples_for_deceleration = 0;
     uint64_t silent_concealed_samples = 0;
+    TimeDelta jitter_buffer_delay = TimeDelta::Zero();
     TimeDelta jitter_buffer_target_delay = TimeDelta::Zero();
     uint64_t jitter_buffer_emitted_count = 0;
   };

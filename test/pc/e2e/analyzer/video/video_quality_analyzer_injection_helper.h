@@ -46,6 +46,12 @@ class VideoQualityAnalyzerInjectionHelper : public StatsObserverInterface {
       EncodedImageDataExtractor* extractor);
   ~VideoQualityAnalyzerInjectionHelper() override;
 
+  // Registers new call participant to the underlying video quality analyzer.
+  // The method should be called before the participant is actually added.
+  void RegisterParticipantInCall(absl::string_view peer_name) {
+    analyzer_->RegisterParticipantInCall(peer_name);
+  }
+
   // Wraps video encoder factory to give video quality analyzer access to frames
   // before encoding and encoded images after.
   std::unique_ptr<VideoEncoderFactory> WrapVideoEncoderFactory(
@@ -75,7 +81,7 @@ class VideoQualityAnalyzerInjectionHelper : public StatsObserverInterface {
 
   void Start(std::string test_case_name,
              rtc::ArrayView<const std::string> peer_names,
-             int max_threads_count);
+             int max_threads_count = 1);
 
   // Forwards |stats_reports| for Peer Connection |pc_label| to
   // |analyzer_|.
@@ -107,6 +113,8 @@ class VideoQualityAnalyzerInjectionHelper : public StatsObserverInterface {
   test::VideoFrameWriter* MaybeCreateVideoWriter(
       absl::optional<std::string> file_name,
       const PeerConnectionE2EQualityTestFixture::VideoConfig& config);
+  // Creates a deep copy of the frame and passes it to the video analyzer, while
+  // passing real frame to the sinks
   void OnFrame(absl::string_view peer_name, const VideoFrame& frame);
   std::vector<std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>>>*
   PopulateSinks(const std::string& stream_label);

@@ -14,8 +14,6 @@
 #include "api/scoped_refptr.h"
 #include "api/video/video_adaptation_counters.h"
 #include "call/adaptation/resource_adaptation_processor_interface.h"
-#include "call/adaptation/test/fake_adaptation_constraint.h"
-#include "call/adaptation/test/fake_adaptation_listener.h"
 #include "call/adaptation/test/fake_frame_rate_provider.h"
 #include "call/adaptation/test/fake_resource.h"
 #include "call/adaptation/video_source_restrictions.h"
@@ -90,19 +88,15 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
         input_state_provider_(&frame_rate_provider_),
         resource_(FakeResource::Create("FakeResource")),
         other_resource_(FakeResource::Create("OtherFakeResource")),
-        adaptation_constraint_("FakeAdaptationConstraint"),
-        adaptation_listener_(),
         video_stream_adapter_(
-            std::make_unique<VideoStreamAdapter>(&input_state_provider_)),
+            std::make_unique<VideoStreamAdapter>(&input_state_provider_,
+                                                 &frame_rate_provider_)),
         processor_(std::make_unique<ResourceAdaptationProcessor>(
-            /*encoder_stats_observer=*/&frame_rate_provider_,
             video_stream_adapter_.get())) {
-    processor_->SetResourceAdaptationQueue(TaskQueueBase::Current());
+    processor_->SetTaskQueue(TaskQueueBase::Current());
     video_stream_adapter_->AddRestrictionsListener(&restrictions_listener_);
     processor_->AddResource(resource_);
     processor_->AddResource(other_resource_);
-    processor_->AddAdaptationConstraint(&adaptation_constraint_);
-    processor_->AddAdaptationListener(&adaptation_listener_);
   }
   ~ResourceAdaptationProcessorTest() override {
     if (processor_) {
@@ -131,8 +125,6 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
     if (other_resource_) {
       processor_->RemoveResource(other_resource_);
     }
-    processor_->RemoveAdaptationConstraint(&adaptation_constraint_);
-    processor_->RemoveAdaptationListener(&adaptation_listener_);
     video_stream_adapter_->RemoveRestrictionsListener(&restrictions_listener_);
     processor_.reset();
   }
@@ -146,8 +138,6 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
   VideoStreamInputStateProvider input_state_provider_;
   rtc::scoped_refptr<FakeResource> resource_;
   rtc::scoped_refptr<FakeResource> other_resource_;
-  FakeAdaptationConstraint adaptation_constraint_;
-  FakeAdaptationListener adaptation_listener_;
   std::unique_ptr<VideoStreamAdapter> video_stream_adapter_;
   std::unique_ptr<ResourceAdaptationProcessor> processor_;
   VideoSourceRestrictionsListenerForTesting restrictions_listener_;
@@ -253,20 +243,6 @@ TEST_F(ResourceAdaptationProcessorTest, UnderuseTakesUsBackToUnrestricted) {
   resource_->SetUsageState(ResourceUsageState::kUnderuse);
   EXPECT_EQ(2u, restrictions_listener_.restrictions_updated_count());
   EXPECT_EQ(VideoSourceRestrictions(), restrictions_listener_.restrictions());
-}
-
-TEST_F(ResourceAdaptationProcessorTest, ResourcesCanPreventAdaptingUp) {
-  video_stream_adapter_->SetDegradationPreference(
-      DegradationPreference::MAINTAIN_FRAMERATE);
-  SetInputStates(true, kDefaultFrameRate, kDefaultFrameSize);
-  // Adapt down so that we can adapt up.
-  resource_->SetUsageState(ResourceUsageState::kOveruse);
-  EXPECT_EQ(1u, restrictions_listener_.restrictions_updated_count());
-  RestrictSource(restrictions_listener_.restrictions());
-  // Adapting up is prevented.
-  adaptation_constraint_.set_is_adaptation_up_allowed(false);
-  resource_->SetUsageState(ResourceUsageState::kUnderuse);
-  EXPECT_EQ(1u, restrictions_listener_.restrictions_updated_count());
 }
 
 TEST_F(ResourceAdaptationProcessorTest,
@@ -421,14 +397,6 @@ TEST_F(ResourceAdaptationProcessorTest,
   // other_resource_ is most limited so should be able to adapt up.
   other_resource_->SetUsageState(ResourceUsageState::kUnderuse);
   EXPECT_EQ(last_total, restrictions_listener_.adaptation_counters().Total());
-}
-
-TEST_F(ResourceAdaptationProcessorTest, AdaptingTriggersOnAdaptationApplied) {
-  video_stream_adapter_->SetDegradationPreference(
-      DegradationPreference::MAINTAIN_FRAMERATE);
-  SetInputStates(true, kDefaultFrameRate, kDefaultFrameSize);
-  resource_->SetUsageState(ResourceUsageState::kOveruse);
-  EXPECT_EQ(1u, adaptation_listener_.num_adaptations_applied());
 }
 
 TEST_F(ResourceAdaptationProcessorTest,
@@ -739,6 +707,31 @@ TEST_F(ResourceAdaptationProcessorTest,
 
   // Delete |resource_| for cleanup.
   resource_ = nullptr;
+}
+
+TEST_F(ResourceAdaptationProcessorTest,
+       ResourceOverusedAtLimitReachedWillShareMostLimited) {
+  video_stream_adapter_->SetDegradationPreference(
+      DegradationPreference::MAINTAIN_FRAMERATE);
+  SetInputStates(true, kDefaultFrameRate, kDefaultFrameSize);
+
+  bool has_reached_min_pixels = false;
+  ON_CALL(frame_rate_provider_, OnMinPixelLimitReached())
+      .WillByDefault(testing::Assign(&has_reached_min_pixels, true));
+
+  // Adapt 10 times, which should make us hit the limit.
+  for (int i = 0; i < 10; ++i) {
+    resource_->SetUsageState(ResourceUsageState::kOveruse);
+    RestrictSource(restrictions_listener_.restrictions());
+  }
+  EXPECT_TRUE(has_reached_min_pixels);
+  auto last_update_count = restrictions_listener_.restrictions_updated_count();
+  other_resource_->SetUsageState(ResourceUsageState::kOveruse);
+  // Now both |resource_| and |other_resource_| are most limited. Underuse of
+  // |resource_| will not adapt up.
+  resource_->SetUsageState(ResourceUsageState::kUnderuse);
+  EXPECT_EQ(last_update_count,
+            restrictions_listener_.restrictions_updated_count());
 }
 
 }  // namespace webrtc

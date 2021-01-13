@@ -21,10 +21,11 @@
 #include <vector>
 
 #include "absl/types/optional.h"
-#include "rtc_base/async_invoker.h"
+#include "api/transport/sctp_transport_factory_interface.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/task_utils/pending_task_safety_flag.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 // For SendDataParams/ReceiveDataParams.
@@ -95,7 +96,7 @@ class SctpTransport : public SctpTransportInternal,
   void set_debug_name_for_testing(const char* debug_name) override {
     debug_name_ = debug_name;
   }
-  int InjectDataOrNotificationFromSctpForTesting(void* data,
+  int InjectDataOrNotificationFromSctpForTesting(const void* data,
                                                  size_t length,
                                                  struct sctp_rcvinfo rcv,
                                                  int flags);
@@ -181,7 +182,7 @@ class SctpTransport : public SctpTransportInternal,
 
   // Called on the SCTP thread.
   // Flags are standard socket API flags (RFC 6458).
-  int OnDataOrNotificationFromSctp(void* data,
+  int OnDataOrNotificationFromSctp(const void* data,
                                    size_t length,
                                    struct sctp_rcvinfo rcv,
                                    int flags);
@@ -198,7 +199,7 @@ class SctpTransport : public SctpTransportInternal,
   // outgoing data to the network interface.
   rtc::Thread* network_thread_;
   // Helps pass inbound/outbound packets asynchronously to the network thread.
-  rtc::AsyncInvoker invoker_;
+  webrtc::ScopedTaskSafety task_safety_;
   // Underlying DTLS transport.
   rtc::PacketTransportInternal* transport_ = nullptr;
 
@@ -283,7 +284,7 @@ class SctpTransport : public SctpTransportInternal,
   RTC_DISALLOW_COPY_AND_ASSIGN(SctpTransport);
 };
 
-class SctpTransportFactory : public SctpTransportInternalFactory {
+class SctpTransportFactory : public webrtc::SctpTransportFactoryInterface {
  public:
   explicit SctpTransportFactory(rtc::Thread* network_thread)
       : network_thread_(network_thread) {}

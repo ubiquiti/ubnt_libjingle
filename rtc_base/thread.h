@@ -29,7 +29,7 @@
 #include "api/task_queue/queued_task.h"
 #include "api/task_queue/task_queue_base.h"
 #include "rtc_base/constructor_magic.h"
-#include "rtc_base/critical_section.h"
+#include "rtc_base/deprecated/recursive_critical_section.h"
 #include "rtc_base/location.h"
 #include "rtc_base/message_handler.h"
 #include "rtc_base/platform_thread_types.h"
@@ -81,9 +81,6 @@ class RTC_EXPORT ThreadManager {
   static void Add(Thread* message_queue);
   static void Remove(Thread* message_queue);
   static void Clear(MessageHandler* handler);
-
-  // TODO(nisse): Delete alias, as soon as downstream code is updated.
-  static void ProcessAllMessageQueues() { ProcessAllMessageQueuesForTesting(); }
 
   // For testing purposes, for use with a simulated clock.
   // Ensures that all message queues have processed delayed messages
@@ -140,7 +137,7 @@ class RTC_EXPORT ThreadManager {
   // Methods that don't modify the list of message queues may be called in a
   // re-entrant fashion. "processing_" keeps track of the depth of re-entrant
   // calls.
-  CriticalSection crit_;
+  RecursiveCriticalSection crit_;
   size_t processing_ RTC_GUARDED_BY(crit_) = 0;
 #if RTC_DCHECK_IS_ON
   // Represents all thread seand actions by storing all send targets per thread.
@@ -342,6 +339,7 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // will be used only for reference-based comparison, so instance can be safely
   // deleted. If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined do nothing.
   void AllowInvokesToThread(Thread* thread);
+
   // If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined do nothing.
   void DisallowAllInvokes();
   // Returns true if |target| was allowed by AllowInvokesToThread() or if no
@@ -440,13 +438,6 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // irrevocable. Must be called on this thread.
   void DisallowBlockingCalls() { SetAllowBlockingCalls(false); }
 
-#ifdef WEBRTC_ANDROID
-  // Sets the per-thread allow-blocking-calls flag to true, sidestepping the
-  // invariants upheld by DisallowBlockingCalls() and
-  // ScopedDisallowBlockingCalls. Must be called on this thread.
-  void DEPRECATED_AllowBlockingCalls() { SetAllowBlockingCalls(true); }
-#endif
-
  protected:
   class CurrentThreadSetter : CurrentTaskQueueSetter {
    public:
@@ -531,11 +522,12 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 
   friend class ScopedDisallowBlockingCalls;
 
-  CriticalSection* CritForTest() { return &crit_; }
+  RecursiveCriticalSection* CritForTest() { return &crit_; }
 
  private:
   class QueuedTaskHandler final : public MessageHandler {
    public:
+    QueuedTaskHandler() {}
     void OnMessage(Message* msg) override;
   };
 
@@ -582,7 +574,7 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   std::vector<Thread*> allowed_threads_ RTC_GUARDED_BY(this);
   bool invoke_policy_enabled_ RTC_GUARDED_BY(this) = false;
 #endif
-  CriticalSection crit_;
+  RecursiveCriticalSection crit_;
   bool fInitialized_;
   bool fDestroyed_;
 
@@ -628,7 +620,9 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 // AutoThread automatically installs itself at construction
 // uninstalls at destruction, if a Thread object is
 // _not already_ associated with the current OS thread.
-
+//
+// NOTE: *** This class should only be used by tests ***
+//
 class AutoThread : public Thread {
  public:
   AutoThread();

@@ -109,7 +109,7 @@ int32_t VideoDecoderWrapper::Decode(
   frame_extra_info.qp =
       qp_parsing_enabled_ ? ParseQP(input_image) : absl::nullopt;
   {
-    rtc::CritScope cs(&frame_extra_infos_lock_);
+    MutexLock lock(&frame_extra_infos_lock_);
     frame_extra_infos_.push_back(frame_extra_info);
   }
 
@@ -135,7 +135,7 @@ int32_t VideoDecoderWrapper::Release() {
       jni, Java_VideoDecoder_release(jni, decoder_));
   RTC_LOG(LS_INFO) << "release: " << status;
   {
-    rtc::CritScope cs(&frame_extra_infos_lock_);
+    MutexLock lock(&frame_extra_infos_lock_);
     frame_extra_infos_.clear();
   }
   initialized_ = false;
@@ -163,7 +163,7 @@ void VideoDecoderWrapper::OnDecodedFrame(
 
   FrameExtraInfo frame_extra_info;
   {
-    rtc::CritScope cs(&frame_extra_infos_lock_);
+    MutexLock lock(&frame_extra_infos_lock_);
 
     do {
       if (frame_extra_infos_.empty()) {
@@ -249,12 +249,8 @@ absl::optional<uint8_t> VideoDecoderWrapper::ParseQP(
       break;
     }
     case kVideoCodecH264: {
-      h264_bitstream_parser_.ParseBitstream(input_image.data(),
-                                            input_image.size());
-      int qp_int;
-      if (h264_bitstream_parser_.GetLastSliceQp(&qp_int)) {
-        qp = qp_int;
-      }
+      h264_bitstream_parser_.ParseBitstream(input_image);
+      qp = h264_bitstream_parser_.GetLastSliceQp();
       break;
     }
     default:

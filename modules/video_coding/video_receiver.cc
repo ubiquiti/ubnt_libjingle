@@ -16,7 +16,6 @@
 #include "api/rtp_headers.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_decoder.h"
-#include "modules/include/module_common_types.h"
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_coding/decoder_database.h"
 #include "modules/video_coding/encoded_frame.h"
@@ -209,9 +208,7 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
                               clock_->TimeInMilliseconds());
 
   if (first_frame_received_()) {
-    RTC_LOG(LS_INFO) << "Received first "
-                     << (frame->Complete() ? "complete" : "incomplete")
-                     << " decodable video frame";
+    RTC_LOG(LS_INFO) << "Received first complete decodable video frame";
   }
 
   const int32_t ret = Decode(*frame);
@@ -250,15 +247,15 @@ int32_t VideoReceiver::Decode(const VCMEncodedFrame& frame) {
 }
 
 // Register possible receive codecs, can be called multiple times
-int32_t VideoReceiver::RegisterReceiveCodec(const VideoCodec* receiveCodec,
-                                            int32_t numberOfCores,
-                                            bool requireKeyFrame) {
+int32_t VideoReceiver::RegisterReceiveCodec(uint8_t payload_type,
+                                            const VideoCodec* receiveCodec,
+                                            int32_t numberOfCores) {
   RTC_DCHECK_RUN_ON(&construction_thread_checker_);
   if (receiveCodec == nullptr) {
     return VCM_PARAMETER_ERROR;
   }
-  if (!_codecDataBase.RegisterReceiveCodec(receiveCodec, numberOfCores,
-                                           requireKeyFrame)) {
+  if (!_codecDataBase.RegisterReceiveCodec(payload_type, receiveCodec,
+                                           numberOfCores)) {
     return -1;
   }
   return 0;

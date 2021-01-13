@@ -118,6 +118,7 @@ bool IsNonVolatile(RTPExtensionType type) {
     case kRtpExtensionVideoRotation:
     case kRtpExtensionPlayoutDelay:
     case kRtpExtensionVideoContentType:
+    case kRtpExtensionVideoLayersAllocation:
     case kRtpExtensionVideoTiming:
     case kRtpExtensionRepairedRtpStreamId:
     case kRtpExtensionColorSpace:
@@ -127,6 +128,7 @@ bool IsNonVolatile(RTPExtensionType type) {
       RTC_NOTREACHED();
       return false;
   }
+  RTC_CHECK_NOTREACHED();
 }
 
 bool HasBweExtension(const RtpHeaderExtensionMap& extensions_map) {
@@ -338,6 +340,7 @@ int32_t RTPSender::ReSendPacket(uint16_t packet_id) {
     return -1;
   }
   packet->set_packet_type(RtpPacketMediaType::kRetransmission);
+  packet->set_fec_protect_packet(false);
   std::vector<std::unique_ptr<RtpPacketToSend>> packets;
   packets.emplace_back(std::move(packet));
   paced_sender_->EnqueuePackets(std::move(packets));
@@ -484,8 +487,11 @@ std::vector<std::unique_ptr<RtpPacketToSend>> RTPSender::GeneratePadding(
         padding_packet->SetTimestamp(padding_packet->Timestamp() +
                                      (now_ms - last_timestamp_time_ms_) *
                                          kTimestampTicksPerMs);
-        padding_packet->set_capture_time_ms(padding_packet->capture_time_ms() +
-                                            (now_ms - last_timestamp_time_ms_));
+        if (padding_packet->capture_time_ms() > 0) {
+          padding_packet->set_capture_time_ms(
+              padding_packet->capture_time_ms() +
+              (now_ms - last_timestamp_time_ms_));
+        }
       }
       RTC_DCHECK(rtx_ssrc_);
       padding_packet->SetSsrc(*rtx_ssrc_);

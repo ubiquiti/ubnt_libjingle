@@ -20,40 +20,41 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/synchronization/sequence_checker.h"
 #include "rtc_base/task_utils/to_queued_task.h"
 
 namespace webrtc {
 
 ResourceAdaptationProcessor::ResourceListenerDelegate::ResourceListenerDelegate(
     ResourceAdaptationProcessor* processor)
-    : resource_adaptation_queue_(nullptr), processor_(processor) {}
+    : task_queue_(nullptr), processor_(processor) {}
 
-void ResourceAdaptationProcessor::ResourceListenerDelegate::
-    SetResourceAdaptationQueue(TaskQueueBase* resource_adaptation_queue) {
-  RTC_DCHECK(!resource_adaptation_queue_);
-  RTC_DCHECK(resource_adaptation_queue);
-  resource_adaptation_queue_ = resource_adaptation_queue;
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+void ResourceAdaptationProcessor::ResourceListenerDelegate::SetTaskQueue(
+    TaskQueueBase* task_queue) {
+  RTC_DCHECK(!task_queue_);
+  RTC_DCHECK(task_queue);
+  task_queue_ = task_queue;
+  RTC_DCHECK_RUN_ON(task_queue_);
 }
 
 void ResourceAdaptationProcessor::ResourceListenerDelegate::
     OnProcessorDestroyed() {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   processor_ = nullptr;
 }
 
 void ResourceAdaptationProcessor::ResourceListenerDelegate::
     OnResourceUsageStateMeasured(rtc::scoped_refptr<Resource> resource,
                                  ResourceUsageState usage_state) {
-  if (!resource_adaptation_queue_->IsCurrent()) {
-    resource_adaptation_queue_->PostTask(ToQueuedTask(
+  if (!task_queue_->IsCurrent()) {
+    task_queue_->PostTask(ToQueuedTask(
         [this_ref = rtc::scoped_refptr<ResourceListenerDelegate>(this),
          resource, usage_state] {
           this_ref->OnResourceUsageStateMeasured(resource, usage_state);
         }));
     return;
   }
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   if (processor_) {
     processor_->OnResourceUsageStateMeasured(resource, usage_state);
   }
@@ -68,59 +69,49 @@ ResourceAdaptationProcessor::MitigationResultAndLogMessage::
     : result(result), message(std::move(message)) {}
 
 ResourceAdaptationProcessor::ResourceAdaptationProcessor(
-    VideoStreamEncoderObserver* encoder_stats_observer,
     VideoStreamAdapter* stream_adapter)
-    : resource_adaptation_queue_(nullptr),
+    : task_queue_(nullptr),
       resource_listener_delegate_(
           new rtc::RefCountedObject<ResourceListenerDelegate>(this)),
-      encoder_stats_observer_(encoder_stats_observer),
       resources_(),
       stream_adapter_(stream_adapter),
       last_reported_source_restrictions_(),
-      previous_mitigation_results_(),
-      processing_in_progress_(false) {
+      previous_mitigation_results_() {
   RTC_DCHECK(stream_adapter_);
 }
 
 ResourceAdaptationProcessor::~ResourceAdaptationProcessor() {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   RTC_DCHECK(resources_.empty())
       << "There are resource(s) attached to a ResourceAdaptationProcessor "
-      << "being destroyed.";
-  RTC_DCHECK(adaptation_constraints_.empty())
-      << "There are constaint(s) attached to a ResourceAdaptationProcessor "
-      << "being destroyed.";
-  RTC_DCHECK(adaptation_listeners_.empty())
-      << "There are listener(s) attached to a ResourceAdaptationProcessor "
       << "being destroyed.";
   stream_adapter_->RemoveRestrictionsListener(this);
   resource_listener_delegate_->OnProcessorDestroyed();
 }
 
-void ResourceAdaptationProcessor::SetResourceAdaptationQueue(
-    TaskQueueBase* resource_adaptation_queue) {
-  RTC_DCHECK(!resource_adaptation_queue_);
-  RTC_DCHECK(resource_adaptation_queue);
-  resource_adaptation_queue_ = resource_adaptation_queue;
-  resource_listener_delegate_->SetResourceAdaptationQueue(
-      resource_adaptation_queue);
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  // Now that we have the adaptation queue we can attach as adaptation listener.
+void ResourceAdaptationProcessor::SetTaskQueue(TaskQueueBase* task_queue) {
+  RTC_DCHECK(!task_queue_);
+  RTC_DCHECK(task_queue);
+  task_queue_ = task_queue;
+  resource_listener_delegate_->SetTaskQueue(task_queue);
+  RTC_DCHECK_RUN_ON(task_queue_);
+  // Now that we have the queue we can attach as adaptation listener.
   stream_adapter_->AddRestrictionsListener(this);
 }
 
 void ResourceAdaptationProcessor::AddResourceLimitationsListener(
     ResourceLimitationsListener* limitations_listener) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   RTC_DCHECK(std::find(resource_limitations_listeners_.begin(),
                        resource_limitations_listeners_.end(),
                        limitations_listener) ==
              resource_limitations_listeners_.end());
   resource_limitations_listeners_.push_back(limitations_listener);
 }
+
 void ResourceAdaptationProcessor::RemoveResourceLimitationsListener(
     ResourceLimitationsListener* limitations_listener) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   auto it =
       std::find(resource_limitations_listeners_.begin(),
                 resource_limitations_listeners_.end(), limitations_listener);
@@ -130,86 +121,93 @@ void ResourceAdaptationProcessor::RemoveResourceLimitationsListener(
 
 void ResourceAdaptationProcessor::AddResource(
     rtc::scoped_refptr<Resource> resource) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
   RTC_DCHECK(resource);
-  RTC_DCHECK(absl::c_find(resources_, resource) == resources_.end())
-      << "Resource \"" << resource->Name() << "\" was already registered.";
-  resources_.push_back(resource);
+  {
+    MutexLock crit(&resources_lock_);
+    RTC_DCHECK(absl::c_find(resources_, resource) == resources_.end())
+        << "Resource \"" << resource->Name() << "\" was already registered.";
+    resources_.push_back(resource);
+  }
   resource->SetResourceListener(resource_listener_delegate_);
+  RTC_LOG(INFO) << "Registered resource \"" << resource->Name() << "\".";
 }
 
 std::vector<rtc::scoped_refptr<Resource>>
 ResourceAdaptationProcessor::GetResources() const {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  MutexLock crit(&resources_lock_);
   return resources_;
 }
 
 void ResourceAdaptationProcessor::RemoveResource(
     rtc::scoped_refptr<Resource> resource) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
   RTC_DCHECK(resource);
   RTC_LOG(INFO) << "Removing resource \"" << resource->Name() << "\".";
-  auto it = absl::c_find(resources_, resource);
-  RTC_DCHECK(it != resources_.end()) << "Resource \"" << resource->Name()
-                                     << "\" was not a registered resource.";
+  resource->SetResourceListener(nullptr);
+  {
+    MutexLock crit(&resources_lock_);
+    auto it = absl::c_find(resources_, resource);
+    RTC_DCHECK(it != resources_.end()) << "Resource \"" << resource->Name()
+                                       << "\" was not a registered resource.";
+    resources_.erase(it);
+  }
+  RemoveLimitationsImposedByResource(std::move(resource));
+}
+
+void ResourceAdaptationProcessor::RemoveLimitationsImposedByResource(
+    rtc::scoped_refptr<Resource> resource) {
+  if (!task_queue_->IsCurrent()) {
+    task_queue_->PostTask(ToQueuedTask(
+        [this, resource]() { RemoveLimitationsImposedByResource(resource); }));
+    return;
+  }
+  RTC_DCHECK_RUN_ON(task_queue_);
   auto resource_adaptation_limits =
       adaptation_limits_by_resources_.find(resource);
   if (resource_adaptation_limits != adaptation_limits_by_resources_.end()) {
     VideoStreamAdapter::RestrictionsWithCounters adaptation_limits =
         resource_adaptation_limits->second;
     adaptation_limits_by_resources_.erase(resource_adaptation_limits);
-    MaybeUpdateResourceLimitationsOnResourceRemoval(adaptation_limits);
+    if (adaptation_limits_by_resources_.empty()) {
+      // Only the resource being removed was adapted so clear restrictions.
+      stream_adapter_->ClearRestrictions();
+      return;
+    }
+
+    VideoStreamAdapter::RestrictionsWithCounters most_limited =
+        FindMostLimitedResources().second;
+
+    if (adaptation_limits.counters.Total() <= most_limited.counters.Total()) {
+      // The removed limitations were less limited than the most limited
+      // resource. Don't change the current restrictions.
+      return;
+    }
+
+    // Apply the new most limited resource as the next restrictions.
+    Adaptation adapt_to = stream_adapter_->GetAdaptationTo(
+        most_limited.counters, most_limited.restrictions);
+    RTC_DCHECK_EQ(adapt_to.status(), Adaptation::Status::kValid);
+    stream_adapter_->ApplyAdaptation(adapt_to, nullptr);
+
+    RTC_LOG(INFO) << "Most limited resource removed. Restoring restrictions to "
+                     "next most limited restrictions: "
+                  << most_limited.restrictions.ToString() << " with counters "
+                  << most_limited.counters.ToString();
   }
-  resources_.erase(it);
-  resource->SetResourceListener(nullptr);
-}
-
-void ResourceAdaptationProcessor::AddAdaptationConstraint(
-    AdaptationConstraint* adaptation_constraint) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  RTC_DCHECK(std::find(adaptation_constraints_.begin(),
-                       adaptation_constraints_.end(),
-                       adaptation_constraint) == adaptation_constraints_.end());
-  adaptation_constraints_.push_back(adaptation_constraint);
-}
-
-void ResourceAdaptationProcessor::RemoveAdaptationConstraint(
-    AdaptationConstraint* adaptation_constraint) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  auto it = std::find(adaptation_constraints_.begin(),
-                      adaptation_constraints_.end(), adaptation_constraint);
-  RTC_DCHECK(it != adaptation_constraints_.end());
-  adaptation_constraints_.erase(it);
-}
-
-void ResourceAdaptationProcessor::AddAdaptationListener(
-    AdaptationListener* adaptation_listener) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  RTC_DCHECK(std::find(adaptation_listeners_.begin(),
-                       adaptation_listeners_.end(),
-                       adaptation_listener) == adaptation_listeners_.end());
-  adaptation_listeners_.push_back(adaptation_listener);
-}
-
-void ResourceAdaptationProcessor::RemoveAdaptationListener(
-    AdaptationListener* adaptation_listener) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  auto it = std::find(adaptation_listeners_.begin(),
-                      adaptation_listeners_.end(), adaptation_listener);
-  RTC_DCHECK(it != adaptation_listeners_.end());
-  adaptation_listeners_.erase(it);
 }
 
 void ResourceAdaptationProcessor::OnResourceUsageStateMeasured(
     rtc::scoped_refptr<Resource> resource,
     ResourceUsageState usage_state) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   RTC_DCHECK(resource);
   // |resource| could have been removed after signalling.
-  if (absl::c_find(resources_, resource) == resources_.end()) {
-    RTC_LOG(INFO) << "Ignoring signal from removed resource \""
-                  << resource->Name() << "\".";
-    return;
+  {
+    MutexLock crit(&resources_lock_);
+    if (absl::c_find(resources_, resource) == resources_.end()) {
+      RTC_LOG(INFO) << "Ignoring signal from removed resource \""
+                    << resource->Name() << "\".";
+      return;
+    }
   }
   MitigationResultAndLogMessage result_and_message;
   switch (usage_state) {
@@ -242,40 +240,22 @@ void ResourceAdaptationProcessor::OnResourceUsageStateMeasured(
 ResourceAdaptationProcessor::MitigationResultAndLogMessage
 ResourceAdaptationProcessor::OnResourceUnderuse(
     rtc::scoped_refptr<Resource> reason_resource) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  RTC_DCHECK(!processing_in_progress_);
-  processing_in_progress_ = true;
+  RTC_DCHECK_RUN_ON(task_queue_);
   // How can this stream be adapted up?
   Adaptation adaptation = stream_adapter_->GetAdaptationUp();
   if (adaptation.status() != Adaptation::Status::kValid) {
-    processing_in_progress_ = false;
     rtc::StringBuilder message;
     message << "Not adapting up because VideoStreamAdapter returned "
             << Adaptation::StatusToString(adaptation.status());
     return MitigationResultAndLogMessage(MitigationResult::kRejectedByAdapter,
                                          message.Release());
   }
-  VideoSourceRestrictions restrictions_before =
-      stream_adapter_->source_restrictions();
-  VideoSourceRestrictions restrictions_after = adaptation.restrictions();
-  // Check that resource is most limited...
+  // Check that resource is most limited.
   std::vector<rtc::scoped_refptr<Resource>> most_limited_resources;
   VideoStreamAdapter::RestrictionsWithCounters most_limited_restrictions;
   std::tie(most_limited_resources, most_limited_restrictions) =
       FindMostLimitedResources();
 
-  for (const auto* constraint : adaptation_constraints_) {
-    if (!constraint->IsAdaptationUpAllowed(
-            adaptation.input_state(), restrictions_before, restrictions_after,
-            reason_resource)) {
-      processing_in_progress_ = false;
-      rtc::StringBuilder message;
-      message << "Not adapting up because constraint \"" << constraint->Name()
-              << "\" disallowed it";
-      return MitigationResultAndLogMessage(
-          MitigationResult::kRejectedByConstraint, message.Release());
-    }
-  }
   // If the most restricted resource is less limited than current restrictions
   // then proceed with adapting up.
   if (!most_limited_resources.empty() &&
@@ -285,7 +265,6 @@ ResourceAdaptationProcessor::OnResourceUnderuse(
     // adaptation.
     if (absl::c_find(most_limited_resources, reason_resource) ==
         most_limited_resources.end()) {
-      processing_in_progress_ = false;
       rtc::StringBuilder message;
       message << "Resource \"" << reason_resource->Name()
               << "\" was not the most limited resource.";
@@ -298,7 +277,6 @@ ResourceAdaptationProcessor::OnResourceUnderuse(
       // before the adaptation is applied.
       UpdateResourceLimitations(reason_resource, adaptation.restrictions(),
                                 adaptation.counters());
-      processing_in_progress_ = false;
       rtc::StringBuilder message;
       message << "Resource \"" << reason_resource->Name()
               << "\" was not the only most limited resource.";
@@ -308,12 +286,6 @@ ResourceAdaptationProcessor::OnResourceUnderuse(
   }
   // Apply adaptation.
   stream_adapter_->ApplyAdaptation(adaptation, reason_resource);
-  for (auto* adaptation_listener : adaptation_listeners_) {
-    adaptation_listener->OnAdaptationApplied(
-        adaptation.input_state(), restrictions_before, restrictions_after,
-        reason_resource);
-  }
-  processing_in_progress_ = false;
   rtc::StringBuilder message;
   message << "Adapted up successfully. Unfiltered adaptations: "
           << stream_adapter_->adaptation_counters().ToString();
@@ -324,16 +296,17 @@ ResourceAdaptationProcessor::OnResourceUnderuse(
 ResourceAdaptationProcessor::MitigationResultAndLogMessage
 ResourceAdaptationProcessor::OnResourceOveruse(
     rtc::scoped_refptr<Resource> reason_resource) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
-  RTC_DCHECK(!processing_in_progress_);
-  processing_in_progress_ = true;
+  RTC_DCHECK_RUN_ON(task_queue_);
   // How can this stream be adapted up?
   Adaptation adaptation = stream_adapter_->GetAdaptationDown();
-  if (adaptation.min_pixel_limit_reached()) {
-    encoder_stats_observer_->OnMinPixelLimitReached();
+  if (adaptation.status() == Adaptation::Status::kLimitReached) {
+    // Add resource as most limited.
+    VideoStreamAdapter::RestrictionsWithCounters restrictions;
+    std::tie(std::ignore, restrictions) = FindMostLimitedResources();
+    UpdateResourceLimitations(reason_resource, restrictions.restrictions,
+                              restrictions.counters);
   }
   if (adaptation.status() != Adaptation::Status::kValid) {
-    processing_in_progress_ = false;
     rtc::StringBuilder message;
     message << "Not adapting down because VideoStreamAdapter returned "
             << Adaptation::StatusToString(adaptation.status());
@@ -341,18 +314,9 @@ ResourceAdaptationProcessor::OnResourceOveruse(
                                          message.Release());
   }
   // Apply adaptation.
-  VideoSourceRestrictions restrictions_before =
-      stream_adapter_->source_restrictions();
-  VideoSourceRestrictions restrictions_after = adaptation.restrictions();
   UpdateResourceLimitations(reason_resource, adaptation.restrictions(),
                             adaptation.counters());
-  stream_adapter_->ApplyAdaptation(adaptation, nullptr);
-  for (auto* adaptation_listener : adaptation_listeners_) {
-    adaptation_listener->OnAdaptationApplied(
-        adaptation.input_state(), restrictions_before, restrictions_after,
-        reason_resource);
-  }
-  processing_in_progress_ = false;
+  stream_adapter_->ApplyAdaptation(adaptation, reason_resource);
   rtc::StringBuilder message;
   message << "Adapted down successfully. Unfiltered adaptations: "
           << stream_adapter_->adaptation_counters().ToString();
@@ -406,47 +370,12 @@ void ResourceAdaptationProcessor::UpdateResourceLimitations(
   }
 }
 
-void ResourceAdaptationProcessor::
-    MaybeUpdateResourceLimitationsOnResourceRemoval(
-        VideoStreamAdapter::RestrictionsWithCounters removed_limitations) {
-  if (adaptation_limits_by_resources_.empty()) {
-    // Only the resource being removed was adapted so clear restrictions.
-    stream_adapter_->ClearRestrictions();
-    return;
-  }
-
-  VideoStreamAdapter::RestrictionsWithCounters most_limited =
-      FindMostLimitedResources().second;
-
-  if (removed_limitations.counters.Total() <= most_limited.counters.Total()) {
-    // The removed limitations were less limited than the most limited resource.
-    // Don't change the current restrictions.
-    return;
-  }
-
-  // Apply the new most limited resource as the next restrictions.
-  Adaptation adapt_to = stream_adapter_->GetAdaptationTo(
-      most_limited.counters, most_limited.restrictions);
-  RTC_DCHECK_EQ(adapt_to.status(), Adaptation::Status::kValid);
-  stream_adapter_->ApplyAdaptation(adapt_to, nullptr);
-  for (auto* adaptation_listener : adaptation_listeners_) {
-    adaptation_listener->OnAdaptationApplied(
-        adapt_to.input_state(), removed_limitations.restrictions,
-        most_limited.restrictions, nullptr);
-  }
-
-  RTC_LOG(INFO) << "Most limited resource removed. Restoring restrictions to "
-                   "next most limited restrictions: "
-                << most_limited.restrictions.ToString() << " with counters "
-                << most_limited.counters.ToString();
-}
-
 void ResourceAdaptationProcessor::OnVideoSourceRestrictionsUpdated(
     VideoSourceRestrictions restrictions,
     const VideoAdaptationCounters& adaptation_counters,
     rtc::scoped_refptr<Resource> reason,
     const VideoSourceRestrictions& unfiltered_restrictions) {
-  RTC_DCHECK_RUN_ON(resource_adaptation_queue_);
+  RTC_DCHECK_RUN_ON(task_queue_);
   if (reason) {
     UpdateResourceLimitations(reason, unfiltered_restrictions,
                               adaptation_counters);
