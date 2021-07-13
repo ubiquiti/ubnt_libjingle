@@ -163,6 +163,7 @@ static RTCErrorType ParseIceServerUrl(
   // host     = IP-literal / IPv4address / reg-name
   // port     = *DIGIT
 
+  RTC_LOG(LS_INFO) << "#-> " << __func__<< " url=" << url;
   RTC_DCHECK(stun_servers != nullptr);
   RTC_DCHECK(turn_servers != nullptr);
   std::vector<std::string> tokens;
@@ -275,6 +276,7 @@ static RTCErrorType ParseIceServerUrl(
       RTC_NOTREACHED() << "Unexpected service type";
       return RTCErrorType::INTERNAL_ERROR;
   }
+  RTC_LOG(LS_INFO) << "<-# " << __func__;
   return RTCErrorType::NONE;
 }
 
@@ -282,6 +284,7 @@ RTCErrorType ParseIceServers(
     const PeerConnectionInterface::IceServers& servers,
     cricket::ServerAddresses* stun_servers,
     std::vector<cricket::RelayServerConfig>* turn_servers) {
+  RTC_LOG(LS_INFO) << "    " << __func__;
   for (const PeerConnectionInterface::IceServer& server : servers) {
     if (!server.urls.empty()) {
       for (const std::string& url : server.urls) {

@@ -51,11 +51,11 @@ AsyncSocket* AsyncTCPSocketBase::ConnectSocket(
     const rtc::SocketAddress& remote_address) {
   std::unique_ptr<rtc::AsyncSocket> owned_socket(socket);
   if (socket->Bind(bind_address, -1) < 0) {
-    RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
+    RTC_LOG(LS_ERROR) << "AsyncTCPSocketBase::ConnectSocket() Bind() failed with error " << socket->GetError();
     return nullptr;
   }
   if (socket->Connect(remote_address) < 0) {
-    RTC_LOG(LS_ERROR) << "Connect() failed with error " << socket->GetError();
+    RTC_LOG(LS_ERROR) << "AsyncTCPSocketBase::ConnectSocket() Connect() failed with error " << socket->GetError();
     return nullptr;
   }
   return owned_socket.release();

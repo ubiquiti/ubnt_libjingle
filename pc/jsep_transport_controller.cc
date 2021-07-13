@@ -101,6 +101,7 @@ JsepTransportController::~JsepTransportController() {
 RTCError JsepTransportController::SetLocalDescription(
     SdpType type,
     const cricket::SessionDescription* description) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(
         RTC_FROM_HERE, [=] { return SetLocalDescription(type, description); });
@@ -114,17 +115,19 @@ RTCError JsepTransportController::SetLocalDescription(
       SetIceRole_n(cricket::ICEROLE_CONTROLLED);
     }
   }
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return ApplyDescription_n(/*local=*/true, type, description);
 }
 
 RTCError JsepTransportController::SetRemoteDescription(
     SdpType type,
     const cricket::SessionDescription* description) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(
         RTC_FROM_HERE, [=] { return SetRemoteDescription(type, description); });
   }
-
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return ApplyDescription_n(/*local=*/false, type, description);
 }
 
@@ -303,6 +306,7 @@ void JsepTransportController::MaybeStartGathering() {
 RTCError JsepTransportController::AddRemoteCandidates(
     const std::string& transport_name,
     const cricket::Candidates& candidates) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(RTC_FROM_HERE, [&] {
       return AddRemoteCandidates(transport_name, candidates);
@@ -320,11 +324,13 @@ RTCError JsepTransportController::AddRemoteCandidates(
                            "doesn't exist. Ignore it.";
     return RTCError::OK();
   }
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return jsep_transport->AddRemoteCandidates(candidates);
 }
 
 RTCError JsepTransportController::RemoveRemoteCandidates(
     const cricket::Candidates& candidates) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(
         RTC_FROM_HERE, [&] { return RemoveRemoteCandidates(candidates); });
@@ -367,6 +373,7 @@ RTCError JsepTransportController::RemoveRemoteCandidates(
       }
     }
   }
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return RTCError::OK();
 }
 
@@ -435,6 +442,7 @@ std::unique_ptr<cricket::DtlsTransportInternal>
 JsepTransportController::CreateDtlsTransport(
     const cricket::ContentInfo& content_info,
     cricket::IceTransportInternal* ice) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   RTC_DCHECK(network_thread_->IsCurrent());
 
   std::unique_ptr<cricket::DtlsTransportInternal> dtls;
@@ -480,6 +488,7 @@ JsepTransportController::CreateDtlsTransport(
       this, &JsepTransportController::OnTransportStateChanged_n);
   dtls->ice_transport()->SignalCandidatePairChanged.connect(
       this, &JsepTransportController::OnTransportCandidatePairChanged_n);
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return dtls;
 }
 
@@ -540,6 +549,7 @@ JsepTransportController::CreateDtlsSrtpTransport(
 
 std::vector<cricket::DtlsTransportInternal*>
 JsepTransportController::GetDtlsTransports() {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   std::vector<cricket::DtlsTransportInternal*> dtls_transports;
   for (auto it = jsep_transports_by_name_.begin();
        it != jsep_transports_by_name_.end(); ++it) {
@@ -553,6 +563,7 @@ JsepTransportController::GetDtlsTransports() {
       dtls_transports.push_back(jsep_transport->rtcp_dtls_transport());
     }
   }
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return dtls_transports;
 }
 
@@ -562,6 +573,7 @@ RTCError JsepTransportController::ApplyDescription_n(
     const cricket::SessionDescription* description) {
   RTC_DCHECK_RUN_ON(network_thread_);
   RTC_DCHECK(description);
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
 
   if (local) {
     local_desc_ = description;
@@ -655,6 +667,7 @@ RTCError JsepTransportController::ApplyDescription_n(
   if (type == SdpType::kAnswer) {
     pending_mids_.clear();
   }
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return RTCError::OK();
 }
 
@@ -957,6 +970,7 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
     bool local,
     const cricket::ContentInfo& content_info,
     const cricket::SessionDescription& description) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   RTC_DCHECK(network_thread_->IsCurrent());
   cricket::JsepTransport* transport = GetJsepTransportByName(content_info.name);
   if (transport) {
@@ -1030,11 +1044,13 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
 
   jsep_transports_by_name_[content_info.name] = std::move(jsep_transport);
   UpdateAggregateStates_n();
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return RTCError::OK();
 }
 
 void JsepTransportController::MaybeDestroyJsepTransport(
     const std::string& mid) {
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   auto jsep_transport = GetJsepTransportByName(mid);
   if (!jsep_transport) {
     return;
@@ -1050,6 +1066,7 @@ void JsepTransportController::MaybeDestroyJsepTransport(
 
   jsep_transports_by_name_.erase(mid);
   UpdateAggregateStates_n();
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
 }
 
 void JsepTransportController::DestroyAllJsepTransports_n() {
@@ -1208,6 +1225,7 @@ void JsepTransportController::OnTransportStateChanged_n(
 
 void JsepTransportController::UpdateAggregateStates_n() {
   RTC_DCHECK(network_thread_->IsCurrent());
+  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
 
   auto dtls_transports = GetDtlsTransports();
   cricket::IceConnectionState new_connection_state =
@@ -1397,6 +1415,7 @@ void JsepTransportController::UpdateAggregateStates_n() {
                                  SignalIceGatheringState(new_gathering_state);
                                });
   }
+  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
 }
 
 void JsepTransportController::OnRtcpPacketReceived_n(
