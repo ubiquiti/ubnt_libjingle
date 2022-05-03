@@ -408,7 +408,7 @@ bool TurnPort::CreateTurnClientSocket() {
 
   if (server_address_.proto == PROTO_UDP && !SharedSocket()) {
     socket_ = socket_factory()->CreateUdpSocket(
-        rtc::SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
+        rtc::SocketAddress(Network()->GetBestIP(), 0), Network()->index(), min_port(), max_port());
   } else if (server_address_.proto == PROTO_TCP ||
              server_address_.proto == PROTO_TLS) {
     RTC_DCHECK(!SharedSocket());
@@ -1398,6 +1398,7 @@ void TurnAllocateRequest::OnSent() {
 }
 
 void TurnAllocateRequest::OnResponse(StunMessage* response) {
+  RTC_LOG(LS_INFO) << "#-> TurnAllocateRequest::" << __func__;
   RTC_LOG(LS_INFO) << port_->ToString()
                    << ": TURN allocate requested successfully, id="
                    << rtc::hex_encode(id())
@@ -1438,6 +1439,7 @@ void TurnAllocateRequest::OnResponse(StunMessage* response) {
   port_->OnAllocateSuccess(relayed_attr->GetAddress(),
                            mapped_attr->GetAddress());
   port_->ScheduleRefresh(lifetime_attr->value());
+  RTC_LOG(LS_INFO) << "<-# TurnAllocateRequest::" << __func__;
 }
 
 void TurnAllocateRequest::OnErrorResponse(StunMessage* response) {
@@ -1479,6 +1481,7 @@ void TurnAllocateRequest::OnTimeout() {
 }
 
 void TurnAllocateRequest::OnAuthChallenge(StunMessage* response, int code) {
+  RTC_LOG(LS_INFO) << "#-> TurnAllocateRequest::" << __func__;
   // If we failed to authenticate even after we sent our credentials, fail hard.
   if (code == STUN_ERROR_UNAUTHORIZED && !port_->hash().empty()) {
     RTC_LOG(LS_WARNING) << port_->ToString()
@@ -1512,6 +1515,7 @@ void TurnAllocateRequest::OnAuthChallenge(StunMessage* response, int code) {
 
   // Send another allocate request, with the received realm and nonce values.
   port_->SendRequest(new TurnAllocateRequest(port_), 0);
+  RTC_LOG(LS_INFO) << "<-# TurnAllocateRequest::" << __func__;
 }
 
 void TurnAllocateRequest::OnTryAlternate(StunMessage* response, int code) {

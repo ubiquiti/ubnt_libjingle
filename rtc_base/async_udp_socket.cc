@@ -25,21 +25,24 @@ namespace rtc {
 static const int BUF_SIZE = 64 * 1024;
 
 AsyncUDPSocket* AsyncUDPSocket::Create(Socket* socket,
-                                       const SocketAddress& bind_address) {
+                                       const SocketAddress& bind_address,
+                                       int interfaceIndex) {
   std::unique_ptr<Socket> owned_socket(socket);
-  if (socket->Bind(bind_address) < 0) {
-    RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
+  if (socket->Bind(bind_address, interfaceIndex) < 0) {
+    RTC_LOG(LS_ERROR) << "AsyncUDPSocket::Create() Bind() failed with error " << socket->GetError();
     return nullptr;
   }
   return new AsyncUDPSocket(owned_socket.release());
 }
 
 AsyncUDPSocket* AsyncUDPSocket::Create(SocketFactory* factory,
-                                       const SocketAddress& bind_address) {
-  Socket* socket = factory->CreateSocket(bind_address.family(), SOCK_DGRAM);
+                                       const SocketAddress& bind_address,
+                                       int interfaceIndex) {
+  Socket* socket =
+      factory->CreateSocket(bind_address.family(), SOCK_DGRAM);
   if (!socket)
     return nullptr;
-  return Create(socket, bind_address);
+  return Create(socket, bind_address, interfaceIndex);
 }
 
 AsyncUDPSocket::AsyncUDPSocket(Socket* socket) : socket_(socket) {

@@ -99,6 +99,19 @@ class NetworkMonitorInterface {
     return NetworkBindingResult::NOT_IMPLEMENTED;
   }
 
+  // Does |this| NetworkMonitorInterface implement BindSocketToNetwork?
+  // Only Android returns true.
+  virtual bool SupportsBindSocketToNetwork() const { return false; }
+
+  // Bind a socket to an interface specified by ip address and/or interface
+  // name. Only implemented on Android.
+  virtual NetworkBindingResult BindSocketToNetwork(
+      int socket_fd,
+      const IPAddress& address,
+      const std::string& interface_name) {
+    return NetworkBindingResult::NOT_IMPLEMENTED;
+  }
+
   // Is this interface available to use? WebRTC shouldn't attempt to use it if
   // this returns false.
   //
