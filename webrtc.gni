@@ -200,6 +200,9 @@ declare_args() {
   rtc_ios_macos_use_opengl_rendering =
       !(is_ios && target_environment == "catalyst")
 
+  # Determines whether Metal is available on iOS/macOS.
+  rtc_use_metal_rendering = is_mac || (is_ios && current_cpu == "arm64")
+
   # When set to false, builtin audio encoder/decoder factories and all the
   # audio codecs they depend on will not be included in libwebrtc.{a|lib}
   # (they will still be included in libjingle_peerconnection_so.so and
