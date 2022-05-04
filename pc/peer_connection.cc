@@ -65,8 +65,6 @@
 #include "rtc_base/trace_event.h"
 #include "rtc_base/unique_id_generator.h"
 #include "system_wrappers/include/metrics.h"
-#include "rtc_base/system/thread_registry.h"
-#include "sdk/android/native_api/stacktrace/stacktrace.h"
 
 using cricket::ContentInfo;
 using cricket::ContentInfos;
@@ -1888,7 +1886,6 @@ std::string get_ice_state_name_standartized(PeerConnectionInterface::IceConnecti
 		return "kIceConnectionChecking";
 	}
 	return "unknown";
->>>>>>> 5447c04958 (Additional logs)
 }
 
 void PeerConnection::SetIceConnectionState(IceConnectionState new_state) {

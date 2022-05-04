@@ -752,7 +752,7 @@ std::vector<const rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
   {
         RTC_LOG(LS_INFO) << "~~~~~~~~~~~~~~~~ networks all vvv ~~~~~~~~~~~~~~~~~~~~~~~~";
         int i = 0;
-        for (rtc::Network *network : networks) {
+        for (const rtc::Network *network : networks) {
             RTC_LOG(LS_INFO) << i++ << ") " << network->ToString() << " islocal=" << rtc::IPIsLinkLocal(network->GetBestIP());
         }
         RTC_LOG(LS_INFO) << "~~~~~~~~~~~~~~~~ networks all ^^^ ~~~~~~~~~~~~~~~~~~~~~~~~";
