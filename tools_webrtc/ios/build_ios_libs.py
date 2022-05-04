@@ -81,6 +81,10 @@ def _ParseArgs():
       default=SDK_OUTPUT_DIR,
       help='Specifies a directory to output the build artifacts to. '
       'If specified together with -c, deletes the dir.')
+  parser.add_argument('-t',
+        '--ios-deployment-target',
+        default=IOS_DEPLOYMENT_TARGET,
+        help='Specifies the min version of the iOS device SDK.')
   parser.add_argument(
       '-r',
       '--revision',
