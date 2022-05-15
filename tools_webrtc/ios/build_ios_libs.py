@@ -40,8 +40,8 @@ DEFAULT_ARCHS = [
     'device:arm64', 'simulator:arm64', 'simulator:x64'
 ]
 IOS_DEPLOYMENT_TARGET = {
-    'device': '12.0',
-    'simulator': '12.0',
+    'device': '10.0',
+    'simulator': '10.0',
     'catalyst': '14.0'
 }
 LIBVPX_BUILD_VP9 = False
