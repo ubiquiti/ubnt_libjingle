@@ -66,6 +66,7 @@ if (!build_with_chromium) {
         "net/dcsctp:dcsctp_unittests",
         "pc:peerconnection_unittests",
         "pc:rtc_pc_unittests",
+        "pc:slow_peer_connection_unittests",
         "rtc_tools:rtp_generator",
         "rtc_tools:video_replay",
         "stats:rtc_stats_unittests",
@@ -594,10 +595,6 @@ if (rtc_include_tests && !build_with_chromium) {
         "//testing/android/native_test:native_test_support",
       ]
       shard_timeout = 900
-    }
-
-    if (is_ios || is_mac) {
-      deps += [ "sdk:rtc_unittests_objc" ]
     }
   }
 

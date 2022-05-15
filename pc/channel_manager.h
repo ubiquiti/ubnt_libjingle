@@ -26,6 +26,7 @@
 #include "media/base/media_channel.h"
 #include "media/base/media_config.h"
 #include "media/base/media_engine.h"
+#include "pc/channel_factory_interface.h"
 #include "pc/channel_interface.h"
 #include "pc/session_description.h"
 #include "rtc_base/system/file_wrapper.h"
@@ -83,7 +84,7 @@ class ChannelManager : public ChannelFactoryInterface {
   std::unique_ptr<VoiceChannel> CreateVoiceChannel(
       webrtc::Call* call,
       const MediaConfig& media_config,
-      const std::string& mid,
+      absl::string_view mid,
       bool srtp_required,
       const webrtc::CryptoOptions& crypto_options,
       const AudioOptions& options) override;
@@ -94,7 +95,7 @@ class ChannelManager : public ChannelFactoryInterface {
   std::unique_ptr<VideoChannel> CreateVideoChannel(
       webrtc::Call* call,
       const MediaConfig& media_config,
-      const std::string& mid,
+      absl::string_view mid,
       bool srtp_required,
       const webrtc::CryptoOptions& crypto_options,
       const VideoOptions& options,

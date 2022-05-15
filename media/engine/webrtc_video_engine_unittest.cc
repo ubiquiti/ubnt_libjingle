@@ -229,14 +229,12 @@ class MockVideoSource : public rtc::VideoSourceInterface<webrtc::VideoFrame> {
 #define EXPECT_FRAME_WAIT(c, w, h, t)                        \
   EXPECT_EQ_WAIT((c), renderer_.num_rendered_frames(), (t)); \
   EXPECT_EQ((w), renderer_.width());                         \
-  EXPECT_EQ((h), renderer_.height());                        \
-  EXPECT_EQ(0, renderer_.errors());
+  EXPECT_EQ((h), renderer_.height());
 
 #define EXPECT_FRAME_ON_RENDERER_WAIT(r, c, w, h, t)   \
   EXPECT_EQ_WAIT((c), (r).num_rendered_frames(), (t)); \
   EXPECT_EQ((w), (r).width());                         \
-  EXPECT_EQ((h), (r).height());                        \
-  EXPECT_EQ(0, (r).errors());
+  EXPECT_EQ((h), (r).height());
 
 namespace cricket {
 class WebRtcVideoEngineTest : public ::testing::Test {
@@ -1438,7 +1436,6 @@ class WebRtcVideoChannelEncodedFrameCallbackTest : public ::testing::Test {
   void DeliverKeyFrameAndWait(uint32_t ssrc) {
     DeliverKeyFrame(ssrc);
     EXPECT_EQ_WAIT(1, renderer_.num_rendered_frames(), kTimeout);
-    EXPECT_EQ(0, renderer_.errors());
   }
 
   static const std::vector<webrtc::SdpVideoFormat> kSdpVideoFormats;
@@ -1469,7 +1466,6 @@ TEST_F(WebRtcVideoChannelEncodedFrameCallbackTest,
   EXPECT_TRUE(channel_->SetSink(kSsrc, &renderer_));
   DeliverKeyFrame(kSsrc);
   EXPECT_EQ_WAIT(1, renderer_.num_rendered_frames(), kTimeout);
-  EXPECT_EQ(0, renderer_.errors());
   channel_->RemoveRecvStream(kSsrc);
 }
 
@@ -1483,7 +1479,6 @@ TEST_F(WebRtcVideoChannelEncodedFrameCallbackTest,
   channel_->SetRecordableEncodedFrameCallback(kSsrc, callback.AsStdFunction());
   DeliverKeyFrame(kSsrc);
   EXPECT_EQ_WAIT(1, renderer_.num_rendered_frames(), kTimeout);
-  EXPECT_EQ(0, renderer_.errors());
   channel_->RemoveRecvStream(kSsrc);
 }
 
@@ -1497,7 +1492,6 @@ TEST_F(WebRtcVideoChannelEncodedFrameCallbackTest,
   channel_->SetRecordableEncodedFrameCallback(kSsrc, callback.AsStdFunction());
   DeliverKeyFrame(kSsrc);
   EXPECT_EQ_WAIT(1, renderer_.num_rendered_frames(), kTimeout);
-  EXPECT_EQ(0, renderer_.errors());
   channel_->RemoveRecvStream(kSsrc);
 }
 
@@ -3433,14 +3427,14 @@ TEST_F(WebRtcVideoChannelTest, VerifyVp8SpecificSettings) {
   ASSERT_TRUE(stream->GetVp8Settings(&vp8_settings)) << "No VP8 config set.";
   EXPECT_FALSE(vp8_settings.denoisingOn);
   EXPECT_TRUE(vp8_settings.automaticResizeOn);
-  EXPECT_TRUE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   stream = SetDenoisingOption(last_ssrc_, &frame_forwarder, true);
 
   ASSERT_TRUE(stream->GetVp8Settings(&vp8_settings)) << "No VP8 config set.";
   EXPECT_TRUE(vp8_settings.denoisingOn);
   EXPECT_TRUE(vp8_settings.automaticResizeOn);
-  EXPECT_TRUE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, nullptr, nullptr));
   stream = SetUpSimulcast(true, false);
@@ -3452,7 +3446,7 @@ TEST_F(WebRtcVideoChannelTest, VerifyVp8SpecificSettings) {
   ASSERT_TRUE(stream->GetVp8Settings(&vp8_settings)) << "No VP8 config set.";
   // Autmatic resize off when using simulcast.
   EXPECT_FALSE(vp8_settings.automaticResizeOn);
-  EXPECT_TRUE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   // In screen-share mode, denoising is forced off.
   VideoOptions options;
@@ -3466,14 +3460,14 @@ TEST_F(WebRtcVideoChannelTest, VerifyVp8SpecificSettings) {
   EXPECT_FALSE(vp8_settings.denoisingOn);
   // Resizing always off for screen sharing.
   EXPECT_FALSE(vp8_settings.automaticResizeOn);
-  EXPECT_TRUE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   stream = SetDenoisingOption(last_ssrc_, &frame_forwarder, true);
 
   ASSERT_TRUE(stream->GetVp8Settings(&vp8_settings)) << "No VP8 config set.";
   EXPECT_FALSE(vp8_settings.denoisingOn);
   EXPECT_FALSE(vp8_settings.automaticResizeOn);
-  EXPECT_TRUE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, nullptr, nullptr));
 }
@@ -3548,13 +3542,13 @@ TEST_F(Vp9SettingsTest, VerifyVp9SpecificSettings) {
   ASSERT_TRUE(stream->GetVp9Settings(&vp9_settings)) << "No VP9 config set.";
   EXPECT_FALSE(vp9_settings.denoisingOn);
   // Frame dropping always on for real time video.
-  EXPECT_TRUE(vp9_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   stream = SetDenoisingOption(last_ssrc_, &frame_forwarder, true);
 
   ASSERT_TRUE(stream->GetVp9Settings(&vp9_settings)) << "No VP9 config set.";
   EXPECT_TRUE(vp9_settings.denoisingOn);
-  EXPECT_TRUE(vp9_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   // In screen-share mode, denoising is forced off.
   VideoOptions options;
@@ -3566,13 +3560,13 @@ TEST_F(Vp9SettingsTest, VerifyVp9SpecificSettings) {
   ASSERT_TRUE(stream->GetVp9Settings(&vp9_settings)) << "No VP9 config set.";
   EXPECT_FALSE(vp9_settings.denoisingOn);
   // Frame dropping always on for screen sharing.
-  EXPECT_TRUE(vp9_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   stream = SetDenoisingOption(last_ssrc_, &frame_forwarder, false);
 
   ASSERT_TRUE(stream->GetVp9Settings(&vp9_settings)) << "No VP9 config set.";
   EXPECT_FALSE(vp9_settings.denoisingOn);
-  EXPECT_TRUE(vp9_settings.frameDroppingOn);
+  EXPECT_TRUE(stream->GetEncoderConfig().frame_drop_enabled);
 
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, nullptr, nullptr));
 }
@@ -5041,7 +5035,7 @@ TEST_F(WebRtcVideoChannelFlexfecRecvTest, SetRecvParamsWithoutFecDisablesFec) {
   ASSERT_EQ(1U, streams.size());
   const FakeFlexfecReceiveStream* stream = streams.front();
   EXPECT_EQ(GetEngineCodec("flexfec-03").id, stream->GetConfig().payload_type);
-  EXPECT_EQ(kFlexfecSsrc, stream->rtp_config().remote_ssrc);
+  EXPECT_EQ(kFlexfecSsrc, stream->remote_ssrc());
   ASSERT_EQ(1U, stream->GetConfig().protected_media_ssrcs.size());
   EXPECT_EQ(kSsrcs1[0], stream->GetConfig().protected_media_ssrcs[0]);
 

@@ -140,11 +140,10 @@
       }
     }
   },
-  'mac-m1': {
+  'mac-m1-cpu': {
     'swarming': {
       'dimensions': {
         'cpu': 'arm64-64-Apple_M1',
-        'os': 'Mac',
       }
     }
   },
@@ -203,6 +202,21 @@
     'resultdb': {
       'result_format': 'json'
     }
+  },
+  'shards-2': {
+    'swarming': {
+      'shards': 2,
+    },
+  },
+  'shards-4': {
+    'swarming': {
+      'shards': 4,
+    },
+  },
+  'shards-6': {
+    'swarming': {
+      'shards': 6,
+    },
   },
   'shamu': {
     'swarming': {
