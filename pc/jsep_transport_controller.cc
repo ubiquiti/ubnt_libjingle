@@ -111,7 +111,7 @@ RTCError JsepTransportController::SetRemoteDescription(
 }
 
 RtpTransportInternal* JsepTransportController::GetRtpTransport(
-    const std::string& mid) const {
+    absl::string_view mid) const {
   RTC_DCHECK_RUN_ON(network_thread_);
   auto jsep_transport = GetJsepTransportForMid(mid);
   if (!jsep_transport) {
@@ -1012,6 +1012,15 @@ const cricket::JsepTransport* JsepTransportController::GetJsepTransportForMid(
 
 cricket::JsepTransport* JsepTransportController::GetJsepTransportForMid(
     const std::string& mid) {
+  return transports_.GetTransportForMid(mid);
+}
+const cricket::JsepTransport* JsepTransportController::GetJsepTransportForMid(
+    absl::string_view mid) const {
+  return transports_.GetTransportForMid(mid);
+}
+
+cricket::JsepTransport* JsepTransportController::GetJsepTransportForMid(
+    absl::string_view mid) {
   return transports_.GetTransportForMid(mid);
 }
 

@@ -32,6 +32,7 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
+#include "api/video/frame_buffer.h"
 #include "api/video_codecs/h264_profile_level_id.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_codec.h"
@@ -41,7 +42,6 @@
 #include "call/rtx_receive_stream.h"
 #include "common_video/include/incoming_video_stream.h"
 #include "modules/video_coding/frame_buffer2.h"
-#include "modules/video_coding/frame_buffer3.h"
 #include "modules/video_coding/frame_helpers.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_coding_defines.h"
@@ -220,7 +220,7 @@ VideoReceiveStream2::VideoReceiveStream2(
       clock_(clock),
       call_stats_(call_stats),
       source_tracker_(clock_),
-      stats_proxy_(config_.rtp.remote_ssrc,
+      stats_proxy_(remote_ssrc(),
                    clock_,
                    call->worker_thread(),
                    call->trials()),
@@ -276,13 +276,12 @@ VideoReceiveStream2::VideoReceiveStream2(
       &decode_queue_, this, max_wait_for_keyframe_, max_wait_for_frame_,
       decode_sync_, call_->trials());
 
-  if (config_.rtp.rtx_ssrc) {
+  if (rtx_ssrc()) {
     rtx_receive_stream_ = std::make_unique<RtxReceiveStream>(
         &rtp_video_stream_receiver_, config_.rtp.rtx_associated_payload_types,
-        config_.rtp.remote_ssrc, rtp_receive_statistics_.get());
+        remote_ssrc(), rtp_receive_statistics_.get());
   } else {
-    rtp_receive_statistics_->EnableRetransmitDetection(config_.rtp.remote_ssrc,
-                                                       true);
+    rtp_receive_statistics_->EnableRetransmitDetection(remote_ssrc(), true);
   }
 
   ParseFieldTrial(
@@ -308,11 +307,11 @@ void VideoReceiveStream2::RegisterWithTransport(
 
   // Register with RtpStreamReceiverController.
   media_receiver_ = receiver_controller->CreateReceiver(
-      config_.rtp.remote_ssrc, &rtp_video_stream_receiver_);
-  if (config_.rtp.rtx_ssrc) {
+      remote_ssrc(), &rtp_video_stream_receiver_);
+  if (rtx_ssrc()) {
     RTC_DCHECK(rtx_receive_stream_);
     rtx_receiver_ = receiver_controller->CreateReceiver(
-        config_.rtp.rtx_ssrc, rtx_receive_stream_.get());
+        rtx_ssrc(), rtx_receive_stream_.get());
   }
 }
 
@@ -320,11 +319,6 @@ void VideoReceiveStream2::UnregisterFromTransport() {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   media_receiver_.reset();
   rtx_receiver_.reset();
-}
-
-const VideoReceiveStream2::Config::Rtp& VideoReceiveStream2::rtp() const {
-  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
-  return config_.rtp;
 }
 
 const std::string& VideoReceiveStream2::sync_group() const {
@@ -487,6 +481,11 @@ void VideoReceiveStream2::SetRtpExtensions(
   c.rtp.extensions = std::move(extensions);
 }
 
+RtpHeaderExtensionMap VideoReceiveStream2::GetRtpExtensionMap() const {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  return rtp_video_stream_receiver_.GetRtpExtensions();
+}
+
 void VideoReceiveStream2::CreateAndRegisterExternalDecoder(
     const Decoder& decoder) {
   TRACE_EVENT0("webrtc",
@@ -513,8 +512,8 @@ void VideoReceiveStream2::CreateAndRegisterExternalDecoder(
   if (!decoded_output_file.empty()) {
     char filename_buffer[256];
     rtc::SimpleStringBuilder ssb(filename_buffer);
-    ssb << decoded_output_file << "/webrtc_receive_stream_"
-        << config_.rtp.remote_ssrc << "-" << rtc::TimeMicros() << ".ivf";
+    ssb << decoded_output_file << "/webrtc_receive_stream_" << remote_ssrc()
+        << "-" << rtc::TimeMicros() << ".ivf";
     video_decoder = CreateFrameDumpingDecoderWrapper(
         std::move(video_decoder), FileWrapper::OpenWriteOnly(ssb.str()));
   }
@@ -534,9 +533,9 @@ VideoReceiveStream::Stats VideoReceiveStream2::GetStats() const {
     stats.rtp_stats = statistician->GetStats();
     stats.total_bitrate_bps = statistician->BitrateReceived();
   }
-  if (config_.rtp.rtx_ssrc) {
+  if (rtx_ssrc()) {
     StreamStatistician* rtx_statistician =
-        rtp_receive_statistics_->GetStatistician(config_.rtp.rtx_ssrc);
+        rtp_receive_statistics_->GetStatistician(rtx_ssrc());
     if (rtx_statistician)
       stats.total_bitrate_bps += rtx_statistician->BitrateReceived();
   }
@@ -548,14 +547,14 @@ void VideoReceiveStream2::UpdateHistograms() {
   absl::optional<int> fraction_lost;
   StreamDataCounters rtp_stats;
   StreamStatistician* statistician =
-      rtp_receive_statistics_->GetStatistician(config_.rtp.remote_ssrc);
+      rtp_receive_statistics_->GetStatistician(remote_ssrc());
   if (statistician) {
     fraction_lost = statistician->GetFractionLostInPercent();
     rtp_stats = statistician->GetReceiveStreamDataCounters();
   }
-  if (config_.rtp.rtx_ssrc) {
+  if (rtx_ssrc()) {
     StreamStatistician* rtx_statistician =
-        rtp_receive_statistics_->GetStatistician(config_.rtp.rtx_ssrc);
+        rtp_receive_statistics_->GetStatistician(rtx_ssrc());
     if (rtx_statistician) {
       StreamDataCounters rtx_stats =
           rtx_statistician->GetReceiveStreamDataCounters();
@@ -701,7 +700,7 @@ void VideoReceiveStream2::OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) {
 
 uint32_t VideoReceiveStream2::id() const {
   RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
-  return config_.rtp.remote_ssrc;
+  return remote_ssrc();
 }
 
 absl::optional<Syncable::Info> VideoReceiveStream2::GetInfo() const {

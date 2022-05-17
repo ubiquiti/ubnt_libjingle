@@ -26,6 +26,7 @@
 #include "api/array_view.h"
 #include "api/crypto/crypto_options.h"
 #include "api/dtls_transport_interface.h"
+#include "api/field_trials_view.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_receiver_interface.h"
 #include "api/rtp_sender_interface.h"
@@ -39,8 +40,8 @@
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_description_factory.h"
 #include "p2p/base/transport_info.h"
-#include "pc/channel.h"
 #include "pc/channel_interface.h"
+#include "pc/channel_manager.h"
 #include "pc/dtls_transport.h"
 #include "pc/media_stream.h"
 #include "pc/media_stream_proxy.h"
@@ -86,9 +87,6 @@ using cricket::STUN_PORT_TYPE;
 namespace webrtc {
 
 namespace {
-
-constexpr const char* kDefaultScreencastMinBitrateKillSwitch =
-    "WebRTC-DefaultScreencastMinBitrateKillSwitch";
 
 typedef webrtc::PeerConnectionInterface::RTCOfferAnswerOptions
     RTCOfferAnswerOptions;
@@ -1197,14 +1195,10 @@ void SdpOfferAnswerHandler::Initialize(
     PeerConnectionDependencies& dependencies,
     ConnectionContext* context) {
   RTC_DCHECK_RUN_ON(signaling_thread());
+  // 100 kbps is used by default, but can be overriden by a non-standard
+  // RTCConfiguration value (not available on Web).
   video_options_.screencast_min_bitrate_kbps =
-      configuration.screencast_min_bitrate;
-  // Use 100 kbps as the default minimum screencast bitrate unless this path is
-  // kill-switched.
-  if (!video_options_.screencast_min_bitrate_kbps.has_value() &&
-      !pc_->trials().IsEnabled(kDefaultScreencastMinBitrateKillSwitch)) {
-    video_options_.screencast_min_bitrate_kbps = 100;
-  }
+      configuration.screencast_min_bitrate.value_or(100);
   audio_options_.combined_audio_video_bwe =
       configuration.combined_audio_video_bwe;
 
@@ -3652,24 +3646,17 @@ RTCError SdpOfferAnswerHandler::UpdateTransceiverChannel(
     }
   } else {
     if (!channel) {
-      std::unique_ptr<cricket::ChannelInterface> new_channel;
-      if (transceiver->media_type() == cricket::MEDIA_TYPE_AUDIO) {
-        new_channel = CreateVoiceChannel(content.name);
-      } else {
-        RTC_DCHECK_EQ(cricket::MEDIA_TYPE_VIDEO, transceiver->media_type());
-        new_channel = CreateVideoChannel(content.name);
-      }
-      if (!new_channel) {
-        return RTCError(RTCErrorType::INTERNAL_ERROR,
-                        "Failed to create channel for mid=" + content.name);
-      }
-      // Note: this is a thread hop; the lambda will be executed
-      // on the network thread.
-      transceiver->internal()->SetChannel(
-          std::move(new_channel), [&](const std::string& mid) {
+      auto error = transceiver->internal()->CreateChannel(
+          content.name, pc_->call_ptr(), pc_->configuration()->media_config,
+          pc_->SrtpRequired(), pc_->GetCryptoOptions(), audio_options(),
+          video_options(), video_bitrate_allocator_factory_.get(),
+          [&](absl::string_view mid) {
             RTC_DCHECK_RUN_ON(network_thread());
             return transport_controller_n()->GetRtpTransport(mid);
           });
+      if (!error.ok()) {
+        return error;
+      }
     }
   }
   return RTCError::OK();
@@ -4842,33 +4829,36 @@ RTCError SdpOfferAnswerHandler::CreateChannels(const SessionDescription& desc) {
   const cricket::ContentInfo* voice = cricket::GetFirstAudioContent(&desc);
   if (voice && !voice->rejected &&
       !rtp_manager()->GetAudioTransceiver()->internal()->channel()) {
-    std::unique_ptr<cricket::VoiceChannel> voice_channel =
-        CreateVoiceChannel(voice->name);
-    if (!voice_channel) {
-      return RTCError(RTCErrorType::INTERNAL_ERROR,
-                      "Failed to create voice channel.");
+    auto error =
+        rtp_manager()->GetAudioTransceiver()->internal()->CreateChannel(
+            voice->name, pc_->call_ptr(), pc_->configuration()->media_config,
+            pc_->SrtpRequired(), pc_->GetCryptoOptions(), audio_options(),
+            video_options(), video_bitrate_allocator_factory_.get(),
+            [&](absl::string_view mid) {
+              RTC_DCHECK_RUN_ON(network_thread());
+              return transport_controller_n()->GetRtpTransport(mid);
+            });
+    if (!error.ok()) {
+      return error;
     }
-    rtp_manager()->GetAudioTransceiver()->internal()->SetChannel(
-        std::move(voice_channel), [&](const std::string& mid) {
-          RTC_DCHECK_RUN_ON(network_thread());
-          return transport_controller_n()->GetRtpTransport(mid);
-        });
   }
 
   const cricket::ContentInfo* video = cricket::GetFirstVideoContent(&desc);
   if (video && !video->rejected &&
       !rtp_manager()->GetVideoTransceiver()->internal()->channel()) {
-    std::unique_ptr<cricket::VideoChannel> video_channel =
-        CreateVideoChannel(video->name);
-    if (!video_channel) {
-      return RTCError(RTCErrorType::INTERNAL_ERROR,
-                      "Failed to create video channel.");
+    auto error =
+        rtp_manager()->GetVideoTransceiver()->internal()->CreateChannel(
+            video->name, pc_->call_ptr(), pc_->configuration()->media_config,
+            pc_->SrtpRequired(), pc_->GetCryptoOptions(),
+
+            audio_options(), video_options(),
+            video_bitrate_allocator_factory_.get(), [&](absl::string_view mid) {
+              RTC_DCHECK_RUN_ON(network_thread());
+              return transport_controller_n()->GetRtpTransport(mid);
+            });
+    if (!error.ok()) {
+      return error;
     }
-    rtp_manager()->GetVideoTransceiver()->internal()->SetChannel(
-        std::move(video_channel), [&](const std::string& mid) {
-          RTC_DCHECK_RUN_ON(network_thread());
-          return transport_controller_n()->GetRtpTransport(mid);
-        });
   }
 
   const cricket::ContentInfo* data = cricket::GetFirstDataContent(&desc);
@@ -4881,39 +4871,6 @@ RTCError SdpOfferAnswerHandler::CreateChannels(const SessionDescription& desc) {
   }
 
   return RTCError::OK();
-}
-
-// TODO(steveanton): Perhaps this should be managed by the RtpTransceiver.
-std::unique_ptr<cricket::VoiceChannel>
-SdpOfferAnswerHandler::CreateVoiceChannel(const std::string& mid) {
-  TRACE_EVENT0("webrtc", "SdpOfferAnswerHandler::CreateVoiceChannel");
-  RTC_DCHECK_RUN_ON(signaling_thread());
-  if (!channel_manager()->media_engine())
-    return nullptr;
-
-  // TODO(bugs.webrtc.org/11992): CreateVoiceChannel internally switches to the
-  // worker thread. We shouldn't be using the `call_ptr_` hack here but simply
-  // be on the worker thread and use `call_` (update upstream code).
-  return channel_manager()->CreateVoiceChannel(
-      pc_->call_ptr(), pc_->configuration()->media_config, mid,
-      pc_->SrtpRequired(), pc_->GetCryptoOptions(), audio_options());
-}
-
-// TODO(steveanton): Perhaps this should be managed by the RtpTransceiver.
-std::unique_ptr<cricket::VideoChannel>
-SdpOfferAnswerHandler::CreateVideoChannel(const std::string& mid) {
-  TRACE_EVENT0("webrtc", "SdpOfferAnswerHandler::CreateVideoChannel");
-  RTC_DCHECK_RUN_ON(signaling_thread());
-  if (!channel_manager()->media_engine())
-    return nullptr;
-
-  // TODO(bugs.webrtc.org/11992): CreateVideoChannel internally switches to the
-  // worker thread. We shouldn't be using the `call_ptr_` hack here but simply
-  // be on the worker thread and use `call_` (update upstream code).
-  return channel_manager()->CreateVideoChannel(
-      pc_->call_ptr(), pc_->configuration()->media_config, mid,
-      pc_->SrtpRequired(), pc_->GetCryptoOptions(), video_options(),
-      video_bitrate_allocator_factory_.get());
 }
 
 bool SdpOfferAnswerHandler::CreateDataChannel(const std::string& mid) {

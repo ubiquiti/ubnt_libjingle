@@ -10,7 +10,7 @@
 
 #include "api/array_view.h"
 #include "api/video/encoded_frame.h"
-#include "modules/video_coding/frame_buffer3.h"
+#include "api/video/frame_buffer.h"
 #include "rtc_base/numerics/sequence_number_util.h"
 #include "test/fuzzers/fuzz_data_helper.h"
 #include "test/scoped_key_value_config.h"
@@ -39,7 +39,7 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
   SeqNumUnwrapper<uint16_t, kFrameIdLength> unwrapper;
 
   while (helper.BytesLeft() > 0) {
-    int action = helper.ReadOrDefaultValue<uint8_t>(0) % 7;
+    int action = helper.ReadOrDefaultValue<uint8_t>(0) % 6;
 
     switch (action) {
       case 0: {
@@ -51,22 +51,18 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
         break;
       }
       case 2: {
-        buffer.NextDecodableTemporalUnitRtpTimestamp();
+        buffer.DecodableTemporalUnitsInfo();
         break;
       }
       case 3: {
-        buffer.LastDecodableTemporalUnitRtpTimestamp();
-        break;
-      }
-      case 4: {
         buffer.ExtractNextDecodableTemporalUnit();
         break;
       }
-      case 5: {
+      case 4: {
         buffer.DropNextDecodableTemporalUnit();
         break;
       }
-      case 6: {
+      case 5: {
         auto frame = std::make_unique<FuzzyFrameObject>();
         frame->SetTimestamp(helper.ReadOrDefaultValue<uint32_t>(0));
         int64_t wire_id =

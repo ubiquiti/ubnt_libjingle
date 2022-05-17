@@ -27,6 +27,8 @@
     _displayLink.paused = YES;
 #if __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_10_0
     _displayLink.preferredFramesPerSecond = 30;
+#elif TARGET_OS_TV
+    _displayLink.preferredFramesPerSecond = 30;
 #else
     [_displayLink setFrameInterval:2];
 #endif

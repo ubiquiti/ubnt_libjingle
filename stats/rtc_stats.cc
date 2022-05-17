@@ -27,13 +27,10 @@ std::string VectorToString(const std::vector<T>& vector) {
   rtc::StringBuilder sb;
   sb << "[";
   const char* separator = "";
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wrange-loop-analysis"
   for (const T& element : vector) {
     sb << separator << rtc::ToString(element);
     separator = ",";
   }
-#pragma clang diagnostic pop
   sb << "]";
   return sb.Release();
 }

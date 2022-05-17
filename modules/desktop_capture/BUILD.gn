@@ -82,6 +82,10 @@ if (rtc_include_tests) {
         "window_finder_unittest.cc",
       ]
       public_configs = [ ":x11_config" ]
+
+      if (is_win) {
+        deps += [ "../../rtc_base/win:windows_version" ]
+      }
     }
   }
 
@@ -106,18 +110,6 @@ if (rtc_include_tests) {
       "test_utils.h",
       "test_utils_unittest.cc",
     ]
-    if (is_win) {
-      sources += [
-        "win/cursor_unittest.cc",
-        "win/cursor_unittest_resources.h",
-        "win/cursor_unittest_resources.rc",
-        "win/screen_capture_utils_unittest.cc",
-        "win/screen_capturer_win_directx_unittest.cc",
-        "win/test_support/test_window.cc",
-        "win/test_support/test_window.h",
-        "win/window_capture_utils_unittest.cc",
-      ]
-    }
     deps = [
       ":desktop_capture",
       ":desktop_capture_mock",
@@ -135,6 +127,24 @@ if (rtc_include_tests) {
       "../../system_wrappers",
       "../../test:test_support",
     ]
+
+    if (is_win) {
+      sources += [
+        "win/cursor_unittest.cc",
+        "win/cursor_unittest_resources.h",
+        "win/cursor_unittest_resources.rc",
+        "win/screen_capture_utils_unittest.cc",
+        "win/screen_capturer_win_directx_unittest.cc",
+        "win/test_support/test_window.cc",
+        "win/test_support/test_window.h",
+        "win/window_capture_utils_unittest.cc",
+      ]
+      deps += [
+        "../../rtc_base/win:scoped_com_initializer",
+        "../../rtc_base/win:windows_version",
+      ]
+    }
+
     if (rtc_desktop_capture_supported) {
       sources += [
         "screen_capturer_helper_unittest.cc",
@@ -319,6 +329,7 @@ if (is_mac) {
       "../../api:sequence_checker",
       "../../rtc_base",
       "../../rtc_base:checks",
+      "../../rtc_base:event_tracer",
       "../../rtc_base:logging",
       "../../rtc_base:timeutils",
       "../../rtc_base/system:rtc_export",
@@ -560,6 +571,9 @@ rtc_library("desktop_capture_generic") {
     ]
     deps += [
       "../../rtc_base:win32",
+      "../../rtc_base/win:create_direct3d_device",
+      "../../rtc_base/win:get_activation_factory",
+      "../../rtc_base/win:windows_version",
     ]
   }
 
@@ -573,9 +587,7 @@ rtc_library("desktop_capture_generic") {
     deps += [ "../../rtc_base:sanitizer" ]
   }
 
-  if (build_with_mozilla) {
-    deps += [ "../../rtc_base:rtc_base_approved" ]
-  } else {
+  if (!build_with_mozilla) {
     deps += [ "//third_party/libyuv" ]
   }
 
@@ -636,6 +648,8 @@ rtc_library("desktop_capture_generic") {
       "win/wgc_desktop_frame.cc",
       "win/wgc_desktop_frame.h",
     ]
+    libs += [ "dwmapi.lib" ]
+    deps += [ "../../rtc_base/win:hstring" ]
   }
 }
 

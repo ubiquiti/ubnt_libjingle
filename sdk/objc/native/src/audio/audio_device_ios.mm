@@ -239,7 +239,7 @@ int32_t AudioDeviceIOS::StartPlayout() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
-      RTCLogError(@"StartPlayout failed to start audio unit, reason %d", result);
+      RTCLogError(@"StartPlayout failed to start audio unit, reason %d", (int)result);
       return -1;
     }
     RTC_LOG(LS_INFO) << "Voice-Processing I/O audio unit is now started";
@@ -295,7 +295,7 @@ int32_t AudioDeviceIOS::StartRecording() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
-      RTCLogError(@"StartRecording failed to start audio unit, reason %d", result);
+      RTCLogError(@"StartRecording failed to start audio unit, reason %d", (int)result);
       return -1;
     }
     RTC_LOG(LS_INFO) << "Voice-Processing I/O audio unit is now started";
@@ -632,7 +632,7 @@ void AudioDeviceIOS::HandleSampleRateChange() {
       [session notifyAudioUnitStartFailedWithError:result];
       RTCLogError(@"Failed to start audio unit with sample rate: %d, reason %d",
                   playout_parameters_.sample_rate(),
-                  result);
+                  (int)result);
       return;
     }
   }
@@ -816,7 +816,7 @@ void AudioDeviceIOS::UpdateAudioUnit(bool can_play_or_record) {
     OSStatus result = audio_unit_->Start();
     if (result != noErr) {
       [session notifyAudioUnitStartFailedWithError:result];
-      RTCLogError(@"Failed to start audio unit, reason %d", result);
+      RTCLogError(@"Failed to start audio unit, reason %d", (int)result);
       return;
     }
   }

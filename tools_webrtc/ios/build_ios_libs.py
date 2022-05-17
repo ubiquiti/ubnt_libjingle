@@ -32,17 +32,24 @@ SDK_DSYM_NAME = 'WebRTC.dSYM'
 SDK_XCFRAMEWORK_NAME = 'WebRTC.xcframework'
 
 ENABLED_ARCHS = [
-    'device:arm64', 'simulator:arm64', 'simulator:x64',
+    'device:arm64', 'device:arm', 
+    'simulator:arm64', 'simulator:x64',
     'catalyst:arm64', 'catalyst:x64',
-    'arm64', 'x64'
+    'appletv:arm64',
+    'arm64', 'arm', 'x64'
 ]
 DEFAULT_ARCHS = [
-    'device:arm64', 'simulator:arm64', 'simulator:x64'
+    'device:arm64', 'device:arm', 
+    'simulator:arm64', 'simulator:x64',
+    'catalyst:arm64', 'catalyst:x64',
+    'appletv:arm64', 
+    'arm64', 'arm', 'x64'
 ]
 IOS_DEPLOYMENT_TARGET = {
-    'device': '12.0',
-    'simulator': '12.0',
-    'catalyst': '14.0'
+    'device': '10.0',
+    'simulator': '10.0',
+    'catalyst': '14.0',
+    'appletv': '12.0'
 }
 LIBVPX_BUILD_VP9 = False
 
@@ -81,10 +88,6 @@ def _ParseArgs():
       default=SDK_OUTPUT_DIR,
       help='Specifies a directory to output the build artifacts to. '
       'If specified together with -c, deletes the dir.')
-  parser.add_argument('-t',
-        '--ios-deployment-target',
-        default=IOS_DEPLOYMENT_TARGET,
-        help='Specifies the min version of the iOS device SDK.')
   parser.add_argument(
       '-r',
       '--revision',

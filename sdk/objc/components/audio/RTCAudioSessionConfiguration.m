@@ -69,11 +69,16 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // By default, using this category implies that our app’s audio is
     // nonmixable, hence activating the session will interrupt any other
     // audio sessions which are also nonmixable.
+#if TARGET_OS_TV
+    _category = AVAudioSessionCategoryPlayback;
+    _categoryOptions = 0;
+    _mode = AVAudioSessionModeDefault;
+#else
     _category = AVAudioSessionCategoryPlayAndRecord;
     _categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth;
-
     // Specify mode for two-way voice communication (e.g. VoIP).
     _mode = AVAudioSessionModeVoiceChat;
+#endif
 
     // Set the session's sample rate or the hardware sample rate.
     // It is essential that we use the same sample rate as stream format

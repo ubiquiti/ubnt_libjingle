@@ -162,26 +162,6 @@ rtc_library("frame_helpers") {
   absl_deps = [ "//third_party/abseil-cpp/absl/container:inlined_vector" ]
 }
 
-rtc_library("frame_buffer") {
-  sources = [
-    "frame_buffer3.cc",
-    "frame_buffer3.h",
-  ]
-  deps = [
-    ":video_coding_utility",
-    "../../api:field_trials_view",
-    "../../api/units:timestamp",
-    "../../api/video:encoded_frame",
-    "../../rtc_base:logging",
-    "../../rtc_base:rtc_numerics",
-  ]
-  absl_deps = [
-    "//third_party/abseil-cpp/absl/algorithm:container",
-    "//third_party/abseil-cpp/absl/container:inlined_vector",
-    "//third_party/abseil-cpp/absl/types:optional",
-  ]
-}
-
 rtc_library("timing") {
   sources = [
     "codec_timer.cc",
@@ -298,7 +278,6 @@ rtc_library("video_coding") {
   deps = [
     ":codec_globals_headers",
     ":encoded_frame",
-    ":frame_buffer",
     ":frame_helpers",
     ":inter_frame_delay",
     ":jitter_estimator",
@@ -306,6 +285,7 @@ rtc_library("video_coding") {
     ":timing",
     ":video_codec_interface",
     ":video_coding_utility",
+    ":webrtc_vp8_scalability",
     ":webrtc_vp9_helpers",
     "..:module_api",
     "..:module_api_public",
@@ -367,6 +347,7 @@ rtc_library("video_coding") {
     "../rtp_rtcp:rtp_rtcp_format",
     "../rtp_rtcp:rtp_video_header",
     "codecs/av1:av1_svc_config",
+    "svc:scalability_mode_util",
   ]
   absl_deps = [
     "//third_party/abseil-cpp/absl/base:core_headers",
@@ -576,6 +557,7 @@ rtc_library("webrtc_h264") {
     "../../api/video:video_frame",
     "../../api/video:video_frame_i010",
     "../../api/video:video_rtp_headers",
+    "../../api/video_codecs:scalability_mode",
     "../../api/video_codecs:video_codecs_api",
     "../../common_video",
     "../../media:rtc_media_base",
@@ -676,6 +658,7 @@ rtc_library("webrtc_vp8") {
     ":video_codec_interface",
     ":video_coding_utility",
     ":webrtc_libvpx_interface",
+    ":webrtc_vp8_scalability",
     ":webrtc_vp8_temporal_layers",
     "../../api:fec_controller_api",
     "../../api:scoped_refptr",
@@ -696,6 +679,7 @@ rtc_library("webrtc_vp8") {
     "../../rtc_base/experiments:rate_control_settings",
     "../../system_wrappers:field_trial",
     "../../system_wrappers:metrics",
+    "svc:scalability_mode_util",
     "//third_party/libyuv",
   ]
   absl_deps = [
@@ -706,6 +690,14 @@ rtc_library("webrtc_vp8") {
   if (rtc_build_libvpx) {
     deps += [ rtc_libvpx_dir ]
   }
+}
+
+rtc_source_set("webrtc_vp8_scalability") {
+  sources = [
+    "codecs/vp8/vp8_scalability.cc",
+    "codecs/vp8/vp8_scalability.h",
+  ]
+  deps = [ "../../api/video_codecs:scalability_mode" ]
 }
 
 rtc_library("webrtc_vp8_temporal_layers") {
@@ -787,6 +779,7 @@ rtc_library("webrtc_vp9") {
     "../../api/video:video_frame",
     "../../api/video:video_frame_i010",
     "../../api/video:video_rtp_headers",
+    "../../api/video_codecs:scalability_mode",
     "../../api/video_codecs:video_codecs_api",
     "../../common_video",
     "../../media:rtc_media_base",
@@ -1156,7 +1149,6 @@ if (rtc_include_tests) {
       "decoding_state_unittest.cc",
       "fec_controller_unittest.cc",
       "frame_buffer2_unittest.cc",
-      "frame_buffer3_unittest.cc",
       "frame_dependencies_calculator_unittest.cc",
       "generic_decoder_unittest.cc",
       "h264_packet_buffer_unittest.cc",
@@ -1205,7 +1197,6 @@ if (rtc_include_tests) {
       ":chain_diff_calculator",
       ":codec_globals_headers",
       ":encoded_frame",
-      ":frame_buffer",
       ":frame_dependencies_calculator",
       ":h264_packet_buffer",
       ":inter_frame_delay",

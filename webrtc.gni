@@ -200,9 +200,6 @@ declare_args() {
   rtc_ios_macos_use_opengl_rendering =
       !(is_ios && target_environment == "catalyst")
 
-  # Determines whether Metal is available on iOS/macOS.
-  rtc_use_metal_rendering = is_mac || (is_ios && current_cpu == "arm64")
-
   # When set to false, builtin audio encoder/decoder factories and all the
   # audio codecs they depend on will not be included in libwebrtc.{a|lib}
   # (they will still be included in libjingle_peerconnection_so.so and
@@ -501,10 +498,10 @@ template("rtc_test") {
       ]
     }
 
-    # Build //base/test:google_test_runner when the test is not a real XCTest.
+    # Build //test:google_test_runner_objc when the test is not a real XCTest.
     if (is_ios && rtc_include_tests) {
       if (!defined(invoker.is_xctest) || !invoker.is_xctest) {
-        xctest_module_target = "//base/test:google_test_runner"
+        xctest_module_target = "//test:google_test_runner_objc"
       }
     }
 
