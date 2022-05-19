@@ -165,15 +165,17 @@ if (is_ios || is_mac) {
 
     public_configs = [ ":common_config_objc" ]
 
-    sources += [
-      "objc/helpers/UIDevice+RTCDevice.h",
-      "objc/helpers/UIDevice+RTCDevice.mm",
-    ]
-    if (!is_tvos) {
+    if (is_ios) {
       sources += [
-        "objc/helpers/RTCCameraPreviewView.h",
-        "objc/helpers/RTCCameraPreviewView.m",
+        "objc/helpers/UIDevice+RTCDevice.h",
+        "objc/helpers/UIDevice+RTCDevice.mm",
       ]
+      if (ios_device_name != "appletv") {
+        sources += [
+          "objc/helpers/RTCCameraPreviewView.h",
+          "objc/helpers/RTCCameraPreviewView.m",
+        ]
+      }
     }
   }
 
@@ -542,11 +544,15 @@ if (is_ios || is_mac) {
       deps = [
         ":base_objc",
         ":helpers_objc",
-        ":metal_objc",
         ":opengl_objc",
         ":videocapture_objc",
         ":videoframebuffer_objc",
       ]
+      if(ios_device_name != "appletv") {
+        deps += [
+          ":metal_objc",
+        ]
+      }
     }
 
     rtc_library("metal_objc") {
@@ -614,17 +620,14 @@ if (is_ios || is_mac) {
     rtc_library("videocapture_objc") {
       visibility = [ "*" ]
       allow_poison = [ "audio_codecs" ]  # TODO(bugs.webrtc.org/8396): Remove.
-      if (is_tvos) {
-        sources = [
-          "objc/components/capturer/RTCFileVideoCapturer.h",
-          "objc/components/capturer/RTCFileVideoCapturer.m",
-        ]
-      } else {
-        sources = [
+      sources = [
+        "objc/components/capturer/RTCFileVideoCapturer.h",
+        "objc/components/capturer/RTCFileVideoCapturer.m",
+      ]
+      if (ios_device_name != "appletv") {
+        sources += [
           "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCCameraVideoCapturer.m",
-          "objc/components/capturer/RTCFileVideoCapturer.h",
-          "objc/components/capturer/RTCFileVideoCapturer.m",
         ]
       }
       frameworks = [
@@ -1046,6 +1049,7 @@ if (is_ios || is_mac) {
         "../rtc_base:logging",
         "../rtc_base:network_constants",
         "../rtc_base:safe_conversions",
+        "../rtc_base:stringutils",
         "../rtc_base:timeutils",
         "../stats:rtc_stats",
         "../system_wrappers:field_trial",
@@ -1300,10 +1304,11 @@ if (is_ios || is_mac) {
           "objc/api/video_frame_buffer/RTCNativeI420Buffer.h",
           "objc/api/video_frame_buffer/RTCNativeMutableI420Buffer.h",
         ]
-        if (!is_tvos) {
+
+        if(ios_device_name == "iphone") {
           common_objc_headers += [
             "objc/components/capturer/RTCCameraVideoCapturer.h",
-            "objc/helpers/RTCCameraPreviewView.h",
+            "objc/helpers/RTCCameraPreviewView.h"
           ]
         }
 
@@ -1331,10 +1336,14 @@ if (is_ios || is_mac) {
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
-          ":videocapture_objc",
           ":videocodec_objc",
           ":videotoolbox_objc",
         ]
+        if (ios_device_name != "appletv") {
+          deps += [
+            ":videocapture_objc",
+          ]
+        }
         if (rtc_ios_macos_use_opengl_rendering) {
           deps += [ ":opengl_ui_objc" ]
         }

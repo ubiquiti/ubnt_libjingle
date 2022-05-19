@@ -51,6 +51,8 @@
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/time_utils.h"
 
+#define SOCKET_INITIAL_TTL      255
+
 #if defined(WEBRTC_LINUX)
 #include <linux/sockios.h>
 #endif
@@ -151,7 +153,12 @@ bool PhysicalSocket::Create(int family, int type) {
   if (udp_) {
     SetEnabledEvents(DE_READ | DE_WRITE);
   }
-  return s_ != INVALID_SOCKET;
+
+  bool ret = (s_ != INVALID_SOCKET);
+  if (ret) {
+    SetOption(OPT_TTL, SOCKET_INITIAL_TTL);
+  }
+  return ret;
 }
 
 SocketAddress PhysicalSocket::GetLocalAddress() const {

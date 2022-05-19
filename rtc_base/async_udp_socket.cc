@@ -29,7 +29,7 @@ AsyncUDPSocket* AsyncUDPSocket::Create(Socket* socket,
                                        int interfaceIndex) {
   std::unique_ptr<Socket> owned_socket(socket);
   if (socket->Bind(bind_address, interfaceIndex) < 0) {
-    RTC_LOG(LS_ERROR) << "AsyncUDPSocket::Create() Bind() failed with error " << socket->GetError();
+    RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
     return nullptr;
   }
   return new AsyncUDPSocket(owned_socket.release());
@@ -38,8 +38,7 @@ AsyncUDPSocket* AsyncUDPSocket::Create(Socket* socket,
 AsyncUDPSocket* AsyncUDPSocket::Create(SocketFactory* factory,
                                        const SocketAddress& bind_address,
                                        int interfaceIndex) {
-  Socket* socket =
-      factory->CreateSocket(bind_address.family(), SOCK_DGRAM);
+  Socket* socket = factory->CreateSocket(bind_address.family(), SOCK_DGRAM);
   if (!socket)
     return nullptr;
   return Create(socket, bind_address, interfaceIndex);

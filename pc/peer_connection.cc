@@ -18,7 +18,6 @@
 #include <set>
 #include <string>
 #include <utility>
-#include <string>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
@@ -600,9 +599,6 @@ RTCError PeerConnection::Initialize(
     PeerConnectionDependencies dependencies) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   TRACE_EVENT0("webrtc", "PeerConnection::Initialize");
-  RTC_LOG(LS_INFO) << " ";
-  RTC_LOG(LS_INFO) << "===============================================================";
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__ << " ~~~~~~~~~~";
 
   cricket::ServerAddresses stun_servers;
   std::vector<cricket::RelayServerConfig> turn_servers;
@@ -847,9 +843,7 @@ void PeerConnection::RemoveStream(MediaStreamInterface* local_stream) {
                                  "Plan SdpSemantics. Please use RemoveTrack "
                                  "instead.";
   TRACE_EVENT0("webrtc", "PeerConnection::RemoveStream");
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
   sdp_handler_->RemoveStream(local_stream);
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__;
 }
 
 RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> PeerConnection::AddTrack(
@@ -861,7 +855,6 @@ RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> PeerConnection::AddTrack(
     LOG_AND_RETURN_ERROR(RTCErrorType::UNSUPPORTED_OPERATION,
                          "Not configured for media");
   }
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
   if (!track) {
     LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER, "Track is null.");
   }
@@ -884,7 +877,6 @@ RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> PeerConnection::AddTrack(
     sdp_handler_->UpdateNegotiationNeeded();
     stats_->AddTrack(track.get());
   }
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__;
   return sender_or_error;
 }
 
@@ -1364,7 +1356,6 @@ PeerConnection::CreateDataChannelOrError(const std::string& label,
   RTC_DCHECK_RUN_ON(signaling_thread());
   TRACE_EVENT0("webrtc", "PeerConnection::CreateDataChannel");
 
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " " << label << " session_id " << session_id_;
   bool first_datachannel = !data_channel_controller_.HasDataChannels();
 
   std::unique_ptr<InternalDataChannelInit> internal_config;
@@ -1386,7 +1377,6 @@ PeerConnection::CreateDataChannelOrError(const std::string& label,
     sdp_handler_->UpdateNegotiationNeeded();
   }
   NoteUsageEvent(UsageEvent::DATA_ADDED);
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " " << label;
   return channel;
 }
 
@@ -1418,11 +1408,7 @@ void PeerConnection::SetLocalDescription(
     std::unique_ptr<SessionDescriptionInterface> desc,
     rtc::scoped_refptr<SetLocalDescriptionObserverInterface> observer) {
   RTC_DCHECK_RUN_ON(signaling_thread());
-  RTC_LOG(LS_INFO) << "########## vvvvvv ########  SET LOCAL DESCRIPTION  #########################";
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
   sdp_handler_->SetLocalDescription(std::move(desc), observer);
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " session_id " << session_id_;
-  RTC_LOG(LS_INFO) << "############## ^^^^^^^^ ####### SET LOCAL DESCRIPTION  ###################################";
 }
 
 void PeerConnection::SetLocalDescription(
@@ -1460,7 +1446,6 @@ RTCError PeerConnection::SetConfiguration(
     const RTCConfiguration& configuration) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   TRACE_EVENT0("webrtc", "PeerConnection::SetConfiguration");
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
   if (IsClosed()) {
     LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_STATE,
                          "SetConfiguration: PeerConnection is closed.");
@@ -1624,7 +1609,6 @@ RTCError PeerConnection::SetConfiguration(
   }
 
   configuration_ = modified_config;
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " session_id " << session_id_;
   return RTCError::OK();
 }
 
@@ -1638,14 +1622,7 @@ void PeerConnection::AddIceCandidate(
     std::unique_ptr<IceCandidateInterface> candidate,
     std::function<void(RTCError)> callback) {
   RTC_DCHECK_RUN_ON(signaling_thread());
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
-  std::string ice_candidate_string;
-  if(candidate){
-      candidate->ToString(&ice_candidate_string);
-  }
-  RTC_LOG(LS_INFO) << "    PeerConnection::" << __func__<< " REMOTE cand=" << ice_candidate_string;
   sdp_handler_->AddIceCandidate(std::move(candidate), callback);
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " session_id " << session_id_;
 }
 
 bool PeerConnection::RemoveIceCandidates(
@@ -1898,29 +1875,6 @@ void PeerConnection::Close() {
   // Signal shutdown to the sdp handler. This invalidates weak pointers for
   // internal pending callbacks.
   sdp_handler_->PrepareForShutdown();
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " session_id " << session_id_;
-}
-
-std::string get_ice_state_name_standartized(PeerConnectionInterface::IceConnectionState state) {
-	switch (state) {
-	case PeerConnectionInterface::kIceConnectionNew:
-		return "kIceConnectionChecking";
-	case PeerConnectionInterface::kIceConnectionConnected:
-		return "kIceConnectionConnected";
-	case PeerConnectionInterface::kIceConnectionCompleted:
-		return "kIceConnectionCompleted";
-	case PeerConnectionInterface::kIceConnectionFailed:
-		return "kIceConnectionFailed";
-	case PeerConnectionInterface::kIceConnectionDisconnected:
-		return "kIceConnectionDisconnected";
-	case PeerConnectionInterface::kIceConnectionClosed:
-		return "kIceConnectionClosed";
-	case PeerConnectionInterface::kIceConnectionMax:
-		return "kIceConnectionMax";
-	case PeerConnectionInterface::kIceConnectionChecking:
-		return "kIceConnectionChecking";
-	}
-	return "unknown";
 }
 
 void PeerConnection::SetIceConnectionState(IceConnectionState new_state) {
@@ -1929,19 +1883,14 @@ void PeerConnection::SetIceConnectionState(IceConnectionState new_state) {
     return;
   }
 
-  //RTC_LOG(LS_WARNING) << ::webrtc::StackTraceToString(::webrtc::GetStackTrace());
-
   // After transitioning to "closed", ignore any additional states from
   // TransportController (such as "disconnected").
   if (IsClosed()) {
     return;
   }
 
-  RTC_LOG(LS_INFO) << "    PeerConnection::SetIceConnectionState() Changing IceConnectionState " << ice_connection_state_
+  RTC_LOG(LS_INFO) << "Changing IceConnectionState " << ice_connection_state_
                    << " => " << new_state;
-  RTC_LOG(LS_INFO) << " ";
-  RTC_LOG(LS_INFO) << "========================= SET ICE STATE  " << get_ice_state_name_standartized(new_state) <<" ===========================";
-  RTC_LOG(LS_INFO) << " ";
   RTC_DCHECK(ice_connection_state_ !=
              PeerConnectionInterface::kIceConnectionClosed);
 
@@ -1961,9 +1910,6 @@ void PeerConnection::SetStandardizedIceConnectionState(
 
   RTC_LOG(LS_INFO) << "Changing standardized IceConnectionState "
                    << standardized_ice_connection_state_ << " => " << new_state;
-  RTC_LOG(LS_INFO) << " ";
-  RTC_LOG(LS_INFO) << "========================= SET STANDARTIZED ICE STATE " << get_ice_state_name_standartized(new_state) << " ===========================";
-  RTC_LOG(LS_INFO) << " ";
 
   standardized_ice_connection_state_ = new_state;
   Observer()->OnStandardizedIceConnectionChange(new_state);
@@ -2062,13 +2008,10 @@ void PeerConnection::OnIceCandidateError(const std::string& address,
                                          const std::string& url,
                                          int error_code,
                                          const std::string& error_text) {
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_ << " address=" << address;
   if (IsClosed()) {
     return;
   }
   Observer()->OnIceCandidateError(address, port, url, error_code, error_text);
-
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " session_id " << session_id_;
 }
 
 void PeerConnection::OnIceCandidatesRemoved(
@@ -2081,7 +2024,6 @@ void PeerConnection::OnIceCandidatesRemoved(
 
 void PeerConnection::OnSelectedCandidatePairChanged(
     const cricket::CandidatePairChangeEvent& event) {
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
   if (IsClosed()) {
     return;
   }
@@ -2094,7 +2036,6 @@ void PeerConnection::OnSelectedCandidatePairChanged(
   }
 
   Observer()->OnIceSelectedCandidatePairChanged(event);
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__<< " session_id " << session_id_;
 }
 
 absl::optional<std::string> PeerConnection::GetDataMid() const {
@@ -2118,7 +2059,6 @@ void PeerConnection::OnSctpDataChannelClosed(DataChannelInterface* channel) {
   // signal is relayed here.
   data_channel_controller_.OnSctpDataChannelClosed(
       static_cast<SctpDataChannel*>(channel));
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__;
 }
 
 PeerConnection::InitializePortAllocatorResult
@@ -2128,7 +2068,6 @@ PeerConnection::InitializePortAllocator_n(
     const RTCConfiguration& configuration) {
   RTC_DCHECK_RUN_ON(network_thread());
 
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__;
   port_allocator_->Initialize();
   // To handle both internal and externally created port allocator, we will
   // enable BUNDLE here.
@@ -2185,7 +2124,6 @@ PeerConnection::InitializePortAllocator_n(
 
   InitializePortAllocatorResult res;
   res.enable_ipv6 = port_allocator_flags & cricket::PORTALLOCATOR_ENABLE_IPV6;
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__;
   return res;
 }
 
@@ -2212,7 +2150,6 @@ bool PeerConnection::ReconfigurePortAllocator_n(
   for (auto& turn_server : turn_servers_copy) {
     turn_server.tls_cert_verifier = tls_cert_verifier_.get();
   }
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__;
   // Call this last since it may create pooled allocator sessions using the
   // candidate filter set above.
   return port_allocator_->SetConfiguration(
@@ -2397,10 +2334,8 @@ bool PeerConnection::NeedsIceRestart(const std::string& content_name) const {
 
 void PeerConnection::OnTransportControllerConnectionState(
     cricket::IceConnectionState state) {
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__ << " " << state;
   switch (state) {
     case cricket::kIceConnectionConnecting:
-      RTC_LOG(LS_INFO) << "    PeerConnection::" << __func__ << " kIceConnectionConnecting ";
       // If the current state is Connected or Completed, then there were
       // writable channels but now there are not, so the next state must
       // be Disconnected.
@@ -2416,18 +2351,15 @@ void PeerConnection::OnTransportControllerConnectionState(
       }
       break;
     case cricket::kIceConnectionFailed:
-      RTC_LOG(LS_INFO) << "    PeerConnection::" << __func__ << " kIceConnectionFailed ";
       SetIceConnectionState(PeerConnectionInterface::kIceConnectionFailed);
       break;
     case cricket::kIceConnectionConnected:
-      RTC_LOG(LS_INFO) << "    PeerConnection::" << __func__ << " kIceConnectionConnected ";
       RTC_LOG(LS_INFO) << "Changing to ICE connected state because "
                           "all transports are writable.";
       SetIceConnectionState(PeerConnectionInterface::kIceConnectionConnected);
       NoteUsageEvent(UsageEvent::ICE_STATE_CONNECTED);
       break;
     case cricket::kIceConnectionCompleted:
-      RTC_LOG(LS_INFO) << "    PeerConnection::" << __func__ << " kIceConnectionCompleted ";
       RTC_LOG(LS_INFO) << "Changing to ICE completed state because "
                           "all transports are complete.";
       if (ice_connection_state_ !=
@@ -2443,7 +2375,6 @@ void PeerConnection::OnTransportControllerConnectionState(
     default:
       RTC_DCHECK_NOTREACHED();
   }
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__;
 }
 
 void PeerConnection::OnTransportControllerCandidatesGathered(
@@ -2465,9 +2396,6 @@ void PeerConnection::OnTransportControllerCandidatesGathered(
     std::unique_ptr<JsepIceCandidate> candidate(
         new JsepIceCandidate(transport_name, sdp_mline_index, *citer));
     sdp_handler_->AddLocalIceCandidate(candidate.get());
-    std::string cand_string;
-    candidate->ToString(&cand_string);
-    RTC_LOG(LS_INFO) << "#######################  ON LOCAL ICE CANDIDATE  ################## " << cand_string;
     OnIceCandidate(std::move(candidate));
   }
 }
@@ -2540,7 +2468,6 @@ Call::Stats PeerConnection::GetCallStats() {
 }
 
 bool PeerConnection::SetupDataChannelTransport_n(const std::string& mid) {
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " mid " << mid;
   DataChannelTransportInterface* transport =
       transport_controller_->GetDataChannelTransport(mid);
   if (!transport) {
@@ -2570,7 +2497,6 @@ bool PeerConnection::SetupDataChannelTransport_n(const std::string& mid) {
   // callbacks to PeerConnection which require the transport to be completely
   // set up (eg. OnReadyToSend()).
   transport->SetDataSink(&data_channel_controller_);
-  RTC_LOG(LS_INFO) << "<-# PeerConnection::" << __func__ << " mid " << mid;
   return true;
 }
 
@@ -2843,7 +2769,6 @@ void PeerConnection::ReportTransportStats() {
 // static (no member state required)
 void PeerConnection::ReportBestConnectionState(
     const cricket::TransportStats& stats) {
-  RTC_LOG(LS_INFO) << "    PeerConnection::" << __func__;
   for (const cricket::TransportChannelStats& channel_stats :
        stats.channel_stats) {
     for (const cricket::ConnectionInfo& connection_info :
@@ -3027,7 +2952,6 @@ void PeerConnection::ClearStatsCache() {
 
 bool PeerConnection::ShouldFireNegotiationNeededEvent(uint32_t event_id) {
   RTC_DCHECK_RUN_ON(signaling_thread());
-  RTC_LOG(LS_INFO) << "#-> PeerConnection::" << __func__<< " session_id " << session_id_;
   return sdp_handler_->ShouldFireNegotiationNeededEvent(event_id);
 }
 

@@ -381,7 +381,7 @@ class RTC_EXPORT Network {
           const IPAddress& prefix,
           int prefix_length)
       : Network(name,
-                index,
+                index, 
                 description,
                 prefix,
                 prefix_length,

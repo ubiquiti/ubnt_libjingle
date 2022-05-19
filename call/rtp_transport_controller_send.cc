@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/transport/goog_cc_factory.h"
 #include "api/transport/network_types.h"
@@ -70,7 +71,6 @@ bool IsDisabled(const FieldTrialsView& trials, absl::string_view key) {
 bool IsRelayed(const rtc::NetworkRoute& route) {
   return route.local.uses_turn() || route.remote.uses_turn();
 }
-
 }  // namespace
 
 RtpTransportControllerSend::PacerSettings::PacerSettings(
@@ -270,7 +270,7 @@ bool RtpTransportControllerSend::IsRelevantRouteChange(
 }
 
 void RtpTransportControllerSend::OnNetworkRouteChanged(
-    const std::string& transport_name,
+    absl::string_view transport_name,
     const rtc::NetworkRoute& network_route) {
   // Check if the network route is connected.
 
@@ -659,8 +659,8 @@ void RtpTransportControllerSend::PostUpdates(NetworkControlUpdate update) {
     pacer_.SetPacingRates(update.pacer_config->data_rate(),
                           update.pacer_config->pad_rate());
   }
-  for (const auto& probe : update.probe_cluster_configs) {
-    pacer_.CreateProbeCluster(probe.target_data_rate, probe.id);
+  if (!update.probe_cluster_configs.empty()) {
+    pacer_.CreateProbeClusters(std::move(update.probe_cluster_configs));
   }
   if (update.target_rate) {
     control_handler_->SetTargetRate(*update.target_rate);

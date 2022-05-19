@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#import "TargetConditionals.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
@@ -149,6 +150,10 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
 #if !defined(NDEBUG)
   LogDeviceInfo();
 #endif
+#if TARGET_OS_TV || TARGET_OS_MACCATALYST
+  initialized_ = true;
+  return InitStatus::OK;
+#else /* TARGET_OS_TV || TARGET_OS_MACCATALYST*/
   // Store the preferred sample rate and preferred number of channels already
   // here. They have not been set and confirmed yet since configureForWebRTC
   // is not called until audio is about to start. However, it makes sense to
@@ -164,6 +169,7 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
   UpdateAudioDeviceBuffer();
   initialized_ = true;
   return InitStatus::OK;
+#endif /* TARGET_OS_TV */
 }
 
 int32_t AudioDeviceIOS::Terminate() {
