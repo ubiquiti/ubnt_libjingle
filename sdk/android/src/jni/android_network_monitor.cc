@@ -322,6 +322,7 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
     RTC_LOG(LS_WARNING)
         << "BindSocketToNetwork unable to find network handle for"
         << " addr: " << address.ToSensitiveString() << " ifname: " << if_name;
+    RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() NetworkBindingResult::ADDRESS_NOT_FOUND";
     return rtc::NetworkBindingResult::ADDRESS_NOT_FOUND;
   }
 
@@ -329,6 +330,7 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
     RTC_LOG(LS_WARNING) << "BindSocketToNetwork 0 network handle for"
                         << " addr: " << address.ToSensitiveString()
                         << " ifname: " << if_name;
+    RTC_LOG(LS_WARNING) << "    AndroidNetworkMonitor::BindSocketToNetwork() NetworkBindingResult::NOT_IMPLEMENTED";
     return rtc::NetworkBindingResult::NOT_IMPLEMENTED;
   }
 

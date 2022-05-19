@@ -80,12 +80,10 @@ def _ParseArgs():
       type=os.path.abspath,
       default=SDK_OUTPUT_DIR,
       help='Specifies a directory to output the build artifacts to. '
-      'If specified together with -c, deletes the dir.')
-  parser.add_argument(
-      '-r',
-      '--revision',
-      type=int,
-      default=0,
+           'If specified together with -c, deletes the dir.')
+  parser.add_argument('-t', '--ios-deployment-target', default=IOS_DEPLOYMENT_TARGET,
+      help='Specifies the min version of the iOS device SDK.')
+  parser.add_argument('-r', '--revision', type=int, default=0,
       help='Specifies a revision number to embed if building the framework.')
   parser.add_argument('-e',
                       '--bitcode',
@@ -228,9 +226,6 @@ def main():
     return 0
 
   gn_target_name = 'framework_objc'
-  if not args.bitcode:
-    gn_args.append('enable_dsyms=true')
-  gn_args.append('enable_stripping=true')
 
   # Build all architectures.
   framework_paths = []
