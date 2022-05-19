@@ -50,7 +50,8 @@ class ChannelManager : public ChannelFactoryInterface {
   // If media_engine is non-nullptr, then the returned ChannelManager instance
   // will own that reference and media engine initialization
   static std::unique_ptr<ChannelManager> Create(
-      std::unique_ptr<MediaEngineInterface> media_engine,
+      MediaEngineInterface* media_engine,
+      rtc::UniqueRandomIdGenerator* ssrc_generator,
       bool enable_rtx,
       rtc::Thread* worker_thread,
       rtc::Thread* network_thread);
@@ -60,8 +61,8 @@ class ChannelManager : public ChannelFactoryInterface {
 
   rtc::Thread* worker_thread() const { return worker_thread_; }
   rtc::Thread* network_thread() const { return network_thread_; }
-  MediaEngineInterface* media_engine() { return media_engine_.get(); }
-  rtc::UniqueRandomIdGenerator& ssrc_generator() { return ssrc_generator_; }
+  MediaEngineInterface* media_engine() { return media_engine_; }
+  rtc::UniqueRandomIdGenerator& ssrc_generator() { return *ssrc_generator_; }
 
   // Retrieves the list of supported audio & video codec types.
   // Can be called before starting the media engine.
@@ -69,12 +70,6 @@ class ChannelManager : public ChannelFactoryInterface {
   void GetSupportedAudioReceiveCodecs(std::vector<AudioCodec>* codecs) const;
   void GetSupportedVideoSendCodecs(std::vector<VideoCodec>* codecs) const;
   void GetSupportedVideoReceiveCodecs(std::vector<VideoCodec>* codecs) const;
-  RtpHeaderExtensions GetDefaultEnabledAudioRtpHeaderExtensions() const;
-  std::vector<webrtc::RtpHeaderExtensionCapability>
-  GetSupportedAudioRtpHeaderExtensions() const;
-  RtpHeaderExtensions GetDefaultEnabledVideoRtpHeaderExtensions() const;
-  std::vector<webrtc::RtpHeaderExtensionCapability>
-  GetSupportedVideoRtpHeaderExtensions() const;
 
   // The operations below all occur on the worker thread.
   // The caller is responsible for ensuring that destruction happens
@@ -102,37 +97,19 @@ class ChannelManager : public ChannelFactoryInterface {
       webrtc::VideoBitrateAllocatorFactory* video_bitrate_allocator_factory)
       override;
 
-  // Starts AEC dump using existing file, with a specified maximum file size in
-  // bytes. When the limit is reached, logging will stop and the file will be
-  // closed. If max_size_bytes is set to <= 0, no limit will be used.
-  bool StartAecDump(webrtc::FileWrapper file, int64_t max_size_bytes);
-
-  // Stops recording AEC dump.
-  void StopAecDump();
-
  protected:
-  ChannelManager(std::unique_ptr<MediaEngineInterface> media_engine,
+  ChannelManager(MediaEngineInterface* media_engine,
+                 rtc::UniqueRandomIdGenerator* ssrc_generator_,
                  bool enable_rtx,
                  rtc::Thread* worker_thread,
                  rtc::Thread* network_thread);
 
-  // Destroys a voice channel created by CreateVoiceChannel.
-  void DestroyVoiceChannel(VoiceChannel* voice_channel);
-
-  // Destroys a video channel created by CreateVideoChannel.
-  void DestroyVideoChannel(VideoChannel* video_channel);
-
  private:
-  const std::unique_ptr<MediaEngineInterface> media_engine_;  // Nullable.
+  MediaEngineInterface* media_engine_;  // Nullable.
+  rtc::UniqueRandomIdGenerator* ssrc_generator_;
   rtc::Thread* const signaling_thread_;
   rtc::Thread* const worker_thread_;
   rtc::Thread* const network_thread_;
-
-  // This object should be used to generate any SSRC that is not explicitly
-  // specified by the user (or by the remote party).
-  // TODO(bugs.webrtc.org/12666): This variable is used from both the signaling
-  // and worker threads. See if we can't restrict usage to a single thread.
-  rtc::UniqueRandomIdGenerator ssrc_generator_;
 
   const bool enable_rtx_;
 };

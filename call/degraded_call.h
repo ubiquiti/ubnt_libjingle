@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/call/transport.h"
 #include "api/fec_controller.h"
@@ -100,8 +101,12 @@ class DegradedCall : public Call, private PacketReceiver {
       int transport_overhead_per_packet) override;
   void OnLocalSsrcUpdated(AudioReceiveStream& stream,
                           uint32_t local_ssrc) override;
+  void OnLocalSsrcUpdated(VideoReceiveStream& stream,
+                          uint32_t local_ssrc) override;
+  void OnLocalSsrcUpdated(FlexfecReceiveStream& stream,
+                          uint32_t local_ssrc) override;
   void OnUpdateSyncGroup(AudioReceiveStream& stream,
-                         const std::string& sync_group) override;
+                         absl::string_view sync_group) override;
   void OnSentPacket(const rtc::SentPacket& sent_packet) override;
 
  protected:

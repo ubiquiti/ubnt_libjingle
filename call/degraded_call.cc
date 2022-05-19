@@ -13,6 +13,7 @@
 #include <memory>
 #include <utility>
 
+#include "absl/strings/string_view.h"
 #include "rtc_base/location.h"
 
 namespace webrtc {
@@ -304,8 +305,18 @@ void DegradedCall::OnLocalSsrcUpdated(AudioReceiveStream& stream,
   call_->OnLocalSsrcUpdated(stream, local_ssrc);
 }
 
+void DegradedCall::OnLocalSsrcUpdated(VideoReceiveStream& stream,
+                                      uint32_t local_ssrc) {
+  call_->OnLocalSsrcUpdated(stream, local_ssrc);
+}
+
+void DegradedCall::OnLocalSsrcUpdated(FlexfecReceiveStream& stream,
+                                      uint32_t local_ssrc) {
+  call_->OnLocalSsrcUpdated(stream, local_ssrc);
+}
+
 void DegradedCall::OnUpdateSyncGroup(AudioReceiveStream& stream,
-                                     const std::string& sync_group) {
+                                     absl::string_view sync_group) {
   call_->OnUpdateSyncGroup(stream, sync_group);
 }
 
