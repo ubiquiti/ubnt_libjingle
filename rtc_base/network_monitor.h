@@ -99,10 +99,6 @@ class NetworkMonitorInterface {
     return NetworkBindingResult::NOT_IMPLEMENTED;
   }
 
-  // Does |this| NetworkMonitorInterface implement BindSocketToNetwork?
-  // Only Android returns true.
-  virtual bool SupportsBindSocketToNetwork() const { return false; }
-
   // Bind a socket to an interface specified by ip address and/or interface
   // name. Only implemented on Android.
   virtual NetworkBindingResult BindSocketToNetwork(

@@ -238,6 +238,7 @@ int BasicPortAllocator::GetNetworkIgnoreMask() const {
       break;
   }
   return mask;
+}
 
 void BasicPortAllocator::SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) {
   // TODO(phoglund): implement support for other types than loopback.

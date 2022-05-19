@@ -1060,24 +1060,6 @@ Network::Network(absl::string_view name,
                  int index,
                  absl::string_view desc,
                  const IPAddress& prefix,
-                 int prefix_length)
-    : name_(name),
-      index_(index),
-      description_(desc),
-      prefix_(prefix),
-      prefix_length_(prefix_length),
-      key_(MakeNetworkKey(name, prefix, prefix_length)),
-      scope_id_(0),
-      ignored_(false),
-      type_(ADAPTER_TYPE_UNKNOWN),
-      preference_(0),
-      use_differentiated_cellular_costs_(webrtc::field_trial::IsEnabled(
-          "WebRTC-UseDifferentiatedCellularCosts")) {}
-
-Network::Network(absl::string_view name,
-                 int index,
-                 absl::string_view desc,
-                 const IPAddress& prefix,
                  int prefix_length,
                  AdapterType type)
     : name_(name),

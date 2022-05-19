@@ -165,13 +165,17 @@ if (is_ios || is_mac) {
 
     public_configs = [ ":common_config_objc" ]
 
-    if (is_ios && (ios_device_name == "iphone")) {
+    if (is_ios) {
       sources += [
-        "objc/helpers/RTCCameraPreviewView.h",
-        "objc/helpers/RTCCameraPreviewView.m",
         "objc/helpers/UIDevice+RTCDevice.h",
         "objc/helpers/UIDevice+RTCDevice.mm",
       ]
+      if (ios_device_name != "appletv") {
+        sources += [
+          "objc/helpers/RTCCameraPreviewView.h",
+          "objc/helpers/RTCCameraPreviewView.m",
+        ]
+      }
     }
   }
 
@@ -473,12 +477,10 @@ if (is_ios || is_mac) {
           "objc/components/renderer/opengl/RTCNV12TextureCache.m",
         ]
         frameworks += [
+          "GLKit.framework",
           "OpenGLES.framework",
           "QuartzCore.framework",
         ]
-        if(ios_device_name != "macosx") {
-          frameworks += [ "GLKit.framework" ]
-        }
       } else if (is_mac) {
         frameworks += [
           "CoreMedia.framework",
@@ -542,11 +544,15 @@ if (is_ios || is_mac) {
       deps = [
         ":base_objc",
         ":helpers_objc",
-        ":metal_objc",
         ":opengl_objc",
         ":videocapture_objc",
         ":videoframebuffer_objc",
       ]
+      if(ios_device_name != "appletv") {
+        deps += [
+          ":metal_objc",
+        ]
+      }
     }
 
     rtc_library("metal_objc") {
@@ -615,11 +621,15 @@ if (is_ios || is_mac) {
       visibility = [ "*" ]
       allow_poison = [ "audio_codecs" ]  # TODO(bugs.webrtc.org/8396): Remove.
       sources = [
-        "objc/components/capturer/RTCCameraVideoCapturer.h",
-        "objc/components/capturer/RTCCameraVideoCapturer.m",
         "objc/components/capturer/RTCFileVideoCapturer.h",
         "objc/components/capturer/RTCFileVideoCapturer.m",
       ]
+      if (ios_device_name != "appletv") {
+        sources += [
+          "objc/components/capturer/RTCCameraVideoCapturer.h",
+          "objc/components/capturer/RTCCameraVideoCapturer.m",
+        ]
+      }
       frameworks = [
         "AVFoundation.framework",
         "CoreVideo.framework",
@@ -681,22 +691,10 @@ if (is_ios || is_mac) {
         ":native_video",
         ":videocodec_objc",
         ":videotoolbox_objc",
+        ":vp8",
+        ":vp9",
         ":vpx_codec_constants",
       ]
-
-      if(is_ios){
-        if(ios_device_name != "macosx") {
-          deps += [
-            ":vp8",
-            ":vp9",
-          ]
-        }
-      } else {
-        deps += [
-          ":vp8",
-          ":vp9",
-        ]
-      }
     }
 
     rtc_library("vpx_codec_constants") {
@@ -725,19 +723,8 @@ if (is_ios || is_mac) {
       deps = [
         ":base_objc",
         ":wrapped_native_codec_objc",
+        "../modules/video_coding:webrtc_vp8",
       ]
-
-      if(is_ios){
-        if(ios_device_name != "macosx") {
-          deps += [
-            "../modules/video_coding:webrtc_vp8",
-          ]
-        }
-      } else {
-        deps += [
-          "../modules/video_coding:webrtc_vp8",
-        ]
-      }
     }
 
     rtc_library("vp9") {
@@ -754,19 +741,8 @@ if (is_ios || is_mac) {
         ":base_objc",
         ":wrapped_native_codec_objc",
         "../media:rtc_media_base",
+        "../modules/video_coding:webrtc_vp9",
       ]
-
-      if(is_ios){
-        if(ios_device_name != "macosx") {
-          deps += [
-            "../modules/video_coding:webrtc_vp9",
-          ]
-        }
-      } else {
-        deps += [
-          "../modules/video_coding:webrtc_vp9",
-        ]
-      }
     }
 
     rtc_library("av1") {
@@ -1081,12 +1057,7 @@ if (is_ios || is_mac) {
       ]
 
       if (is_ios) {
-        if(ios_device_name == "iphone"){
-          deps += [ ":video_objc" ]
-        }
         deps += [ ":native_api_audio_device_module" ]
-      } else {
-        deps += [ ":video_objc" ]
       }
     }
 
@@ -1358,13 +1329,21 @@ if (is_ios || is_mac) {
         ]
 
         deps = [
+          ":audio_objc",
           ":base_objc",
+          ":default_codec_factory_objc",
+          ":metal_objc",
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
           ":videocodec_objc",
           ":videotoolbox_objc",
         ]
+        if (ios_device_name != "appletv") {
+          deps += [
+            ":videocapture_objc",
+          ]
+        }
         if (rtc_ios_macos_use_opengl_rendering) {
           deps += [ ":opengl_ui_objc" ]
         }
@@ -1378,12 +1357,8 @@ if (is_ios || is_mac) {
         frameworks = [
           "AVFoundation.framework",
           "CoreGraphics.framework",
-          "CoreMedia.framework"
+          "CoreMedia.framework",
         ]
-
-        if(ios_device_name != "macosx") {
-          frameworks += [ "GLKit.framework" ]
-        }
 
         configs = [
           "..:common_objc",
@@ -1495,6 +1470,7 @@ if (is_ios || is_mac) {
 
         deps = [
           ":base_objc",
+          ":default_codec_factory_objc",
           ":native_api",
           ":native_video",
           ":opengl_ui_objc",
@@ -1643,10 +1619,6 @@ if (is_ios || is_mac) {
 
       configs += [ "..:common_objc" ]
 
-      if(is_ios && (ios_device_name != "macosx")) {
-        frameworks = [ "UIKit.framework" ]
-      }
-
       public_configs = [ ":common_config_objc" ]
 
       deps = [
@@ -1736,12 +1708,8 @@ if (is_ios || is_mac) {
         "CoreFoundation.framework",
         "CoreMedia.framework",
         "CoreVideo.framework",
-        "VideoToolbox.framework"
+        "VideoToolbox.framework",
       ]
-
-      if(is_ios && (ios_device_name != "macosx")) {
-        frameworks += ["UIKit.framework"]
-      }
     }
   }
 }
