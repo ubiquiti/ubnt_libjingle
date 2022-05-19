@@ -563,12 +563,6 @@ void SctpDataChannel::SetState(DataState state) {
     return;
   }
 
-  RTC_LOG(LS_INFO) << "#-> DataChannel::" << __func__ << " label " << label_ << " state " << state;
-  if (state == kOpen) {
-      RTC_LOG(LS_INFO) << " ";
-      RTC_LOG(LS_INFO) << "  =============================== DATA CHANNEL " << label_ << " OPENED! ======================================";
-      RTC_LOG(LS_INFO) << " ";
-  }
   state_ = state;
   if (observer_) {
     observer_->OnStateChange();
@@ -578,7 +572,6 @@ void SctpDataChannel::SetState(DataState state) {
   } else if (state_ == kClosed) {
     SignalClosed(this);
   }
-  RTC_LOG(LS_INFO) << "<-# DataChannel::" << __func__;
 }
 
 void SctpDataChannel::DisconnectFromTransport() {

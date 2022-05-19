@@ -86,7 +86,7 @@ class NetworkMonitorInterface {
   virtual NetworkPreference GetNetworkPreference(
       absl::string_view interface_name) = 0;
 
-  // Does |this| NetworkMonitorInterface implement BindSocketToNetwork?
+  // Does `this` NetworkMonitorInterface implement BindSocketToNetwork?
   // Only Android returns true.
   virtual bool SupportsBindSocketToNetwork() const { return false; }
 

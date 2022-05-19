@@ -76,7 +76,6 @@ RTCError JsepTransportController::SetLocalDescription(
     SdpType type,
     const cricket::SessionDescription* description) {
   TRACE_EVENT0("webrtc", "JsepTransportController::SetLocalDescription");
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(
         RTC_FROM_HERE, [=] { return SetLocalDescription(type, description); });
@@ -91,7 +90,6 @@ RTCError JsepTransportController::SetLocalDescription(
       SetIceRole_n(cricket::ICEROLE_CONTROLLED);
     }
   }
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return ApplyDescription_n(/*local=*/true, type, description);
 }
 
@@ -99,14 +97,12 @@ RTCError JsepTransportController::SetRemoteDescription(
     SdpType type,
     const cricket::SessionDescription* description) {
   TRACE_EVENT0("webrtc", "JsepTransportController::SetRemoteDescription");
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(
         RTC_FROM_HERE, [=] { return SetRemoteDescription(type, description); });
   }
 
   RTC_DCHECK_RUN_ON(network_thread_);
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return ApplyDescription_n(/*local=*/false, type, description);
 }
 
@@ -293,20 +289,17 @@ RTCError JsepTransportController::AddRemoteCandidates(
     const cricket::Candidates& candidates) {
   RTC_DCHECK_RUN_ON(network_thread_);
   RTC_DCHECK(VerifyCandidates(candidates).ok());
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   auto jsep_transport = GetJsepTransportByName(transport_name);
   if (!jsep_transport) {
     RTC_LOG(LS_WARNING) << "Not adding candidate because the JsepTransport "
                            "doesn't exist. Ignore it.";
     return RTCError::OK();
   }
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return jsep_transport->AddRemoteCandidates(candidates);
 }
 
 RTCError JsepTransportController::RemoveRemoteCandidates(
     const cricket::Candidates& candidates) {
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   if (!network_thread_->IsCurrent()) {
     return network_thread_->Invoke<RTCError>(
         RTC_FROM_HERE, [&] { return RemoveRemoteCandidates(candidates); });
@@ -351,7 +344,6 @@ RTCError JsepTransportController::RemoveRemoteCandidates(
       }
     }
   }
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return RTCError::OK();
 }
 
@@ -417,7 +409,6 @@ std::unique_ptr<cricket::DtlsTransportInternal>
 JsepTransportController::CreateDtlsTransport(
     const cricket::ContentInfo& content_info,
     cricket::IceTransportInternal* ice) {
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   RTC_DCHECK_RUN_ON(network_thread_);
 
   std::unique_ptr<cricket::DtlsTransportInternal> dtls;
@@ -464,7 +455,6 @@ JsepTransportController::CreateDtlsTransport(
 
   dtls->SubscribeDtlsHandshakeError(
       [this](rtc::SSLHandshakeError error) { OnDtlsHandshakeError(error); });
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return dtls;
 }
 
@@ -529,7 +519,6 @@ JsepTransportController::CreateDtlsSrtpTransport(
 std::vector<cricket::DtlsTransportInternal*>
 JsepTransportController::GetDtlsTransports() {
   RTC_DCHECK_RUN_ON(network_thread_);
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   std::vector<cricket::DtlsTransportInternal*> dtls_transports;
   for (auto jsep_transport : transports_.Transports()) {
     RTC_DCHECK(jsep_transport);
@@ -558,7 +547,6 @@ JsepTransportController::GetActiveDtlsTransports() {
       dtls_transports.push_back(jsep_transport->rtcp_dtls_transport());
     }
   }
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return dtls_transports;
 }
 
@@ -568,7 +556,6 @@ RTCError JsepTransportController::ApplyDescription_n(
     const cricket::SessionDescription* description) {
   TRACE_EVENT0("webrtc", "JsepTransportController::ApplyDescription_n");
   RTC_DCHECK(description);
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
 
   if (local) {
     local_desc_ = description;
@@ -678,7 +665,6 @@ RTCError JsepTransportController::ApplyDescription_n(
     transports_.CommitTransports();
     bundles_.Commit();
   }
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return RTCError::OK();
 }
 
@@ -1038,7 +1024,6 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
     bool local,
     const cricket::ContentInfo& content_info,
     const cricket::SessionDescription& description) {
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   cricket::JsepTransport* transport = GetJsepTransportByName(content_info.name);
   if (transport) {
     return RTCError::OK();
@@ -1107,7 +1092,6 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
 
   transports_.RegisterTransport(content_info.name, std::move(jsep_transport));
   UpdateAggregateStates_n();
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
   return RTCError::OK();
 }
 
@@ -1243,7 +1227,6 @@ void JsepTransportController::OnTransportStateChanged_n(
 
 void JsepTransportController::UpdateAggregateStates_n() {
   TRACE_EVENT0("webrtc", "JsepTransportController::UpdateAggregateStates_n");
-  RTC_LOG(LS_INFO) << "#-> JsepTransportController::" << __func__;
   auto dtls_transports = GetActiveDtlsTransports();
   cricket::IceConnectionState new_connection_state =
       cricket::kIceConnectionConnecting;
@@ -1417,7 +1400,6 @@ void JsepTransportController::UpdateAggregateStates_n() {
     ice_gathering_state_ = new_gathering_state;
     signal_ice_gathering_state_.Send(new_gathering_state);
   }
-  RTC_LOG(LS_INFO) << "<-# JsepTransportController::" << __func__;
 }
 
 void JsepTransportController::OnRtcpPacketReceived_n(

@@ -495,11 +495,6 @@ RtpHeaderExtensionMap VideoReceiveStream2::GetRtpExtensionMap() const {
   return rtp_video_stream_receiver_.GetRtpExtensions();
 }
 
-RtpHeaderExtensionMap VideoReceiveStream2::GetRtpExtensionMap() const {
-  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
-  return rtp_video_stream_receiver_.GetRtpExtensions();
-}
-
 void VideoReceiveStream2::CreateAndRegisterExternalDecoder(
     const Decoder& decoder) {
   TRACE_EVENT0("webrtc",

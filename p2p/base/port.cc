@@ -266,10 +266,6 @@ void Port::AddAddress(const rtc::SocketAddress& address,
                       uint32_t relay_preference,
                       const std::string& url,
                       bool is_final) {
-  RTC_LOG(LS_INFO) << "#-> Port::" << __func__ << " type=" << type
-          << " address=" << address.ToString()
-          << " base_address=" << base_address.ToString()
-          << " related_address=" << related_address.ToString();
   if (protocol == TCP_PROTOCOL_NAME && type == LOCAL_PORT_TYPE) {
     RTC_DCHECK(!tcptype.empty());
   }
@@ -293,7 +289,6 @@ void Port::AddAddress(const rtc::SocketAddress& address,
   if (!pending) {
     FinishAddingAddress(c, is_final);
   }
-  RTC_LOG(LS_INFO) << "<-# Port::" << __func__;
 }
 
 bool Port::MaybeObfuscateAddress(Candidate* c,
@@ -436,7 +431,6 @@ bool Port::GetStunMessage(const char* data,
                           const rtc::SocketAddress& addr,
                           std::unique_ptr<IceMessage>* out_msg,
                           std::string* out_username) {
-  RTC_LOG(LS_INFO) << "#-> Port::" << __func__ ;
   // NOTE: This could clearly be optimized to avoid allocating any memory.
   //       However, at the data rates we'll be looking at on the client side,
   //       this probably isn't worth worrying about.
@@ -595,7 +589,6 @@ bool Port::GetStunMessage(const char* data,
 
   // Return the STUN message found.
   *out_msg = std::move(stun_msg);
-  RTC_LOG(LS_INFO) << "<-# Port::" << __func__ ;
   return true;
 }
 
@@ -749,7 +742,6 @@ void Port::SendBindingErrorResponse(StunMessage* message,
                                     const rtc::SocketAddress& addr,
                                     int error_code,
                                     const std::string& reason) {
-  RTC_LOG(LS_INFO) << "#-> Port::" << __func__ ;
   RTC_DCHECK(message->type() == STUN_BINDING_REQUEST ||
              message->type() == GOOG_PING_REQUEST);
 
@@ -796,7 +788,6 @@ void Port::SendBindingErrorResponse(StunMessage* message,
                    << StunMethodToString(response.type())
                    << ": reason=" << reason << " to "
                    << addr.ToSensitiveString();
-  RTC_LOG(LS_INFO) << "<-# Port::" << __func__ ;
 }
 
 void Port::SendUnknownAttributesErrorResponse(

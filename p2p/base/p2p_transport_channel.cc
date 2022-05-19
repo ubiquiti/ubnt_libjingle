@@ -325,7 +325,6 @@ bool P2PTransportChannel::MaybeSwitchSelectedConnection(
 
 void P2PTransportChannel::SetIceRole(IceRole ice_role) {
   RTC_DCHECK_RUN_ON(network_thread_);
-  RTC_LOG(LS_INFO) << "    P2PTransportChannel::" << __func__ << "() role = " << ice_role;
   if (ice_role_ != ice_role) {
     ice_role_ = ice_role;
     for (PortInterface* port : ports_) {
@@ -1245,7 +1244,6 @@ void P2PTransportChannel::ResolveHostnameCandidate(const Candidate& candidate) {
 
 void P2PTransportChannel::AddRemoteCandidate(const Candidate& candidate) {
   RTC_DCHECK_RUN_ON(network_thread_);
-  RTC_LOG(LS_INFO) << "#-> P2PTransportChannel::" << __func__ <<  " "  << candidate.ToString();
 
   uint32_t generation = GetRemoteCandidateGeneration(candidate);
   // If a remote candidate with a previous generation arrives, drop it.
@@ -1274,7 +1272,7 @@ void P2PTransportChannel::AddRemoteCandidate(const Candidate& candidate) {
       // The candidate belongs to the next generation. Its pwd will be set
       // when the new remote ICE credentials arrive.
       RTC_LOG(LS_WARNING)
-          << "    P2PTransportChannel::" << __func__ <<  " ERROR! A remote candidate arrives with an unknown ufrag: "
+          << "A remote candidate arrives with an unknown ufrag: "
           << candidate.username();
     }
   }
@@ -1290,7 +1288,6 @@ void P2PTransportChannel::AddRemoteCandidate(const Candidate& candidate) {
   }
 
   FinishAddingRemoteCandidate(new_remote_candidate);
-  RTC_LOG(LS_INFO) << "<-# P2PTransportChannel::" << __func__ ;
 }
 
 P2PTransportChannel::CandidateAndResolver::CandidateAndResolver(
@@ -1535,14 +1532,14 @@ bool P2PTransportChannel::IsDuplicateRemoteCandidate(
 void P2PTransportChannel::RememberRemoteCandidate(
     const Candidate& remote_candidate,
     PortInterface* origin_port) {
-  RTC_LOG(LS_INFO) << "#-> P2PTransportChannel::" << __func__ <<  " "  << remote_candidate.ToSensitiveString();
   RTC_DCHECK_RUN_ON(network_thread_);
   // Remove any candidates whose generation is older than this one.  The
   // presence of a new generation indicates that the old ones are not useful.
   size_t i = 0;
   while (i < remote_candidates_.size()) {
     if (remote_candidates_[i].generation() < remote_candidate.generation()) {
-      RTC_LOG(LS_INFO) << "    P2PTransportChannel::" << __func__ << " Pruning candidate from old generation: " << remote_candidates_[i].address().ToSensitiveString();
+      RTC_LOG(LS_INFO) << "Pruning candidate from old generation: "
+                       << remote_candidates_[i].address().ToSensitiveString();
       remote_candidates_.erase(remote_candidates_.begin() + i);
     } else {
       i += 1;
@@ -1558,7 +1555,6 @@ void P2PTransportChannel::RememberRemoteCandidate(
 
   // Try this candidate for all future ports.
   remote_candidates_.push_back(RemoteCandidate(remote_candidate, origin_port));
-  RTC_LOG(LS_INFO) << "<-# P2PTransportChannel::" << __func__ ;
 }
 
 // Set options on ourselves is simply setting options on all of our available

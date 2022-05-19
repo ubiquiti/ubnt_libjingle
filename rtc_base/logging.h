@@ -46,9 +46,6 @@
 
 #include <errno.h>
 
-// Karlis for gettid()
-#include <unistd.h>
-
 #include <atomic>
 #include <sstream>  // no-presubmit-check TODO(webrtc:8982)
 #include <string>

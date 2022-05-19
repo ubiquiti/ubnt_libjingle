@@ -931,9 +931,9 @@ void Connection::UpdateState(int64_t now) {
     RTC_LOG(LS_VERBOSE) << ToString()
                         << ": UpdateState()"
                            ", ms since last received response="
-                        << ((last_ping_response_received_>0)?(now - last_ping_response_received_):-1)
+                        << now - last_ping_response_received_
                         << ", ms since last received data="
-                        << ((last_data_received_>0)?(now - last_data_received_):-1) << ", rtt=" << rtt
+                        << now - last_data_received_ << ", rtt=" << rtt
                         << ", pings_since_last_response=" << pings;
   }
 
