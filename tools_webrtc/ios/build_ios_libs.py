@@ -37,7 +37,7 @@ ENABLED_ARCHS = [
     'arm64', 'x64'
 ]
 DEFAULT_ARCHS = [
-    'device:arm64', 'simulator:arm64', 'simulator:x64'
+    'device:arm64', 'device:arm', 'simulator:arm64', 'simulator:x64', 'catalyst:arm64', 'catalyst:x64'
 ]
 IOS_DEPLOYMENT_TARGET = {
     'device': '10.0',
