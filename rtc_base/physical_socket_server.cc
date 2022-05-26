@@ -633,7 +633,7 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
         *sopt = IP_TTL;
       }
       break;
-#ifndef __ANDROID__
+#if defined(WEBRTC_IOS) || defined(WEBRTC_MAC)
     // for some obscure reason, android does not support
     // this. And it did, I clearly remember having a version
     // with this code working just fine. This is not a
