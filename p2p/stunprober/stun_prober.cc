@@ -387,7 +387,7 @@ void StunProber::CreateSockets() {
   // Prepare all the sockets beforehand. All of them will bind to "any" address.
   while (sockets_.size() < total_socket_required()) {
     std::unique_ptr<rtc::AsyncPacketSocket> socket(
-        socket_factory_->CreateUdpSocket(rtc::SocketAddress(INADDR_ANY, 0), 0,
+        socket_factory_->CreateUdpSocket(rtc::SocketAddress(INADDR_ANY, 0), -1, 0,
                                          0));
     if (!socket) {
       ReportOnPrepared(GENERIC_FAILURE);
