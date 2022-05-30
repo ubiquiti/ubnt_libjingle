@@ -479,6 +479,8 @@ if (!build_with_chromium) {
       "sdk",
       "video",
     ]
+    
+    deps += ["rtc_base:rtc_json",]
 
     if (rtc_include_builtin_audio_codecs) {
       deps += [
