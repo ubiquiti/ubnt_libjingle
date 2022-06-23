@@ -333,7 +333,7 @@ int PhysicalSocket::GetOption(Option opt, int* value) {
 int PhysicalSocket::SetOption(Option opt, int value) {
   int slevel;
   int sopt;
-#ifdef __ANDROID__
+#if !defined(WEBRTC_IOS) && !defined(WEBRTC_MAC)
   if(opt == OPT_IFACE_BIND)
     return 0;
 #endif
