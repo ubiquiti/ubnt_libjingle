@@ -46,11 +46,6 @@ class ObjCNetworkMonitor : public rtc::NetworkMonitorInterface,
   void Stop() override;
 
   InterfaceInfo GetInterfaceInfo(absl::string_view interface_name) override;
-  rtc::AdapterType GetAdapterType(absl::string_view interface_name) override;
-  rtc::AdapterType GetVpnUnderlyingAdapterType(
-      absl::string_view interface_name) override;
-  rtc::NetworkPreference GetNetworkPreference(
-      absl::string_view interface_name) override;
   bool IsAdapterAvailable(absl::string_view interface_name) override;
 
   // NetworkMonitorObserver override.
