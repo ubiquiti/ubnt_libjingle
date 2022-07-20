@@ -51,6 +51,8 @@
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/time_utils.h"
 
+#define SOCKET_INITIAL_TTL      255
+
 #if defined(WEBRTC_LINUX)
 #include <linux/sockios.h>
 #endif
@@ -151,7 +153,12 @@ bool PhysicalSocket::Create(int family, int type) {
   if (udp_) {
     SetEnabledEvents(DE_READ | DE_WRITE);
   }
-  return s_ != INVALID_SOCKET;
+
+  bool ret = (s_ != INVALID_SOCKET);
+  if (ret) {
+    SetOption(OPT_TTL, SOCKET_INITIAL_TTL);
+  }
+  return ret;
 }
 
 SocketAddress PhysicalSocket::GetLocalAddress() const {
@@ -184,7 +191,7 @@ SocketAddress PhysicalSocket::GetRemoteAddress() const {
   return address;
 }
 
-int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
+int PhysicalSocket::Bind(const SocketAddress& bind_addr, int interfaceIndex) {
   SocketAddress copied_bind_addr = bind_addr;
   // If a network binder is available, use it to bind a socket to an interface
   // instead of bind(), since this is more reliable on an OS with a weak host
@@ -222,12 +229,21 @@ int PhysicalSocket::Bind(const SocketAddress& bind_addr) {
   sockaddr* addr = reinterpret_cast<sockaddr*>(&addr_storage);
   int err = ::bind(s_, addr, static_cast<int>(len));
   UpdateLastError();
+  if(err != 0)
+    return err;
 #if !defined(NDEBUG)
   if (0 == err) {
     dbg_addr_ = "Bound @ ";
     dbg_addr_.append(GetLocalAddress().ToString());
   }
 #endif
+  if(interfaceIndex > 0) {
+    err = SetOption(OPT_IFACE_BIND, interfaceIndex);
+    if(err != 0) {
+      RTC_LOG(LS_WARNING) << "Binding socket to network interface index "
+                            << interfaceIndex << " failed";
+    }
+  }
   return err;
 }
 
@@ -290,6 +306,10 @@ Socket::ConnState PhysicalSocket::GetState() const {
 int PhysicalSocket::GetOption(Option opt, int* value) {
   int slevel;
   int sopt;
+#ifdef __ANDROID__
+  if(opt == OPT_IFACE_BIND)
+    return 0;
+#endif
   if (TranslateOption(opt, &slevel, &sopt) == -1)
     return -1;
   socklen_t optlen = sizeof(*value);
@@ -313,6 +333,10 @@ int PhysicalSocket::GetOption(Option opt, int* value) {
 int PhysicalSocket::SetOption(Option opt, int value) {
   int slevel;
   int sopt;
+#ifdef __ANDROID__
+  if(opt == OPT_IFACE_BIND)
+    return 0;
+#endif
   if (TranslateOption(opt, &slevel, &sopt) == -1)
     return -1;
   if (opt == OPT_DONTFRAGMENT) {
@@ -600,6 +624,30 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
 #endif
     case OPT_RTP_SENDTIME_EXTN_ID:
       return -1;  // No logging is necessary as this not a OS socket option.
+    case OPT_TTL:
+      if (family_ == AF_INET6) {
+        *slevel = IPPROTO_IPV6;
+        *sopt = IPV6_UNICAST_HOPS;
+      } else {
+        *slevel = IPPROTO_IP;
+        *sopt = IP_TTL;
+      }
+      break;
+#if defined(WEBRTC_IOS) || defined(WEBRTC_MAC)
+    // for some obscure reason, android does not support
+    // this. And it did, I clearly remember having a version
+    // with this code working just fine. This is not a
+    // critical option tho, so we just skip it
+    case OPT_IFACE_BIND:
+      if (family_ == AF_INET6) {
+        *slevel = IPPROTO_IPV6;
+        *sopt = IPV6_BOUND_IF;
+      } else {
+        *slevel = IPPROTO_IP;
+        *sopt = IP_BOUND_IF;
+      }
+      break;
+#endif
     default:
       RTC_DCHECK_NOTREACHED();
       return -1;
