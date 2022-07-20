@@ -413,6 +413,32 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
   return rtc::NetworkBindingResult::FAILURE;
 }
 
+// Check if adapter is avaiable, and only return true for the interface
+// that has been discovered by NetworkMonitorAutoDetect.java.
+bool AndroidNetworkMonitor::IsAdapterAvailable(absl::string_view if_name) {
+  RTC_DCHECK_RUN_ON(network_thread_);
+  if (disable_is_adapter_available_) {
+    return true;
+  }
+  if (if_name == "lo") {
+    // localhost (if_name == lo) is used by unit tests.
+    return true;
+  }
+  bool val = adapter_type_by_name_.find(if_name) != adapter_type_by_name_.end();
+  if (!val && bind_using_ifname_) {
+    for (auto const& iter : network_info_by_handle_) {
+      // Use substring match so that e.g if_name="v4-wlan0" is matched
+      // against iter.first="wlan0"
+      if (if_name.find(iter.second.interface_name) != absl::string_view::npos) {
+        val = true;
+        break;
+      }
+    }
+  }
+
+  return val;
+}
+
 void AndroidNetworkMonitor::OnNetworkConnected_n(
     const NetworkInformation& network_info) {
   RTC_DCHECK_RUN_ON(network_thread_);
