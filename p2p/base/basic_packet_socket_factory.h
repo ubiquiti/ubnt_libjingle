@@ -34,6 +34,7 @@ class BasicPacketSocketFactory : public PacketSocketFactory {
   ~BasicPacketSocketFactory() override;
 
   AsyncPacketSocket* CreateUdpSocket(const SocketAddress& local_address,
+                                     int interfaceIndex,
                                      uint16_t min_port,
                                      uint16_t max_port) override;
   AsyncListenSocket* CreateServerTcpSocket(const SocketAddress& local_address,
@@ -57,6 +58,7 @@ class BasicPacketSocketFactory : public PacketSocketFactory {
  private:
   int BindSocket(Socket* socket,
                  const SocketAddress& local_address,
+                 int interfaceIndex,
                  uint16_t min_port,
                  uint16_t max_port);
 

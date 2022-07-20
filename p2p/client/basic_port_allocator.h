@@ -55,6 +55,14 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
   // Set to kDefaultNetworkIgnoreMask by default.
   void SetNetworkIgnoreMask(int network_ignore_mask) override;
   int GetNetworkIgnoreMask() const;
+  void SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) override;
+  int network_ignore_mask() const {
+    CheckRunOnValidThreadIfInitialized();
+    return network_ignore_mask_;
+  }
+  const std::map<std::string,bool> &GetActiveInterfaces() const {
+    return activeInterfaces_;
+  }
 
   rtc::NetworkManager* network_manager() const {
     CheckRunOnValidThreadIfInitialized();
@@ -103,6 +111,7 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
   const webrtc::AlwaysValidPointerNoDefault<rtc::PacketSocketFactory>
       socket_factory_;
   int network_ignore_mask_ = rtc::kDefaultNetworkIgnoreMask;
+  std::map<std::string, bool> activeInterfaces_;
 
   // This is the factory being used.
   RelayPortFactoryInterface* relay_port_factory_;
