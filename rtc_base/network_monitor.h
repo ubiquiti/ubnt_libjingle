@@ -106,6 +106,13 @@ class NetworkMonitorInterface {
   // `adapter_type` to ADAPTER_TYPE_UNKNOWN and `available` to false.
   virtual InterfaceInfo GetInterfaceInfo(absl::string_view interface_name) = 0;
 
+  virtual AdapterType GetAdapterType(absl::string_view interface_name) = 0;
+  virtual AdapterType GetVpnUnderlyingAdapterType(
+      absl::string_view interface_name) = 0;
+
+  virtual NetworkPreference GetNetworkPreference(
+      absl::string_view interface_name) = 0;
+
   // Does `this` NetworkMonitorInterface implement BindSocketToNetwork?
   // Only Android returns true.
   virtual bool SupportsBindSocketToNetwork() const { return false; }

@@ -413,6 +413,76 @@ rtc::NetworkBindingResult AndroidNetworkMonitor::BindSocketToNetwork(
   return rtc::NetworkBindingResult::FAILURE;
 }
 
+rtc::AdapterType AndroidNetworkMonitor::GetAdapterType(
+    absl::string_view if_name) {
+  RTC_DCHECK_RUN_ON(network_thread_);
+  auto iter = adapter_type_by_name_.find(if_name);
+  rtc::AdapterType type = (iter == adapter_type_by_name_.end())
+                              ? rtc::ADAPTER_TYPE_UNKNOWN
+                              : iter->second;
+
+  if (type == rtc::ADAPTER_TYPE_UNKNOWN && bind_using_ifname_) {
+    for (auto const& iter : adapter_type_by_name_) {
+      // Use substring match so that e.g if_name="v4-wlan0" is matched
+      // against iter="wlan0"
+      if (if_name.find(iter.first) != absl::string_view::npos) {
+        type = iter.second;
+        break;
+      }
+    }
+  }
+
+  if (type == rtc::ADAPTER_TYPE_UNKNOWN) {
+    RTC_LOG(LS_WARNING) << "Get an unknown type for the interface " << if_name;
+  }
+  return type;
+}
+
+rtc::AdapterType AndroidNetworkMonitor::GetVpnUnderlyingAdapterType(
+    absl::string_view if_name) {
+  RTC_DCHECK_RUN_ON(network_thread_);
+  auto iter = vpn_underlying_adapter_type_by_name_.find(if_name);
+  rtc::AdapterType type = (iter == vpn_underlying_adapter_type_by_name_.end())
+                              ? rtc::ADAPTER_TYPE_UNKNOWN
+                              : iter->second;
+  if (type == rtc::ADAPTER_TYPE_UNKNOWN && bind_using_ifname_) {
+    // Use partial match so that e.g if_name="v4-wlan0" is matched
+    // agains iter.first="wlan0"
+    for (auto const& iter : vpn_underlying_adapter_type_by_name_) {
+      if (if_name.find(iter.first) != absl::string_view::npos) {
+        type = iter.second;
+        break;
+      }
+    }
+  }
+
+  return type;
+}
+
+rtc::NetworkPreference AndroidNetworkMonitor::GetNetworkPreference(
+    absl::string_view if_name) {
+  RTC_DCHECK_RUN_ON(network_thread_);
+  auto iter = adapter_type_by_name_.find(if_name);
+  if (iter == adapter_type_by_name_.end()) {
+    return rtc::NetworkPreference::NEUTRAL;
+  }
+
+  rtc::AdapterType adapter_type = iter->second;
+  if (adapter_type == rtc::ADAPTER_TYPE_VPN) {
+    auto iter2 = vpn_underlying_adapter_type_by_name_.find(if_name);
+    if (iter2 != vpn_underlying_adapter_type_by_name_.end()) {
+      adapter_type = iter2->second;
+    }
+  }
+
+  auto preference_iter = network_preference_by_adapter_type_.find(adapter_type);
+  if (preference_iter == network_preference_by_adapter_type_.end()) {
+    return rtc::NetworkPreference::NEUTRAL;
+  }
+
+  return preference_iter->second;
+}
+
 // Check if adapter is avaiable, and only return true for the interface
 // that has been discovered by NetworkMonitorAutoDetect.java.
 bool AndroidNetworkMonitor::IsAdapterAvailable(absl::string_view if_name) {

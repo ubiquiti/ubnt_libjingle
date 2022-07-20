@@ -92,6 +92,11 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorInterface {
       int socket_fd,
       const rtc::IPAddress& address,
       absl::string_view if_name) override;
+  rtc::AdapterType GetAdapterType(absl::string_view if_name) override;
+  rtc::AdapterType GetVpnUnderlyingAdapterType(
+      absl::string_view if_name) override;
+  rtc::NetworkPreference GetNetworkPreference(
+      absl::string_view if_name) override;
   bool IsAdapterAvailable(absl::string_view if_name) override;
 
   InterfaceInfo GetInterfaceInfo(absl::string_view if_name) override;

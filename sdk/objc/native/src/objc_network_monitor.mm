@@ -84,6 +84,23 @@ rtc::NetworkMonitorInterface::InterfaceInfo ObjCNetworkMonitor::GetInterfaceInfo
   };
 }
 
+rtc::AdapterType ObjCNetworkMonitor::GetAdapterType(absl::string_view interface_name) {
+  RTC_DCHECK_RUN_ON(thread_);
+  auto iter = adapter_type_by_name_.find(interface_name);
+  if (iter == adapter_type_by_name_.end()) {
+    return rtc::ADAPTER_TYPE_UNKNOWN;
+  }
+  return iter->second;
+}
+
+rtc::AdapterType ObjCNetworkMonitor::GetVpnUnderlyingAdapterType(absl::string_view interface_name) {
+  return rtc::ADAPTER_TYPE_UNKNOWN;
+}
+
+rtc::NetworkPreference ObjCNetworkMonitor::GetNetworkPreference(absl::string_view interface_name) {
+  return rtc::NetworkPreference::NEUTRAL;
+}
+
 bool ObjCNetworkMonitor::IsAdapterAvailable(absl::string_view interface_name) {
   RTC_DCHECK_RUN_ON(thread_);
   if (adapter_type_by_name_.empty()) {

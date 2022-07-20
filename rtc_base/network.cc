@@ -603,6 +603,29 @@ void BasicNetworkManager::ConvertIfAddrs(
           reinterpret_cast<sockaddr_in6*>(cursor->ifa_addr)->sin6_scope_id;
     }
 
+    AdapterType adapter_type = ADAPTER_TYPE_UNKNOWN;
+    AdapterType vpn_underlying_adapter_type = ADAPTER_TYPE_UNKNOWN;
+    NetworkPreference network_preference = NetworkPreference::NEUTRAL;
+    if (cursor->ifa_flags & IFF_LOOPBACK) {
+      adapter_type = ADAPTER_TYPE_LOOPBACK;
+    } else {
+      // If there is a network_monitor, use it to get the adapter type.
+      // Otherwise, get the adapter type based on a few name matching rules.
+      if (network_monitor_) {
+        adapter_type = network_monitor_->GetAdapterType(cursor->ifa_name);
+        network_preference =
+            network_monitor_->GetNetworkPreference(cursor->ifa_name);
+      }
+      if (adapter_type == ADAPTER_TYPE_UNKNOWN) {
+        adapter_type = GetAdapterTypeFromName(cursor->ifa_name);
+      }
+    }
+
+    if (adapter_type == ADAPTER_TYPE_VPN && network_monitor_) {
+      vpn_underlying_adapter_type =
+          network_monitor_->GetVpnUnderlyingAdapterType(cursor->ifa_name);
+    }
+
     int prefix_length = CountIPMaskBits(mask);
     prefix = TruncateIP(ip, prefix_length);
     std::string key =
