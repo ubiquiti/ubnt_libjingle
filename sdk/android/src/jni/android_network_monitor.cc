@@ -274,6 +274,8 @@ void AndroidNetworkMonitor::reset() {
   network_handle_by_address_.clear();
   network_handle_by_if_name_.clear();
   network_info_by_handle_.clear();
+  adapter_type_by_name_.clear();
+  vpn_underlying_adapter_type_by_name_.clear();
   network_preference_by_adapter_type_.clear();
 }
 
@@ -443,6 +445,13 @@ void AndroidNetworkMonitor::OnNetworkConnected_n(
     const NetworkInformation& network_info) {
   RTC_DCHECK_RUN_ON(network_thread_);
   RTC_LOG(LS_INFO) << "Network connected: " << network_info.ToString();
+  adapter_type_by_name_[network_info.interface_name] =
+      AdapterTypeFromNetworkType(network_info.type, surface_cellular_types_);
+  if (network_info.type == NETWORK_VPN) {
+    vpn_underlying_adapter_type_by_name_[network_info.interface_name] =
+        AdapterTypeFromNetworkType(network_info.underlying_type_for_vpn,
+                                   surface_cellular_types_);
+  }
   network_info_by_handle_[network_info.handle] = network_info;
   for (const rtc::IPAddress& address : network_info.ip_addresses) {
     network_handle_by_address_[address] = network_info.handle;
@@ -450,6 +459,7 @@ void AndroidNetworkMonitor::OnNetworkConnected_n(
   network_handle_by_if_name_[network_info.interface_name] = network_info.handle;
   RTC_CHECK(network_info_by_handle_.size() >=
             network_handle_by_if_name_.size());
+  RTC_CHECK(adapter_type_by_name_.size() == network_info_by_handle_.size());
   InvokeNetworksChangedCallback();
 }
 
@@ -514,6 +524,11 @@ void AndroidNetworkMonitor::OnNetworkDisconnected_n(NetworkHandle handle) {
   for (const rtc::IPAddress& address : iter->second.ip_addresses) {
     network_handle_by_address_.erase(address);
   }
+
+  adapter_type_by_name_.erase(iter->second.interface_name);
+  vpn_underlying_adapter_type_by_name_.erase(iter->second.interface_name);
+
+  RTC_CHECK(adapter_type_by_name_.size() == network_info_by_handle_.size());
 
   // We've discovered that the if_name is not always unique,
   // i.e it can be several network conencted with same if_name.
@@ -581,6 +596,8 @@ void AndroidNetworkMonitor::SetNetworkInfos(
   RTC_DCHECK(network_handle_by_if_name_.empty());
   RTC_DCHECK(network_handle_by_address_.empty());
   RTC_DCHECK(network_info_by_handle_.empty());
+  RTC_CHECK(adapter_type_by_name_.empty());
+  RTC_CHECK(vpn_underlying_adapter_type_by_name_.empty());
   RTC_DCHECK(network_preference_by_adapter_type_.empty());
 
   // ...but reset just in case.
