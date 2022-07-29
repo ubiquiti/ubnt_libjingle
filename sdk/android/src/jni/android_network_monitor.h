@@ -92,6 +92,7 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorInterface {
       int socket_fd,
       const rtc::IPAddress& address,
       absl::string_view if_name) override;
+  bool IsAdapterAvailable(absl::string_view if_name) override;
 
   InterfaceInfo GetInterfaceInfo(absl::string_view if_name) override;
 
@@ -135,6 +136,10 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorInterface {
   ScopedJavaGlobalRef<jobject> j_network_monitor_;
   rtc::Thread* const network_thread_;
   bool started_ RTC_GUARDED_BY(network_thread_) = false;
+  std::map<std::string, rtc::AdapterType, rtc::AbslStringViewCmp>
+      adapter_type_by_name_ RTC_GUARDED_BY(network_thread_);
+  std::map<std::string, rtc::AdapterType, rtc::AbslStringViewCmp>
+      vpn_underlying_adapter_type_by_name_ RTC_GUARDED_BY(network_thread_);
   std::map<std::string, NetworkHandle, rtc::AbslStringViewCmp>
       network_handle_by_if_name_ RTC_GUARDED_BY(network_thread_);
   std::map<rtc::IPAddress, NetworkHandle> network_handle_by_address_
