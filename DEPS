@@ -28,7 +28,7 @@ deps = {
   'src/base':
     'https://chromium.googlesource.com/chromium/src/base@e8c5d64341641f581e140cc13844b5e332dd4b7b',
   'src/build':
-    'https://chromium.googlesource.com/chromium/src/build@61976522a188064d77812da849ca852fc4374a21',
+    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@ubnt_bug_verify',
   'src/buildtools':
     'https://chromium.googlesource.com/chromium/src/buildtools@dbde006685de56293b98deda3130a5bcf73c354b',
   # Gradle 6.6.1. Used for testing Android Studio project generation for WebRTC.
