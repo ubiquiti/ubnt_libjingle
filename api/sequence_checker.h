@@ -113,8 +113,8 @@ class RTC_LOCKABLE SequenceChecker
 // Second statement annotates for the thread safety analyzer the check was done.
 // Such annotation has to be attached to a function, and that function has to be
 // called. Thus current implementation creates a noop lambda and calls it.
-#define RTC_DCHECK_RUN_ON(x)                                               \
-  RTC_DCHECK((x)->IsCurrent())                                             \
+#define RTC_DCHECK_RUN_ON(x)                                               //\
+  // RTC_DCHECK((x)->IsCurrent())                                             \
       << webrtc::webrtc_sequence_checker_internal::ExpectationToString(x); \
   []() RTC_ASSERT_EXCLUSIVE_LOCK(x) {}()
 
