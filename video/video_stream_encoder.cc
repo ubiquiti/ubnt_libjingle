@@ -1259,6 +1259,9 @@ void VideoStreamEncoder::ReconfigureEncoder() {
       field_trials_.IsDisabled(kFrameDropperFieldTrial) ||
       (num_layers > 1 && codec.mode == VideoCodecMode::kScreensharing);
 
+  // UI customization - never drop frames to avoid artifacts
+  force_disable_frame_dropper_ = true;
+
   VideoEncoder::EncoderInfo info = encoder_->GetEncoderInfo();
   if (rate_control_settings_.UseEncoderBitrateAdjuster()) {
     bitrate_adjuster_ = std::make_unique<EncoderBitrateAdjuster>(codec);
@@ -1425,6 +1428,17 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
   bool cwnd_frame_drop =
       cwnd_frame_drop_interval_ &&
       (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
+
+  // UI customization - never drop frames to avoid artifacts
+  if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
+    RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
+                      << " cwnd_frame_drop=" << cwnd_frame_drop
+                      << " frames_scheduled_for_processing="
+                      << frames_scheduled_for_processing << ". Avoid dropping frame";
+    cwnd_frame_drop = false;
+    frames_scheduled_for_processing = 1;
+  }
+
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
     MaybeEncodeVideoFrame(incoming_frame, post_time.us());
   } else {
@@ -1687,6 +1701,11 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   }
 
   if (DropDueToSize(video_frame.size())) {
+    // UI customization - never drop frames to avoid artifacts
+    RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
+                      << "  Too large for target bitrate size="
+                      << video_frame.size() << ". Avoid dropping frame";
+#if 0
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
     // Storing references to a native buffer risks blocking frame capture.
@@ -1703,6 +1722,8 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
           VideoStreamEncoderObserver::DropReason::kEncoderQueue);
     }
     return;
+#endif
+
   }
   stream_resource_manager_.OnMaybeEncodeFrame();
 
