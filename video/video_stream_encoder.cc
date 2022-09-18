@@ -1430,7 +1430,7 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
       (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
 
   // UI customization - never drop frames to avoid artifacts
-  if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
+  if (frames_scheduled_for_processing != 1 || cwnd_frame_drop) {
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << " cwnd_frame_drop=" << cwnd_frame_drop
                       << " frames_scheduled_for_processing="
