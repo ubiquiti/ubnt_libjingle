@@ -501,13 +501,24 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../rtc_base",
         "../rtc_base/synchronization:mutex",
         "../sdk:base_objc",
-        "../sdk:default_codec_factory_objc",
         "../sdk:helpers_objc",
         "../sdk:metal_objc",
         "../sdk:native_api",
         "../sdk:videocapture_objc",
         "../sdk:videotoolbox_objc",
       ]
+      
+      if(is_ios){
+        if(ios_device_name != "macosx") {
+          deps += [
+            "../sdk:default_codec_factory_objc",
+          ]
+        }
+      } else {
+        deps += [
+          "../sdk:default_codec_factory_objc",
+        ]
+      }
 
       if (rtc_ios_macos_use_opengl_rendering) {
         deps += [ "../sdk:opengl_ui_objc" ]
