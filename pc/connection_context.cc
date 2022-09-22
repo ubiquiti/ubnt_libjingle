@@ -114,6 +114,9 @@ ConnectionContext::ConnectionContext(
 
   signaling_thread_->AllowInvokesToThread(worker_thread());
   signaling_thread_->AllowInvokesToThread(network_thread_);
+#if !defined(NDEBUG)
+  signaling_thread_->AllowInvokesToThread(signaling_thread_);
+#endif
   worker_thread_->AllowInvokesToThread(network_thread_);
   if (!network_thread_->IsCurrent()) {
     // network_thread_->IsCurrent() == true means signaling_thread_ is
