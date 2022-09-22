@@ -368,11 +368,13 @@ class RTC_EXPORT BasicNetworkManager : public NetworkManagerBase,
 class RTC_EXPORT Network {
  public:
   Network(absl::string_view name,
+          int index,
           absl::string_view description,
           const IPAddress& prefix,
           int prefix_length,
           const webrtc::FieldTrialsView* field_trials = nullptr)
       : Network(name,
+                index, 
                 description,
                 prefix,
                 prefix_length,
@@ -380,6 +382,7 @@ class RTC_EXPORT Network {
                 field_trials) {}
 
   Network(absl::string_view name,
+          int index,
           absl::string_view description,
           const IPAddress& prefix,
           int prefix_length,
@@ -411,6 +414,11 @@ class RTC_EXPORT Network {
 
   // Returns the name of the interface this network is associated with.
   const std::string& name() const { return name_; }
+
+  // Returns the interface index as obtained by if_nametoindex
+  int index() const {
+    return index_;
+  }
 
   // Returns the OS-assigned name for this network. This is useful for
   // debugging but should not be sent over the wire (for privacy reasons).
@@ -572,6 +580,7 @@ class RTC_EXPORT Network {
   const DefaultLocalAddressProvider* default_local_address_provider_ = nullptr;
   const MdnsResponderProvider* mdns_responder_provider_ = nullptr;
   std::string name_;
+  int index_;
   std::string description_;
   IPAddress prefix_;
   int prefix_length_;

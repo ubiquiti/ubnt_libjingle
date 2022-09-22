@@ -321,7 +321,7 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
   if (!ipv4_any_address_network_) {
     const rtc::IPAddress ipv4_any_address(INADDR_ANY);
     ipv4_any_address_network_ = std::make_unique<Network>(
-        "any", "any", ipv4_any_address, 0, ADAPTER_TYPE_ANY, field_trials_);
+        "any", -1, "any", ipv4_any_address, 0, ADAPTER_TYPE_ANY, field_trials_);
     ipv4_any_address_network_->set_default_local_address_provider(this);
     ipv4_any_address_network_->set_mdns_responder_provider(this);
     ipv4_any_address_network_->AddIP(ipv4_any_address);
@@ -331,7 +331,7 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
   if (!ipv6_any_address_network_) {
     const rtc::IPAddress ipv6_any_address(in6addr_any);
     ipv6_any_address_network_ = std::make_unique<Network>(
-        "any", "any", ipv6_any_address, 0, ADAPTER_TYPE_ANY, field_trials_);
+        "any", -1, "any", ipv6_any_address, 0, ADAPTER_TYPE_ANY, field_trials_);
     ipv6_any_address_network_->set_default_local_address_provider(this);
     ipv6_any_address_network_->set_mdns_responder_provider(this);
     ipv6_any_address_network_->AddIP(ipv6_any_address);
@@ -668,9 +668,17 @@ void BasicNetworkManager::ConvertIfAddrs(
       if_info.adapter_type = ADAPTER_TYPE_VPN;
     }
 
-    auto network = std::make_unique<Network>(
-        cursor->ifa_name, cursor->ifa_name, prefix, prefix_length,
-        if_info.adapter_type, field_trials_.get());
+    // TODO(phoglund): Need to recognize other types as well.
+    int index = if_nametoindex(cursor->ifa_name);
+    if(index <= 0) {
+      int err = errno;
+      RTC_LOG(LS_WARNING) << "Unable to get interface index for the interface with name `" 
+                       << cursor->ifa_name << "`. Error was " << err << ". Defaulting to -1.";
+      index = -1;
+    }
+    auto network =
+        std::make_unique<Network>(cursor->ifa_name, index, cursor->ifa_name, prefix,
+                                  prefix_length, if_info.adapter_type, field_trials_.get());
     network->set_default_local_address_provider(this);
     network->set_scope_id(scope_id);
     network->AddIP(ip);
@@ -912,6 +920,11 @@ bool BasicNetworkManager::IsIgnoredNetwork(const Network& network) const {
   }
 #endif
 
+  if (network_monitor_ &&
+      !network_monitor_->IsAdapterAvailable(network.name())) {
+    return true;
+  }
+
   // Ignore any networks with a 0.x.y.z IP
   if (network.prefix().family() == AF_INET) {
     return (network.prefix().v4AddressAsHostOrderInteger() < 0x01000000);
@@ -1078,6 +1091,7 @@ NetworkBindingResult BasicNetworkManager::BindSocketToNetwork(
 }
 
 Network::Network(absl::string_view name,
+                 int index,
                  absl::string_view desc,
                  const IPAddress& prefix,
                  int prefix_length,
@@ -1085,6 +1099,7 @@ Network::Network(absl::string_view name,
                  const webrtc::FieldTrialsView* field_trials)
     : field_trials_(field_trials),
       name_(name),
+      index_(index),
       description_(desc),
       prefix_(prefix),
       prefix_length_(prefix_length),
