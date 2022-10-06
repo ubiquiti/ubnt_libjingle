@@ -555,11 +555,25 @@ void DcSctpTransport::OnStreamsResetPerformed(
     auto it = stream_states_.find(stream_id);
     if (it == stream_states_.end()) {
       // Ignoring an outgoing stream reset for a closed stream
-      return;
+
+      // UI customization
+      RTC_LOG(LS_ERROR) << debug_name_
+                       << "->OnStreamsResetPerformed(...): Ignoring an "
+                          "outgoing stream reset for a closed stream"
+                       << ", sid=" << stream_id.value();
+      continue;
     }
 
     StreamState& stream_state = it->second;
-    stream_state.outgoing_reset_done = true;
+    // UI customization
+    if (stream_state.closure_initiated) {
+      stream_state.outgoing_reset_done = true;
+    } else {
+      RTC_LOG(LS_ERROR) << debug_name_
+                       << "->OnStreamsResetPerformed(...): Ignoring an "
+                          "outgoing stream reset for stream with reused "
+                       << ", sid=" << stream_id.value();
+    }
 
     if (stream_state.incoming_reset_done) {
       //  When the close was not initiated locally, we can signal the end of the
@@ -581,8 +595,14 @@ void DcSctpTransport::OnIncomingStreamsReset(
                      << ", sid=" << stream_id.value();
 
     auto it = stream_states_.find(stream_id);
-    if (it == stream_states_.end())
-      return;
+    if (it == stream_states_.end()) {
+      // Ignoring incoming stream reset for a closed stream
+      RTC_LOG(LS_ERROR) << debug_name_
+                       << "->OnIncomingStreamsReset(...): Ignoring "
+                          "incoming stream reset for a closed stream"
+                       << ", sid=" << stream_id.value();
+      continue;
+    }
 
     StreamState& stream_state = it->second;
     stream_state.incoming_reset_done = true;
