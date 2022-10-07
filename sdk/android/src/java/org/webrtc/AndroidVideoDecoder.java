@@ -276,6 +276,8 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
     }
     buffer.put(frame.buffer);
 
+    Logging.e(TAG, "decode() - EncodedImage capture time=" + frame.captureTimeMs + "ms");
+
     frameInfos.offer(new FrameInfo(SystemClock.elapsedRealtime(), frame.rotation));
     try {
       codec.queueInputBuffer(index, 0 /* offset */, size,
@@ -397,6 +399,8 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
       }
 
       hasDecodedFirstFrame = true;
+
+      Logging.e(TAG, "dequeueOutputBuffer - decode time=" + decodeTimeMs + "ms" + " frame pts=" + info.presentationTimeUs / 1000 + "ms");
 
       if (surfaceTextureHelper != null) {
         deliverTextureFrame(index, info, rotation, decodeTimeMs);
