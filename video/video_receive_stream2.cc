@@ -745,8 +745,6 @@ void VideoReceiveStream2::OnCompleteFrame(std::unique_ptr<EncodedFrame> frame) {
     UpdatePlayoutDelays();
   }
 
-  RTC_LOG(LS_INFO) << "max playout delay=" << playout_delay.max_ms << " min playout delay=" << playout_delay.min_ms;
-
   auto last_continuous_pid = buffer_->InsertFrame(std::move(frame));
   if (last_continuous_pid.has_value()) {
     {
