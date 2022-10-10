@@ -374,6 +374,7 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
   protected void deliverDecodedFrame() {
     outputThreadChecker.checkIsOnValidThread();
     try {
+      Logging.e(TAG, "Deliver decoded frame");
       MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
       // Block until an output buffer is available (up to 100 milliseconds).  If the timeout is
       // exceeded, deliverDecodedFrame() will be called again on the next iteration of the output
