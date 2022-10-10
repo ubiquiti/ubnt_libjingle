@@ -143,7 +143,7 @@ absl::optional<int64_t> VideoStreamBufferController::InsertFrame(
   int complete_units = buffer_->GetTotalNumberOfContinuousTemporalUnits();
   if (buffer_->InsertFrame(std::move(frame))) {
     RTC_DCHECK(metadata.receive_time) << "Frame receive time must be set!";
-    RTC_LOG(LS_INFO) << "frame receive time=" << metadata.receive_time.ms() << "ms" << " rtp time=" << metadata.rtp_timestamp;
+    RTC_LOG(LS_INFO) << "frame receive time=" << metadata.receive_time->ms() << "ms" << " rtp time=" << metadata.rtp_timestamp;
     if (!metadata.delayed_by_retransmission && metadata.receive_time)
       timing_->IncomingTimestamp(metadata.rtp_timestamp,
                                  *metadata.receive_time);
@@ -222,7 +222,7 @@ void VideoStreamBufferController::OnFrameReady(
     auto frame_delay = inter_frame_delay_.CalculateDelay(
         first_frame.Timestamp(), receive_time);
     if (frame_delay) {
-      RTC_LOG(LS_INFO) << "frame delay=" << frame_delay.ms() << "ms";
+      RTC_LOG(LS_INFO) << "frame delay=" << frame_delay->ms() << "ms";
       jitter_estimator_.UpdateEstimate(*frame_delay, superframe_size);
     }
 
