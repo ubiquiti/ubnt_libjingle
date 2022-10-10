@@ -143,6 +143,7 @@ absl::optional<int64_t> VideoStreamBufferController::InsertFrame(
   int complete_units = buffer_->GetTotalNumberOfContinuousTemporalUnits();
   if (buffer_->InsertFrame(std::move(frame))) {
     RTC_DCHECK(metadata.receive_time) << "Frame receive time must be set!";
+    RTC_LOG(LS_INFO) << "frame receive time=" << metadata.receive_time.ms() << "ms" << " rtp time=" << metadata.rtp_timestamp;
     if (!metadata.delayed_by_retransmission && metadata.receive_time)
       timing_->IncomingTimestamp(metadata.rtp_timestamp,
                                  *metadata.receive_time);
@@ -221,6 +222,7 @@ void VideoStreamBufferController::OnFrameReady(
     auto frame_delay = inter_frame_delay_.CalculateDelay(
         first_frame.Timestamp(), receive_time);
     if (frame_delay) {
+      RTC_LOG(LS_INFO) << "frame delay=" << frame_delay.ms() << "ms";
       jitter_estimator_.UpdateEstimate(*frame_delay, superframe_size);
     }
 
@@ -247,6 +249,7 @@ void VideoStreamBufferController::OnFrameReady(
       CombineAndDeleteFrames(std::move(frames));
 
   timing_->SetLastDecodeScheduledTimestamp(now);
+  RTC_LOG(LS_INFO) << "LastDecodeScheduledTimestamp=" << now.ms() << "ms";
 
   decoder_ready_for_new_frame_ = false;
   receiver_->OnEncodedFrame(std::move(frame));
@@ -274,6 +277,7 @@ void VideoStreamBufferController::FrameReadyForDecode(uint32_t rtp_timestamp,
       << "Frame buffer's next decodable frame was not the one sent for "
          "extraction rtp="
       << rtp_timestamp << " extracted rtp=" << frames[0]->Timestamp();
+  RTC_LOG(LS_INFO) << "Frame ready for decode, render time=" << render_time.ms() << "ms";
   OnFrameReady(std::move(frames), render_time);
 }
 
@@ -351,6 +355,7 @@ void VideoStreamBufferController::MaybeScheduleFrameForRelease()
   // Ensures the frame is scheduled for decode before the stream times out.
   // This is otherwise a race condition.
   max_wait = std::max(max_wait - TimeDelta::Millis(1), TimeDelta::Zero());
+  RTC_LOG(LS_INFO) << "max wait time=" << max_wait.ms() << "ms";
   absl::optional<FrameDecodeTiming::FrameSchedule> schedule;
   while (decodable_tu_info) {
     schedule = decode_timing_.OnFrameBufferUpdated(

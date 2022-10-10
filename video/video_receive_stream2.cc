@@ -745,6 +745,8 @@ void VideoReceiveStream2::OnCompleteFrame(std::unique_ptr<EncodedFrame> frame) {
     UpdatePlayoutDelays();
   }
 
+  RTC_LOG(LS_INFO) << "max playout delay=" << playout_delay.max_ms << " min playout delay=" << playout_delay.min_ms;
+
   auto last_continuous_pid = buffer_->InsertFrame(std::move(frame));
   if (last_continuous_pid.has_value()) {
     {
@@ -816,6 +818,8 @@ void VideoReceiveStream2::OnEncodedFrame(std::unique_ptr<EncodedFrame> frame) {
     }
   }
   stats_proxy_.OnPreDecode(frame->CodecSpecific()->codecType, qp);
+
+  RTC_LOG(LS_INFO) << "request key frame=" << keyframe_request_is_due << " key frame=" << received_frame_is_keyframe;
 
   decode_queue_.PostTask([this, now, keyframe_request_is_due,
                           received_frame_is_keyframe, frame = std::move(frame),
