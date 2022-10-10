@@ -276,7 +276,7 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
     }
     buffer.put(frame.buffer);
 
-    Logging.e(TAG, "decode() - EncodedImage capture time=" + frame.captureTimeMs + "ms");
+    Logging.e(TAG, "decode() - EncodedImage capture time=" + frame.captureTimeMs + "ms" + " frame type=" + frame.frameType);
 
     frameInfos.offer(new FrameInfo(SystemClock.elapsedRealtime(), frame.rotation));
     try {
