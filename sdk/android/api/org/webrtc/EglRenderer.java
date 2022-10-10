@@ -669,10 +669,10 @@ public class EglRenderer implements VideoSink {
         final long swapBuffersStartTimeNs = System.nanoTime();
         if (usePresentationTimeStamp) {
           eglBase.swapBuffers(frame.getTimestampNs());
-          logW("Use PresentationTimeStamp - render frame");
+          logW(" Use PresentationTimeStamp - render frame");
         } else {
           eglBase.swapBuffers();
-          logW("render frame");
+          logW(" render frame timestamp=" + frame.getTimestampNs() / 1000000);
         }
 
         final long currentTimeNs = System.nanoTime();

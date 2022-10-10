@@ -212,6 +212,9 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(target_process_time));
   }
   packet_queue_.Push(now, std::move(packet));
+  RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
+                   << " capture time=" << packet->capture_time().ms() << "ms"
+                   << " push queue time=" << now.ms() << "ms";
   seen_first_packet_ = true;
 
   // Queue length has increased, check if we need to change the pacing rate.
@@ -655,11 +658,16 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
     TimeDelta avg_time_left =
         std::max(TimeDelta::Millis(1),
                  queue_time_limit_ - packet_queue_.AverageQueueTime());
+    RTC_LOG(LS_INFO) << "avg_time_left_ms=" << avg_time_left.ms()
+                     << " queue_time_limit_ms=" << queue_time_limit_.ms()
+                     << " average_queue_time_ms=" << packet_queue_.AverageQueueTime().ms();
     DataRate min_rate_needed = queue_size_data / avg_time_left;
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
-      RTC_LOG(LS_VERBOSE) << "bwe:large_pacing_queue pacing_rate_kbps="
-                          << pacing_rate_.kbps();
+      RTC_LOG(LS_INFO) << "bwe:large_pacing_queue pacing_rate_kbps="
+                          << pacing_rate_.kbps()
+                          << " adjusted_media_rate_kbps=" 
+                          << adjusted_media_rate_.kbps();
     }
   }
 }

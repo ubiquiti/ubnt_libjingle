@@ -892,8 +892,7 @@ void RtpVideoStreamReceiver2::OnCompleteFrames(
     last_completed_picture_id_ =
         std::max(last_completed_picture_id_, frame->Id());
     RTC_LOG(LS_INFO) << "keyframe=" << frame->is_keyframe() 
-                     << " frame received time=" << frame->ReceivedTime() << "ms" 
-                     << " frame render time=" << frame->RenderTime() << "ms";
+                     << " frame received time=" << frame->ReceivedTime() << "ms";
     complete_frame_callback_->OnCompleteFrame(std::move(frame));
   }
 }

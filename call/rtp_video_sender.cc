@@ -608,6 +608,9 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
     }
   }
 
+  RTC_LOG(LS_INFO) << "Send encoded iamge: encoded image rtp time=" << rtp_timestamp << "ms"
+                   << " rtp timestamp=" << encoded_image.Timestamp() << "ms";
+
   bool send_result = rtp_streams_[stream_index].sender_video->SendEncodedImage(
       rtp_config_.payload_type, codec_type_, rtp_timestamp, encoded_image,
       params_[stream_index].GetRtpVideoHeader(

@@ -103,7 +103,7 @@ int32_t VideoDecoderWrapper::Decode(
   input_image.capture_time_ms_ =
       input_image.Timestamp() / kNumRtpTicksPerMillisec;
 
-  RTC_LOG(LS_INFO) << "Decode: capture time=" << input_image.capture_time_ms_ << " rtp time=" << input_image.Timestamp() << " ntp time=" << input_image.ntp_time_ms_;
+  RTC_LOG(LS_INFO) << "Decode: capture time=" << input_image.capture_time_ms_ << " rtp time=" << input_image.Timestamp() << "ms";
 
   FrameExtraInfo frame_extra_info;
   frame_extra_info.timestamp_ns =
