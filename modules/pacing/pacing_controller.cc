@@ -204,8 +204,9 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     // packet.
     Timestamp target_process_time = now;
     Timestamp next_send_time = NextSendTime();
-    RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
-                     << " next_send_time_ms" << next_send_time.ms();
+    if (packet)
+      RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
+                      << " next_send_time_ms" << next_send_time.ms();
     if (next_send_time.IsFinite()) {
       // There was already a valid planned send time, such as a keep-alive.
       // Use that as last process time only if it's prior to now.
@@ -214,9 +215,10 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(target_process_time));
   }
   packet_queue_.Push(now, std::move(packet));
-  RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
-                   << " capture time=" << packet->capture_time().ms() << "ms"
-                   << " push queue time=" << now.ms() << "ms";
+  if (packet)
+    RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
+                    << " capture time=" << packet->capture_time().ms() << "ms"
+                    << " push queue time=" << now.ms() << "ms";
   seen_first_packet_ = true;
 
   // Queue length has increased, check if we need to change the pacing rate.
@@ -399,7 +401,7 @@ void PacingController::ProcessPackets() {
       prober_.is_probing() ? kMaxEarlyProbeProcessing : TimeDelta::Zero();
 
   target_send_time = NextSendTime();
-  RTC_LOG(LS_INFO) << "1st next_send_time_ms" << target_send_time.ms();
+  RTC_LOG(LS_INFO) << "1st next_send_time_ms=" << target_send_time.ms();
   if (now + early_execute_margin < target_send_time) {
     // We are too early, but if queue is empty still allow draining some debt.
     // Probing is allowed to be sent up to kMinSleepTime early.
@@ -496,7 +498,7 @@ void PacingController::ProcessPackets() {
       // Update target send time in case that are more packets that we are late
       // in processing.
       target_send_time = NextSendTime();
-      RTC_LOG(LS_INFO) << "2nd next_send_time_ms" << target_send_time.ms();
+      RTC_LOG(LS_INFO) << "2nd next_send_time_ms=" << target_send_time.ms();
       if (target_send_time > now) {
         // Exit loop if not probing.
         if (!is_probing) {
