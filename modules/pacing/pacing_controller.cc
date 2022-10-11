@@ -204,21 +204,21 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     // packet.
     Timestamp target_process_time = now;
     Timestamp next_send_time = NextSendTime();
-    if (packet)
-      RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
-                      << " next_send_time_ms" << next_send_time.ms();
+    RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
+                     << " capture time_ms=" << packet->capture_time().ms()
+                     << " target_process_time_ms=" << target_process_time.ms()
+                     << " next_send_time_ms" << next_send_time.ms();
     if (next_send_time.IsFinite()) {
       // There was already a valid planned send time, such as a keep-alive.
       // Use that as last process time only if it's prior to now.
       target_process_time = std::min(now, next_send_time);
     }
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(target_process_time));
-  }
-  packet_queue_.Push(now, std::move(packet));
-  if (packet)
+  } else 
     RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
-                    << " capture time=" << packet->capture_time().ms() << "ms"
-                    << " push queue time=" << now.ms() << "ms";
+                     << " capture time_ms=" << packet->capture_time().ms()
+                     << " push_queue_time_ms=" << now.ms();
+  packet_queue_.Push(now, std::move(packet));
   seen_first_packet_ = true;
 
   // Queue length has increased, check if we need to change the pacing rate.
@@ -401,7 +401,6 @@ void PacingController::ProcessPackets() {
       prober_.is_probing() ? kMaxEarlyProbeProcessing : TimeDelta::Zero();
 
   target_send_time = NextSendTime();
-  RTC_LOG(LS_INFO) << "1st next_send_time_ms=" << target_send_time.ms();
   if (now + early_execute_margin < target_send_time) {
     // We are too early, but if queue is empty still allow draining some debt.
     // Probing is allowed to be sent up to kMinSleepTime early.
@@ -498,7 +497,6 @@ void PacingController::ProcessPackets() {
       // Update target send time in case that are more packets that we are late
       // in processing.
       target_send_time = NextSendTime();
-      RTC_LOG(LS_INFO) << "2nd next_send_time_ms=" << target_send_time.ms();
       if (target_send_time > now) {
         // Exit loop if not probing.
         if (!is_probing) {
@@ -665,13 +663,10 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
     TimeDelta avg_time_left =
         std::max(TimeDelta::Millis(1),
                  queue_time_limit_ - packet_queue_.AverageQueueTime());
-    RTC_LOG(LS_INFO) << "avg_time_left_ms=" << avg_time_left.ms()
-                     << " queue_time_limit_ms=" << queue_time_limit_.ms()
-                     << " average_queue_time_ms=" << packet_queue_.AverageQueueTime().ms();
     DataRate min_rate_needed = queue_size_data / avg_time_left;
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
-      RTC_LOG(LS_INFO) << "bwe:large_pacing_queue pacing_rate_kbps="
+      RTC_LOG(LS_WARNING) << "bwe:large_pacing_queue pacing_rate_kbps="
                           << pacing_rate_.kbps()
                           << " adjusted_media_rate_kbps=" 
                           << adjusted_media_rate_.kbps();

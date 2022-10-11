@@ -20,6 +20,7 @@
 #include "rtc_base/experiments/field_trial_units.h"
 #include "rtc_base/system/unused.h"
 #include "rtc_base/trace_event.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -252,6 +253,7 @@ void TaskQueuePacedSender::MaybeProcessPackets(
   }
 
   Timestamp next_send_time = pacing_controller_.NextSendTime();
+  RTC_LOG(LS_INFO) << "next_send_time_ms=" << next_send_time.ms();
   RTC_DCHECK(next_send_time.IsFinite());
   const Timestamp now = clock_->CurrentTime();
   TimeDelta early_execute_margin =
@@ -263,6 +265,7 @@ void TaskQueuePacedSender::MaybeProcessPackets(
   while (next_send_time <= now + early_execute_margin) {
     pacing_controller_.ProcessPackets();
     next_send_time = pacing_controller_.NextSendTime();
+    RTC_LOG(LS_INFO) << "next_send_time_ms=" << next_send_time.ms();
     RTC_DCHECK(next_send_time.IsFinite());
 
     // Probing state could change. Get margin after process packets.
