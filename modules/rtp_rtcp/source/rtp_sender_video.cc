@@ -640,7 +640,7 @@ bool RTPSenderVideo::SendVideo(
            "one is required since require_frame_encryptor is set";
   }
 
-  RTC_LOG(LS_INFO) << "Start Packetizing - Key frame=" << video_header.frame_type == VideoFrameType::kVideoFrameKey;
+  RTC_LOG(LS_INFO) << "Start Packetizing - Key frame=" << (video_header.frame_type == VideoFrameType::kVideoFrameKey);
 
   std::unique_ptr<RtpPacketizer> packetizer =
       RtpPacketizer::Create(codec_type, payload, limits, video_header);
@@ -729,7 +729,7 @@ bool RTPSenderVideo::SendVideo(
     }
   }
 
-  RTC_LOG(LS_INFO) << "Send to network - Key frame=" << video_header.frame_type == VideoFrameType::kVideoFrameKey;
+  RTC_LOG(LS_INFO) << "Send to network - Key frame=" << (video_header.frame_type == VideoFrameType::kVideoFrameKey);
 
   LogAndSendToNetwork(std::move(rtp_packets), payload.size());
 
