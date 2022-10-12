@@ -204,10 +204,6 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     // packet.
     Timestamp target_process_time = now;
     Timestamp next_send_time = NextSendTime();
-    RTC_LOG(LS_INFO) << "Key frame=" << packet->is_key_frame()
-                     << " capture time_ms=" << packet->capture_time().ms()
-                     << " target_process_time_ms=" << target_process_time.ms()
-                     << " next_send_time_ms" << next_send_time.ms();
     if (next_send_time.IsFinite()) {
       // There was already a valid planned send time, such as a keep-alive.
       // Use that as last process time only if it's prior to now.
@@ -328,9 +324,6 @@ Timestamp PacingController::NextSendTime() const {
 
   if (congested_ || !seen_first_packet_) {
     // We need to at least send keep-alive packets with some interval.
-    RTC_LOG(LS_INFO) << "seen_first_packet=" << seen_first_packet_
-                     << " congested=" << congested_
-                     << " next_send_time_ms=" << last_send_time_ + kCongestedPacketInterval;
     return last_send_time_ + kCongestedPacketInterval;
   }
 
@@ -357,8 +350,6 @@ Timestamp PacingController::NextSendTime() const {
       drain_time = TimeDelta::Micros(1);
     }
     next_send_time = last_process_time_ + drain_time;
-    RTC_LOG(LS_INFO) << "no pending packets, drain_time_ms=" << drain_time.ms()
-                     << " next_send_time_ms=" << next_send_time.ms();
   } else {
     // Nothing to do.
     next_send_time = last_process_time_ + kPausedProcessInterval;
@@ -407,7 +398,6 @@ void PacingController::ProcessPackets() {
     // We are too early, but if queue is empty still allow draining some debt.
     // Probing is allowed to be sent up to kMinSleepTime early.
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(now));
-    RTC_LOG(LS_INFO) << "We are too early, but if queue is empty still allow draining some debt. Probing is allowed to be sent up to kMinSleepTime early.";
     return;
   }
 
@@ -628,9 +618,6 @@ void PacingController::OnPacketSent(RtpPacketMediaType packet_type,
   }
 
   last_send_time_ = send_time;
-  if (!audio_packet)
-    RTC_LOG(LS_INFO) << "packet_sent_time_ms=" << send_time.ms()
-                     << " packet type=" << packet_type;
 }
 
 void PacingController::UpdateBudgetWithElapsedTime(TimeDelta delta) {

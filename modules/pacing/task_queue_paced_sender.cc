@@ -253,7 +253,6 @@ void TaskQueuePacedSender::MaybeProcessPackets(
   }
 
   Timestamp next_send_time = pacing_controller_.NextSendTime();
-  RTC_LOG(LS_INFO) << "next_send_time_ms=" << next_send_time.ms();
   RTC_DCHECK(next_send_time.IsFinite());
   const Timestamp now = clock_->CurrentTime();
   TimeDelta early_execute_margin =

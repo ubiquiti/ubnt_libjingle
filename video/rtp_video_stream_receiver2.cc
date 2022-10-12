@@ -662,8 +662,6 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
 
   rtcp_feedback_buffer_.SendBufferedRtcpFeedback();
   frame_counter_.Add(packet->timestamp);
-  if (video.is_first_packet_in_frame || video_header.is_last_packet_in_frame) 
-    RTC_LOG(LS_INFO) << "OnInsertedPacket";
   OnInsertedPacket(packet_buffer_.InsertPacket(std::move(packet)));
 }
 
