@@ -533,6 +533,11 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
   video_header.video_timing.flags = VideoSendTiming::kInvalid;
   video_header.is_last_packet_in_frame |= rtp_packet.Marker();
 
+  if (video.is_first_packet_in_frame || video_header.is_last_packet_in_frame)
+    RTC_LOG(LS_INFO) << "OnReceivedPayloadData - key frame=" << (packet->video_header.frame_type == VideoFrameType::kVideoFrameKey)
+                    << " is_first_packet_in_frame=" << video.is_first_packet_in_frame
+                    << " is_last_packet_in_frame=" << video_header.is_last_packet_in_frame;
+
   rtp_packet.GetExtension<VideoOrientation>(&video_header.rotation);
   rtp_packet.GetExtension<VideoContentTypeExtension>(
       &video_header.content_type);
@@ -657,6 +662,8 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
 
   rtcp_feedback_buffer_.SendBufferedRtcpFeedback();
   frame_counter_.Add(packet->timestamp);
+  if (video.is_first_packet_in_frame || video_header.is_last_packet_in_frame) 
+    RTC_LOG(LS_INFO) << "OnInsertedPacket";
   OnInsertedPacket(packet_buffer_.InsertPacket(std::move(packet)));
 }
 
@@ -820,6 +827,8 @@ void RtpVideoStreamReceiver2::OnAssembledFrame(
     std::unique_ptr<RtpFrameObject> frame) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   RTC_DCHECK(frame);
+
+  RTC_LOG(LS_INFO) << "OnAssembledFrame - Key frame=" << (frame->FrameType() == VideoFrameType::kVideoFrameKey);
 
   const absl::optional<RTPVideoHeader::GenericDescriptorInfo>& descriptor =
       frame->GetRtpVideoHeader().generic;

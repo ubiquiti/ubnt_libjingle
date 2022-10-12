@@ -619,7 +619,6 @@ public class EglRenderer implements VideoSink {
       } else if (minRenderPeriodNs <= 0) {
         // FPS reduction is disabled.
         shouldRenderFrame = true;
-        logW("FPS reduction is disabled");
       } else {
         final long currentTimeNs = System.nanoTime();
         if (currentTimeNs < nextFrameTimeNs) {
@@ -669,7 +668,6 @@ public class EglRenderer implements VideoSink {
         final long swapBuffersStartTimeNs = System.nanoTime();
         if (usePresentationTimeStamp) {
           eglBase.swapBuffers(frame.getTimestampNs());
-          logW(" Use PresentationTimeStamp - render frame");
         } else {
           eglBase.swapBuffers();
           logW(" render frame timestamp=" + frame.getTimestampNs() / 1000000);
