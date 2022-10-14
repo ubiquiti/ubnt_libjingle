@@ -55,6 +55,9 @@ class FrameDropper {
   //          - bitrate       : The target bit rate.
   void SetRates(float bitrate, float incoming_frame_rate);
 
+  // UI customized
+  void GetReducedBits(uint32_t *reduced_bits);
+
  private:
   void UpdateRatio();
   void CapAccumulator();
@@ -87,6 +90,9 @@ class FrameDropper {
   bool was_below_max_;
   bool enabled_;
   const float max_drop_duration_secs_;
+
+  // UI customization
+  float accumulated_reduced_kbits_;
 };
 
 }  // namespace webrtc

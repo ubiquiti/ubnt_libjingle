@@ -72,6 +72,12 @@ class RTC_EXPORT VideoBitrateAllocation {
     // Round down to not exceed the allocated bitrate.
     return sum_ / 1000;
   }
+  
+  // UI customization
+  void reduce_sum_bits(uint64_t bits) const { 
+    if (sum_ > bits)
+      sum_ -= bits; 
+  }
 
   bool operator==(const VideoBitrateAllocation& other) const;
   inline bool operator!=(const VideoBitrateAllocation& other) const {
@@ -86,7 +92,7 @@ class RTC_EXPORT VideoBitrateAllocation {
   bool is_bw_limited() const { return is_bw_limited_; }
 
  private:
-  uint32_t sum_;
+  mutable uint32_t sum_;
   absl::optional<uint32_t> bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
   bool is_bw_limited_;
 };

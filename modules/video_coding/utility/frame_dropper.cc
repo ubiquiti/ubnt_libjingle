@@ -46,7 +46,8 @@ FrameDropper::FrameDropper()
       delta_frame_size_avg_kbits_(kDefaultFrameSizeAlpha),
       drop_ratio_(kDefaultDropRatioAlpha, kDefaultDropRatioValue),
       enabled_(true),
-      max_drop_duration_secs_(kDefaultMaxDropDurationSecs) {
+      max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
+      accumulated_reduced_kbits_(0.0f) {
   Reset();
 }
 
@@ -163,6 +164,8 @@ void FrameDropper::UpdateRatio() {
     }
     drop_ratio_.Apply(1.0f, 1.0f);
     drop_ratio_.UpdateBase(0.9f);
+    // UI customization, the drop_ratio_ will greater than 0, so we have to reduce bitrate
+    accumulated_reduced_kbits_ += (accumulator_ - accumulator_max_);
   } else {
     drop_ratio_.Apply(1.0f, 0.0f);
   }
@@ -253,6 +256,11 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
   target_bitrate_ = bitrate;
   CapAccumulator();
   incoming_frame_rate_ = incoming_frame_rate;
+}
+
+void FrameDropper::GetReducedBits(uint32_t *reduced_bits) {
+  *reduced_bits = accumulated_reduced_kbits_ * 1000;
+  accumulated_reduced_kbits_ = 0.0f;
 }
 
 // Put a cap on the accumulator, i.e., don't let it grow beyond some level.
