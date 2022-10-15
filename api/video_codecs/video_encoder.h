@@ -280,7 +280,7 @@ class RTC_EXPORT VideoEncoder {
     // interpreted as framerate target not available. In this case the encoder
     // should fall back to the max framerate specified in `codec_settings` of
     // the last InitEncode() call.
-    double framerate_fps;
+    mutable double framerate_fps;
     // The network bandwidth available for video. This is at least
     // `bitrate.get_sum_bps()`, but may be higher if the application is not
     // network constrained.

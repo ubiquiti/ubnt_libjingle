@@ -57,7 +57,7 @@ class FrameDropper {
 
   // UI customized
   void GetReducedBits(uint32_t *reduced_bits);
-  bool NeedReducingFps() { return reduced_frames_-- > 0; };
+  uint32_t NeedReducingFps() { return reduced_frames_; }
 
  private:
   void UpdateRatio();

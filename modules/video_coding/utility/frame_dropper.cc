@@ -205,11 +205,13 @@ bool FrameDropper::DropFrame() {
     }
     if (drop_count_ < limit) {
       // UI customization
-      reduced_frames_ += (limit - drop_count_);
+      reduced_frames_ = limit - drop_count_;
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
     } else {
+      // UI customization
+      reduced_frames_ = 0;
       // Only when we reset drop_count_ a frame should be kept.
       drop_count_ = 0;
       return false;
@@ -232,11 +234,13 @@ bool FrameDropper::DropFrame() {
     if (drop_count_ > limit) {
       if (drop_count_ == 0) {
         // UI customization
-        reduced_frames_++;
+        reduced_frames_ = 1;
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;
       } else {
+        // UI customization
+        reduced_frames_ = 0;
         // Keep frames as long as we haven't reached limit.
         drop_count_--;
         return false;
