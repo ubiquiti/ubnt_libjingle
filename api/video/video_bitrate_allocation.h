@@ -22,6 +22,8 @@
 #include "api/video/video_codec_constants.h"
 #include "rtc_base/system/rtc_export.h"
 
+#define kReduceBitsPerSec 100000
+
 namespace webrtc {
 
 // Class that describes how video bitrate, in bps, is allocated across temporal
@@ -75,12 +77,16 @@ class RTC_EXPORT VideoBitrateAllocation {
   
   // UI customization
   void reduce_sum_bits(uint64_t bits) const { 
-    if (sum_ > (bits + remaining_bits_))
-      sum_ -= (bits + remaining_bits_);
-    else {
-      remaining_bits_ = bits + remaining_bits_ - sum_;
-      sum_ = 100000;  // force to 100kbps
+    remaining_bits_ += bits;
+    if (remaining_bits_ > kReduceBitsPerSec) {
+      sum_ -= kReduceBitsPerSec; // reduce 100kbps
+      remaining_bits_ -= kReduceBitsPerSec;
+    } else {
+      sum_ -= remaining_bits_;
+      remaining_bits_ = 0;
     }
+    if (sum_ < kReduceBitsPerSec)
+      sum_ = kReduceBitsPerSec;
   }
 
   bool operator==(const VideoBitrateAllocation& other) const;
@@ -94,12 +100,15 @@ class RTC_EXPORT VideoBitrateAllocation {
   // low available bandwidth.
   void set_bw_limited(bool limited) { is_bw_limited_ = limited; }
   bool is_bw_limited() const { return is_bw_limited_; }
+  
+  // UI customization
+  bool has_remaining_bits() const { return (remaining_bits_ > 0); }
 
  private:
   mutable uint32_t sum_;
   absl::optional<uint32_t> bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
   bool is_bw_limited_;
-  uint32_t remaining_bits_;
+  mutable uint32_t remaining_bits_;
 };
 
 }  // namespace webrtc

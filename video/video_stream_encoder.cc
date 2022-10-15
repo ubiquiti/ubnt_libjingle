@@ -1602,10 +1602,11 @@ void VideoStreamEncoder::SetEncoderRates(
     { // UI customization
       uint32_t reduced_bits = 0;
       frame_dropper_.GetReducedBits(&reduced_bits);
-      if (reduced_kbits > 0) {
-        RTC_LOG(LS_INFO) << "reduced_bits=" << reduced_bits;
+      if (reduced_bits > 0) {
+        RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
         rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
       }
+      force_update_bitrate_ = rate_settings.rate_control.bitrate.has_remaining_bits();
     }
     encoder_->SetRates(rate_settings.rate_control);
 
@@ -1782,8 +1783,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
     accumulated_update_rect_is_valid_ &= video_frame.has_update_rect();
     return;
 #endif
-  } else
-    force_update_bitrate_ = false;  // // UI customization
+  }
 
   EncodeVideoFrame(video_frame, time_when_posted_us);
 }
