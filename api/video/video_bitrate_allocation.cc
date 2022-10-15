@@ -19,7 +19,7 @@
 namespace webrtc {
 
 VideoBitrateAllocation::VideoBitrateAllocation()
-    : sum_(0), is_bw_limited_(false) {}
+    : sum_(0), is_bw_limited_(false), remaining_bits_(0) {}
 
 bool VideoBitrateAllocation::SetBitrate(size_t spatial_index,
                                         size_t temporal_index,

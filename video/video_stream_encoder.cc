@@ -1602,8 +1602,10 @@ void VideoStreamEncoder::SetEncoderRates(
     { // UI customization
       uint32_t reduced_bits = 0;
       frame_dropper_.GetReducedBits(&reduced_bits);
-      RTC_LOG(LS_INFO) << "reduced_kbits=" << reduced_bits / 1000;
-      rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
+      if (reduced_kbits > 0) {
+        RTC_LOG(LS_INFO) << "reduced_bits=" << reduced_bits;
+        rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
+      }
     }
     encoder_->SetRates(rate_settings.rate_control);
 

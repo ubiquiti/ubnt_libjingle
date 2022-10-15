@@ -75,8 +75,12 @@ class RTC_EXPORT VideoBitrateAllocation {
   
   // UI customization
   void reduce_sum_bits(uint64_t bits) const { 
-    if (sum_ > bits)
-      sum_ -= bits; 
+    if (sum_ > (bits + remaining_bits_))
+      sum_ -= (bits + remaining_bits_);
+    else {
+      remaining_bits_ = bits + remaining_bits_ - sum_;
+      sum_ = 100000;  // force to 100kbps
+    }
   }
 
   bool operator==(const VideoBitrateAllocation& other) const;
@@ -95,6 +99,7 @@ class RTC_EXPORT VideoBitrateAllocation {
   mutable uint32_t sum_;
   absl::optional<uint32_t> bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
   bool is_bw_limited_;
+  uint32_t remaining_bits_;
 };
 
 }  // namespace webrtc
