@@ -1606,6 +1606,8 @@ void VideoStreamEncoder::SetEncoderRates(
         RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
         rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
       }
+      if (frame_dropper_.NeedReducingFps())
+        rate_settings.rate_control.framerate_fps--;
       force_update_bitrate_ = rate_settings.rate_control.bitrate.has_remaining_bits();
     }
     encoder_->SetRates(rate_settings.rate_control);

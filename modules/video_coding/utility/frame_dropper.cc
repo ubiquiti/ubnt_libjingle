@@ -47,7 +47,8 @@ FrameDropper::FrameDropper()
       drop_ratio_(kDefaultDropRatioAlpha, kDefaultDropRatioValue),
       enabled_(true),
       max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
-      accumulated_reduced_kbits_(0.0f) {
+      accumulated_reduced_kbits_(0.0f),
+      reduced_frames_(0) {
   Reset();
 }
 
@@ -203,6 +204,8 @@ bool FrameDropper::DropFrame() {
       drop_count_ = -drop_count_;
     }
     if (drop_count_ < limit) {
+      // UI customization
+      reduced_frames_ += (limit - drop_count_);
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
@@ -228,6 +231,8 @@ bool FrameDropper::DropFrame() {
     }
     if (drop_count_ > limit) {
       if (drop_count_ == 0) {
+        // UI customization
+        reduced_frames_++;
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;

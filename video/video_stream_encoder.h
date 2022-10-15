@@ -469,6 +469,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
 
   // UI customization
   bool force_update_bitrate_;
+  uint32_t reduced_frames_;
 };
 
 }  // namespace webrtc

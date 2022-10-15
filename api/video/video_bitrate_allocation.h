@@ -22,7 +22,8 @@
 #include "api/video/video_codec_constants.h"
 #include "rtc_base/system/rtc_export.h"
 
-#define kReduceBitsPerSec 100000
+#define kReduceBurstBitsPerSec 500000 // 500kbps
+#define kReduceBitsPerSec 100000  // 100kbps
 
 namespace webrtc {
 
@@ -65,7 +66,7 @@ class RTC_EXPORT VideoBitrateAllocation {
 
   // Returns one VideoBitrateAllocation for each spatial layer. This is used to
   // configure simulcast streams. Note that the length of the returned vector is
-  // always kMaxSpatialLayers, the optional is unset for unused layers.
+  // always kMaxSpatialLayers, the optional ivs unset for unused layers.
   std::vector<absl::optional<VideoBitrateAllocation>> GetSimulcastAllocations()
       const;
 
@@ -78,7 +79,10 @@ class RTC_EXPORT VideoBitrateAllocation {
   // UI customization
   void reduce_sum_bits(uint64_t bits) const { 
     remaining_bits_ += bits;
-    if (remaining_bits_ > kReduceBitsPerSec) {
+    if (remaining_bits_ > kReduceBurstBitsPerSec) {
+      sum_ -= kReduceBurstBitsPerSec; // reduce 500kbps
+      remaining_bits_ -= kReduceBurstBitsPerSec;
+    } else if (remaining_bits_ > kReduceBitsPerSec) {
       sum_ -= kReduceBitsPerSec; // reduce 100kbps
       remaining_bits_ -= kReduceBitsPerSec;
     } else {
