@@ -2510,11 +2510,4 @@ void VideoStreamEncoder::RemoveRestrictionsListenerForTesting(
   event.Wait(rtc::Event::kForever);
 }
 
-// UI customization
-void VideoStreamEncoder::reduce_bits(uint64_t bits) {
-  
-  if (sum_ < kReduceBitsPerSec)
-    sum_ = kReduceBitsPerSec;
-}
-
 }  // namespace webrtc
