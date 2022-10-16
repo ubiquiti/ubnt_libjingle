@@ -53,6 +53,9 @@
 #include "video/alignment_adjuster.h"
 #include "video/frame_cadence_adapter.h"
 
+#define kReduceBurstBitsPerSec 500000 // 500kbps
+#define kReduceBitsPerSec 100000  // 100kbps
+
 namespace webrtc {
 
 namespace {
@@ -694,7 +697,8 @@ VideoStreamEncoder::VideoStreamEncoder(
           kSwitchEncoderOnInitializationFailuresFieldTrial)),
       vp9_low_tier_core_threshold_(
           ParseVp9LowTierCoreCountThreshold(field_trials)),
-      encoder_queue_(std::move(encoder_queue)) {
+      encoder_queue_(std::move(encoder_queue)),
+      remaining_bits_(0) {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
@@ -1525,6 +1529,17 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     frame_dropper_.GetReducedBits(&reduced_bits);
     if (reduced_bits > 0) {
       RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
+      remaining_bits_ += bits;
+      if (remaining_bits_ > kReduceBurstBitsPerSec) {
+        reduced_bits = kReduceBurstBitsPerSec;
+        remaining_bits_ -= kReduceBurstBitsPerSec;
+      } else if (remaining_bits_ > kReduceBitsPerSec) {
+        reduced_bits = kReduceBitsPerSec; // reduce 100kbps
+        remaining_bits_ -= kReduceBitsPerSec;
+      } else {
+        reduced_bits = remaining_bits_;
+        remaining_bits_ = 0;
+      }
       new_rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
     }
   }
@@ -2509,6 +2524,13 @@ void VideoStreamEncoder::RemoveRestrictionsListenerForTesting(
     event.Set();
   });
   event.Wait(rtc::Event::kForever);
+}
+
+// UI customization
+void VideoStreamEncoder::reduce_bits(uint64_t bits) {
+  
+  if (sum_ < kReduceBitsPerSec)
+    sum_ = kReduceBitsPerSec;
 }
 
 }  // namespace webrtc

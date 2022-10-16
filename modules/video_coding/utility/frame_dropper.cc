@@ -146,6 +146,8 @@ void FrameDropper::Leak(uint32_t input_framerate) {
   if (accumulator_ < 0.0f) {
     accumulator_ = 0.0f;
   }
+  // UI customization
+  accumulated_reduced_kbits_ += (accumulator_ - accumulator_max_);
   UpdateRatio();
 }
 
@@ -165,8 +167,6 @@ void FrameDropper::UpdateRatio() {
     }
     drop_ratio_.Apply(1.0f, 1.0f);
     drop_ratio_.UpdateBase(0.9f);
-    // UI customization, the drop_ratio_ will greater than 0, so we have to reduce bitrate
-    accumulated_reduced_kbits_ += (accumulator_ - accumulator_max_);
   } else {
     drop_ratio_.Apply(1.0f, 0.0f);
   }

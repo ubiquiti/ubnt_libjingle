@@ -22,7 +22,6 @@
 #include "api/video/video_codec_constants.h"
 #include "rtc_base/system/rtc_export.h"
 
-#define kReduceBurstBitsPerSec 500000 // 500kbps
 #define kReduceBitsPerSec 100000  // 100kbps
 
 namespace webrtc {
@@ -78,17 +77,7 @@ class RTC_EXPORT VideoBitrateAllocation {
   
   // UI customization
   void reduce_sum_bits(uint64_t bits) { 
-    remaining_bits_ += bits;
-    if (remaining_bits_ > kReduceBurstBitsPerSec) {
-      sum_ -= kReduceBurstBitsPerSec; // reduce 500kbps
-      remaining_bits_ -= kReduceBurstBitsPerSec;
-    } else if (remaining_bits_ > kReduceBitsPerSec) {
-      sum_ -= kReduceBitsPerSec; // reduce 100kbps
-      remaining_bits_ -= kReduceBitsPerSec;
-    } else {
-      sum_ -= remaining_bits_;
-      remaining_bits_ = 0;
-    }
+    sum_ -= bits;
     if (sum_ < kReduceBitsPerSec)
       sum_ = kReduceBitsPerSec;
   }
@@ -109,7 +98,6 @@ class RTC_EXPORT VideoBitrateAllocation {
   uint32_t sum_;
   absl::optional<uint32_t> bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
   bool is_bw_limited_;
-  uint64_t remaining_bits_;
 };
 
 }  // namespace webrtc
