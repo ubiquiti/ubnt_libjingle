@@ -12,6 +12,9 @@
 
 #include <algorithm>
 
+#define kReduceBurstKiloBitsPerSec 500 // 500kbps
+#define kReduceKiloBitsPerSec 100  // 100kbps
+
 namespace webrtc {
 
 namespace {
@@ -267,9 +270,18 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
   incoming_frame_rate_ = incoming_frame_rate;
 }
 
-void FrameDropper::GetReducedBits(uint32_t *reduced_bits) {
-  *reduced_bits = accumulated_reduced_kbits_ * 1000;
-  accumulated_reduced_kbits_ = 0.0f;
+uint32_t FrameDropper::GetReducedBits() {
+  uint32_t reduced_bits = accumulated_reduced_kbits_ * 1000;
+  if (accumulated_reduced_kbits_ > kReduceBurstKiloBitsPerSec) {
+    reduced_bits = kReduceBurstKiloBitsPerSec * 1000;
+    accumulated_reduced_kbits_ -= kReduceBurstKiloBitsPerSec;
+  } else if (accumulated_reduced_kbits_ > kReduceKiloBitsPerSec) {
+    reduced_bits = kReduceKiloBitsPerSec * 1000;
+    accumulated_reduced_kbits_ -= kReduceKiloBitsPerSec;
+  } else {
+    accumulated_reduced_kbits_ = 0;
+  }
+  return reduced_bits;
 }
 
 // Put a cap on the accumulator, i.e., don't let it grow beyond some level.
