@@ -112,7 +112,7 @@ class RTC_EXPORT VideoBitrateAllocation {
   mutable uint32_t sum_;
   absl::optional<uint32_t> bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
   bool is_bw_limited_;
-  mutable uint32_t remaining_bits_;
+  mutable uint64_t remaining_bits_;
 };
 
 }  // namespace webrtc

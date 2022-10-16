@@ -468,7 +468,6 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   rtc::TaskQueue encoder_queue_;
 
   // UI customization
-  bool force_update_bitrate_;
   uint32_t reduced_frames_;
 };
 
