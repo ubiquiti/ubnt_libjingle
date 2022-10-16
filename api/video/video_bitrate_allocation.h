@@ -77,7 +77,7 @@ class RTC_EXPORT VideoBitrateAllocation {
   }
   
   // UI customization
-  void reduce_sum_bits(uint64_t bits) const { 
+  void reduce_sum_bits(uint64_t bits) { 
     remaining_bits_ += bits;
     if (remaining_bits_ > kReduceBurstBitsPerSec) {
       sum_ -= kReduceBurstBitsPerSec; // reduce 500kbps
@@ -104,15 +104,12 @@ class RTC_EXPORT VideoBitrateAllocation {
   // low available bandwidth.
   void set_bw_limited(bool limited) { is_bw_limited_ = limited; }
   bool is_bw_limited() const { return is_bw_limited_; }
-  
-  // UI customization
-  bool has_remaining_bits() const { return (remaining_bits_ > 0); }
 
  private:
-  mutable uint32_t sum_;
+  uint32_t sum_;
   absl::optional<uint32_t> bitrates_[kMaxSpatialLayers][kMaxTemporalStreams];
   bool is_bw_limited_;
-  mutable uint64_t remaining_bits_;
+  uint64_t remaining_bits_;
 };
 
 }  // namespace webrtc

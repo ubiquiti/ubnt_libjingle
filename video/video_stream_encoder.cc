@@ -1520,6 +1520,14 @@ VideoStreamEncoder::UpdateBitrateAllocation(
   EncoderRateSettings new_rate_settings = rate_settings;
   new_rate_settings.rate_control.target_bitrate = new_allocation;
   new_rate_settings.rate_control.bitrate = new_allocation;
+  { // UI customization
+    uint32_t reduced_bits = 0;
+    frame_dropper_.GetReducedBits(&reduced_bits);
+    if (reduced_bits > 0) {
+      RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
+      new_rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
+    }
+  }
   // VideoBitrateAllocator subclasses may allocate a bitrate higher than the
   // target in order to sustain the min bitrate of the video codec. In this
   // case, make sure the bandwidth allocation is at least equal the allocation
@@ -1553,6 +1561,12 @@ uint32_t VideoStreamEncoder::GetInputFramerateFps() {
                              : absl::nullopt;
   if (!input_fps || *input_fps == 0) {
     return default_fps;
+  }
+  { // UI customization
+    if (uint32_t reduced_frames = frame_dropper_.NeedReducingFps())
+      *input_fps = *input_fps - reduced_frames;
+    if (*input_fps <= 0)
+      return default_fps;
   }
   return *input_fps;
 }
@@ -2206,23 +2220,11 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   }
 
   uint32_t framerate_fps = GetInputFramerateFps();
-  { // UI customization
-    if (uint32_t reduced_frames = frame_dropper_.NeedReducingFps())
-      framerate_fps -= reduced_frames;
-  }
   frame_dropper_.SetRates((target_bitrate.bps() + 500) / 1000, framerate_fps);
 
   EncoderRateSettings new_rate_settings{
       VideoBitrateAllocation(), static_cast<double>(framerate_fps),
       link_allocation, target_bitrate, stable_target_bitrate};
-  { // UI customization
-    uint32_t reduced_bits = 0;
-    frame_dropper_.GetReducedBits(&reduced_bits);
-    if (reduced_bits > 0) {
-      RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
-      new_rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
-    }
-  }
   SetEncoderRates(UpdateBitrateAllocation(new_rate_settings));
 
   if (target_bitrate.bps() != 0)
