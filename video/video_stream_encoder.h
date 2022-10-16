@@ -198,8 +198,8 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
     // later call to the same allocator instance, e.g.
     // |using last_encoder_rate_setings_->bitrate.get_sum_bps()|, may trick it
     // into thinking the available bitrate has decreased since the last call.
-    DataRate encoder_target;
-    DataRate stable_encoder_target;
+    mutable DataRate encoder_target;
+    mutable DataRate stable_encoder_target;
   };
 
   class DegradationPreferenceManager;
@@ -468,7 +468,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   rtc::TaskQueue encoder_queue_;
 
   // UI customization
-  uint32_t reduced_frames_;
+  bool force_update_rate_;
 };
 
 }  // namespace webrtc

@@ -694,7 +694,8 @@ VideoStreamEncoder::VideoStreamEncoder(
           kSwitchEncoderOnInitializationFailuresFieldTrial)),
       vp9_low_tier_core_threshold_(
           ParseVp9LowTierCoreCountThreshold(field_trials)),
-      encoder_queue_(std::move(encoder_queue)) {
+      encoder_queue_(std::move(encoder_queue)),
+      force_update_rate_(false) {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
@@ -1508,6 +1509,19 @@ void VideoStreamEncoder::TraceFrameDropEnd() {
 VideoStreamEncoder::EncoderRateSettings
 VideoStreamEncoder::UpdateBitrateAllocation(
     const EncoderRateSettings& rate_settings) {
+  // UI customization
+  uint32_t reduced_bits = frame_dropper_.GetReducedBits();
+  {
+    if (reduced_bits > 0) {
+      RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
+      rate_settings.encoder_target = DataRate::BitsPerSec(rate_settings.encoder_target.bps() - reduced_bits);
+      rate_settings.stable_encoder_target = DataRate::BitsPerSec(rate_settings.stable_encoder_target.bps() - reduced_bits);
+    } else
+      force_update_rate_ = false;
+    // uint32_t reduced_frames = frame_dropper_.NeedReducingFps();
+    // if (rate_settings.rate_control.framerate_fps > reduced_frames)
+    //   rate_settings.rate_control.framerate_fps -= reduced_frames;
+  }
   VideoBitrateAllocation new_allocation;
   // Only call allocators if bitrate > 0 (ie, not suspended), otherwise they
   // might cap the bitrate to the min bitrate configured.
@@ -1520,13 +1534,6 @@ VideoStreamEncoder::UpdateBitrateAllocation(
   EncoderRateSettings new_rate_settings = rate_settings;
   new_rate_settings.rate_control.target_bitrate = new_allocation;
   new_rate_settings.rate_control.bitrate = new_allocation;
-  { // UI customization
-    uint32_t reduced_bits = frame_dropper_.GetReducedBits();
-    if (reduced_bits > 0) {
-      RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
-      new_rate_settings.rate_control.bitrate.reduce_sum_bits(reduced_bits);
-    }
-  }
   // VideoBitrateAllocator subclasses may allocate a bitrate higher than the
   // target in order to sustain the min bitrate of the video codec. In this
   // case, make sure the bandwidth allocation is at least equal the allocation
@@ -1560,12 +1567,6 @@ uint32_t VideoStreamEncoder::GetInputFramerateFps() {
                              : absl::nullopt;
   if (!input_fps || *input_fps == 0) {
     return default_fps;
-  }
-  { // UI customization
-    if (uint32_t reduced_frames = frame_dropper_.NeedReducingFps())
-      *input_fps = *input_fps - reduced_frames;
-    if (*input_fps <= 0)
-      return default_fps;
   }
   return *input_fps;
 }
@@ -1688,7 +1689,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   if (pending_encoder_reconfiguration_) {
     ReconfigureEncoder();
     last_parameters_update_ms_.emplace(now_ms);
-  } else if (!last_parameters_update_ms_ ||
+  } else if (force_update_rate_ || !last_parameters_update_ms_ ||
              now_ms - *last_parameters_update_ms_ >=
                  kParameterUpdateIntervalMs) {
     if (last_encoder_rate_settings_) {
@@ -1770,6 +1771,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       !encoder_info_.has_trusted_rate_controller;
   frame_dropper_.Enable(frame_dropping_enabled);
   if (frame_dropping_enabled && frame_dropper_.DropFrame()) {
+    force_update_rate_ = true;
     RTC_LOG(LS_VERBOSE)
         << "Drop Frame: "
            "target bitrate "

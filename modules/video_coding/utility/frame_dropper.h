@@ -57,7 +57,6 @@ class FrameDropper {
 
   // UI customized
   uint32_t GetReducedBits();
-  uint32_t NeedReducingFps() { return reduced_frames_; }
 
  private:
   void UpdateRatio();
@@ -94,7 +93,6 @@ class FrameDropper {
 
   // UI customization
   float accumulated_reduced_kbits_;
-  uint32_t reduced_frames_;
 };
 
 }  // namespace webrtc
