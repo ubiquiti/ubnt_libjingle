@@ -1692,6 +1692,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
         RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
         new_rate_settings.encoder_target = DataRate::BitsPerSec(new_rate_settings.encoder_target.bps() - reduced_bits);
         new_rate_settings.stable_encoder_target = DataRate::BitsPerSec(new_rate_settings.stable_encoder_target.bps() - reduced_bits);
+        new_rate_settings.rate_control.framerate_fps -= frame_dropper_.DropFrames();
       }
       SetEncoderRates(UpdateBitrateAllocation(new_rate_settings));
     }
@@ -1712,9 +1713,9 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << "  Too large for target bitrate size="
                       << video_frame.size() << ". Avoid dropping frame";
-#if 0
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
+#if 0
     // Storing references to a native buffer risks blocking frame capture.
     if (video_frame.video_frame_buffer()->type() !=
         VideoFrameBuffer::Type::kNative) {
@@ -2213,6 +2214,14 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   }
 
   uint32_t framerate_fps = GetInputFramerateFps();
+  // UI customization
+  uint32_t reduced_bits = frame_dropper_.GetReducedBits();
+  if (reduced_bits > 0) {
+    RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
+    stable_target_bitrate = DataRate::BitsPerSec(stable_target_bitrate.bps() - reduced_bits);
+    target_bitrate = DataRate::BitsPerSec(target_bitrate.bps() - reduced_bits);
+    framerate_fps -= frame_dropper_.DropFrames();
+  }
   frame_dropper_.SetRates((target_bitrate.bps() + 500) / 1000, framerate_fps);
 
   EncoderRateSettings new_rate_settings{

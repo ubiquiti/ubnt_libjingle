@@ -50,7 +50,8 @@ FrameDropper::FrameDropper()
       enabled_(true),
       max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
       reduce_kbits_(0.0f),
-      expected_bits_per_frame_(0.0f) {
+      expected_bits_per_frame_(0.0f),
+      drop_frames_(0) {
   Reset();
 }
 
@@ -208,6 +209,7 @@ bool FrameDropper::DropFrame() {
     if (drop_count_ < limit) {
       // UI customization
       reduce_kbits_ += expected_bits_per_frame_;
+      drop_frames_++;
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
@@ -235,6 +237,7 @@ bool FrameDropper::DropFrame() {
       if (drop_count_ == 0) {
         // UI customization
         reduce_kbits_ += expected_bits_per_frame_;
+        drop_frames_++;
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;
