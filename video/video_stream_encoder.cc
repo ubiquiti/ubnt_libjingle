@@ -1509,19 +1509,6 @@ void VideoStreamEncoder::TraceFrameDropEnd() {
 VideoStreamEncoder::EncoderRateSettings
 VideoStreamEncoder::UpdateBitrateAllocation(
     const EncoderRateSettings& rate_settings) {
-  // UI customization
-  uint32_t reduced_bits = frame_dropper_.GetReducedBitsPerFrame();
-  {
-    if (reduced_bits > 0) {
-      RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
-      rate_settings.encoder_target = DataRate::BitsPerSec(rate_settings.encoder_target.bps() - reduced_bits);
-      rate_settings.stable_encoder_target = DataRate::BitsPerSec(rate_settings.stable_encoder_target.bps() - reduced_bits);
-    } else
-      force_update_rate_ = false;
-    // uint32_t reduced_frames = frame_dropper_.NeedReducingFps();
-    // if (rate_settings.rate_control.framerate_fps > reduced_frames)
-    //   rate_settings.rate_control.framerate_fps -= reduced_frames;
-  }
   VideoBitrateAllocation new_allocation;
   // Only call allocators if bitrate > 0 (ie, not suspended), otherwise they
   // might cap the bitrate to the min bitrate configured.
@@ -1700,6 +1687,14 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       EncoderRateSettings new_rate_settings = *last_encoder_rate_settings_;
       new_rate_settings.rate_control.framerate_fps =
           static_cast<double>(framerate_fps);
+      // UI customization
+      uint32_t reduced_bits = frame_dropper_.GetReducedBitsPerFrame();
+      if (reduced_bits > 0) {
+        RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
+        new_rate_settings.encoder_target = DataRate::BitsPerSec(new_rate_settings.encoder_target.bps() - reduced_bits);
+        new_rate_settings.stable_encoder_target = DataRate::BitsPerSec(new_rate_settings.stable_encoder_target.bps() - reduced_bits);
+      } else
+        force_update_rate_ = false;
       SetEncoderRates(UpdateBitrateAllocation(new_rate_settings));
     }
     last_parameters_update_ms_.emplace(now_ms);
@@ -2226,6 +2221,14 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   EncoderRateSettings new_rate_settings{
       VideoBitrateAllocation(), static_cast<double>(framerate_fps),
       link_allocation, target_bitrate, stable_target_bitrate};
+  // UI customization
+  uint32_t reduced_bits = frame_dropper_.GetReducedBitsPerFrame();
+  if (reduced_bits > 0) {
+    RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
+    new_rate_settings.encoder_target = DataRate::BitsPerSec(new_rate_settings.encoder_target.bps() - reduced_bits);
+    new_rate_settings.stable_encoder_target = DataRate::BitsPerSec(new_rate_settings.stable_encoder_target.bps() - reduced_bits);
+  } else
+    force_update_rate_ = false;
   SetEncoderRates(UpdateBitrateAllocation(new_rate_settings));
 
   if (target_bitrate.bps() != 0)
