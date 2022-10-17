@@ -56,7 +56,7 @@ class FrameDropper {
   void SetRates(float bitrate, float incoming_frame_rate);
 
   // UI customized
-  uint32_t GetReducedBits();
+  uint32_t GetReducedBitsPerFrame();
 
  private:
   void UpdateRatio();

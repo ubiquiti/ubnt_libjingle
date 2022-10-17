@@ -260,14 +260,13 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
   incoming_frame_rate_ = incoming_frame_rate;
 }
 
-uint32_t FrameDropper::GetReducedBits() {
-  uint32_t reduced_bits = accumulated_reduced_kbits_ * 1000;
-  reduced_bits /= incoming_frame_rate_;
-  if (accumulated_reduced_kbits_ >= (reduced_bits * 1000))
-    accumulated_reduced_kbits_ -= (reduced_bits * 1000);
+uint32_t FrameDropper::GetReducedBitsPerFrame() {
+  float reduced_kbits = accumulated_reduced_kbits_ / incoming_frame_rate_;
+  if (accumulated_reduced_kbits_ >= reduced_kbits)
+    accumulated_reduced_kbits_ -= reduced_kbits;
   else
     accumulated_reduced_kbits_ = 0;
-  return reduced_bits;
+  return reduced_kbits * 1000;
 }
 
 // Put a cap on the accumulator, i.e., don't let it grow beyond some level.

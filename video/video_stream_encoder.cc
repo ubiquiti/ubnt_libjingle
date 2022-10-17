@@ -1510,10 +1510,10 @@ VideoStreamEncoder::EncoderRateSettings
 VideoStreamEncoder::UpdateBitrateAllocation(
     const EncoderRateSettings& rate_settings) {
   // UI customization
-  uint32_t reduced_bits = frame_dropper_.GetReducedBits();
+  uint32_t reduced_bits = frame_dropper_.GetReducedBitsPerFrame();
   {
     if (reduced_bits > 0) {
-      RTC_LOG(LS_INFO) << "reducing Kbps=" << reduced_bits / 1000.0f << "Kbps";
+      RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
       rate_settings.encoder_target = DataRate::BitsPerSec(rate_settings.encoder_target.bps() - reduced_bits);
       rate_settings.stable_encoder_target = DataRate::BitsPerSec(rate_settings.stable_encoder_target.bps() - reduced_bits);
     } else
