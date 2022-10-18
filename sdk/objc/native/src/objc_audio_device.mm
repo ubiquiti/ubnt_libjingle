@@ -112,7 +112,7 @@ int32_t ObjCAudioDeviceModule::Terminate() {
   }
 
   if ([audio_device_ isInitialized]) {
-    if (![audio_device_ terminate]) {
+    if (![audio_device_ terminateAudioDevice]) {
       RTC_LOG_F(LS_ERROR) << "Failed to terminate audio device";
       return -1;
     }

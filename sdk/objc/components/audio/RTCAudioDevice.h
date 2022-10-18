@@ -230,7 +230,7 @@ RTC_OBJC_EXPORT @protocol RTC_OBJC_TYPE
  * De-initializes RTCAudioDevice. Implementation should forget about `delegate` provided in
  * `initializeWithDelegate`.
  */
-- (BOOL)terminate;
+- (BOOL)terminateAudioDevice;
 
 /**
  * Property to indicate if `initializePlayout` call required before invocation of `startPlayout`.
