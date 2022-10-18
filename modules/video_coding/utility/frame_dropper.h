@@ -100,6 +100,7 @@ class FrameDropper {
   float reduce_kbits_;
   float expected_bits_per_frame_;
   uint32_t drop_frames_;
+  uint64_t prev_time_ms_;
 };
 
 }  // namespace webrtc

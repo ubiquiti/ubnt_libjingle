@@ -1689,7 +1689,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       // UI customization
       uint32_t reduced_bits = frame_dropper_.GetReducedBits();
       if (reduced_bits > 0) {
-        RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
+        RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] reducing bps=" << reduced_bits << "bps";
         new_rate_settings.encoder_target = DataRate::BitsPerSec(new_rate_settings.encoder_target.bps() - reduced_bits);
         new_rate_settings.stable_encoder_target = DataRate::BitsPerSec(new_rate_settings.stable_encoder_target.bps() - reduced_bits);
         new_rate_settings.rate_control.framerate_fps -= frame_dropper_.DropFrames();
@@ -2217,7 +2217,7 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   // UI customization
   uint32_t reduced_bits = frame_dropper_.GetReducedBits();
   if (reduced_bits > 0) {
-    RTC_LOG(LS_INFO) << "reducing bps=" << reduced_bits << "bps";
+    RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bps=" << reduced_bits << "bps";
     stable_target_bitrate = DataRate::BitsPerSec(stable_target_bitrate.bps() - reduced_bits);
     target_bitrate = DataRate::BitsPerSec(target_bitrate.bps() - reduced_bits);
     framerate_fps -= frame_dropper_.DropFrames();

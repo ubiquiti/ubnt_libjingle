@@ -9,6 +9,7 @@
  */
 
 #include "modules/video_coding/utility/frame_dropper.h"
+#include "rtc_base/time_utils.h"
 
 #include <algorithm>
 
@@ -51,7 +52,8 @@ FrameDropper::FrameDropper()
       max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
       reduce_kbits_(0.0f),
       expected_bits_per_frame_(0.0f),
-      drop_frames_(0) {
+      drop_frames_(0),
+      prev_time_ms_(0) {
   Reset();
 }
 
@@ -272,6 +274,13 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 uint32_t FrameDropper::GetReducedBits() {
   float reduced_kbits = reduce_kbits_;
   reduce_kbits_ = 0;
+  auto now_time_ms = rtc::TimeMillis();
+  if (prev_time_ms_ > 0) {
+    float interval = (now_time_ms - prev_time_ms_) / 1000.0f;
+    // scale the bps to 1 sec
+    reduced_kbits /= interval;
+  }
+  prev_time_ms_ = now_time_ms;
   return reduced_kbits * 1000;
 }
 
