@@ -13,7 +13,7 @@
 
 #include <algorithm>
 
-#define kReduceKiloBitsPerSec 100  // 100kbps
+#define kReduceKiloBitsPerSec 200  // 200kbps
 
 namespace webrtc {
 
@@ -52,7 +52,6 @@ FrameDropper::FrameDropper()
       max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
       reduce_kbits_(0.0f),
       expected_bits_per_frame_(0.0f),
-      drop_frames_(0),
       prev_time_ms_(0) {
   Reset();
 }
@@ -124,6 +123,8 @@ void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
     }
     key_frame_ratio_.Apply(1.0, 0.0);
   }
+  // UI customization
+  reduce_kbits_ += (framesize_kbits - expected_bits_per_frame_);
   // Change the level of the accumulator (bucket)
   accumulator_ += framesize_kbits;
   CapAccumulator();
@@ -209,9 +210,6 @@ bool FrameDropper::DropFrame() {
       drop_count_ = -drop_count_;
     }
     if (drop_count_ < limit) {
-      // UI customization
-      reduce_kbits_ += expected_bits_per_frame_;
-      drop_frames_++;
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
@@ -237,9 +235,6 @@ bool FrameDropper::DropFrame() {
     }
     if (drop_count_ > limit) {
       if (drop_count_ == 0) {
-        // UI customization
-        reduce_kbits_ += expected_bits_per_frame_;
-        drop_frames_++;
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;
@@ -272,14 +267,15 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 
 // UI customization
 uint32_t FrameDropper::GetReducedBits() {
-  float reduced_kbits = reduce_kbits_;
-  reduce_kbits_ = 0;
+  float reduced_kbits = kReduceKiloBitsPerSec;
   auto now_time_ms = rtc::TimeMillis();
   if (prev_time_ms_ > 0) {
     float interval = (now_time_ms - prev_time_ms_) / 1000.0f;
-    // scale the bps to 1 sec
-    reduced_kbits /= interval;
+    reduced_kbits = kReduceKiloBitsPerSec * interval;
   }
+  reduce_kbits_ -= reduced_kbits;
+  if (reduce_kbits_ < 0.0f)
+    reduce_kbits_ = 0.0f;
   prev_time_ms_ = now_time_ms;
   return reduced_kbits * 1000;
 }

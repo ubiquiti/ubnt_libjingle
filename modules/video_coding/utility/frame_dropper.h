@@ -57,11 +57,6 @@ class FrameDropper {
 
   // UI customized
   uint32_t GetReducedBits();
-  uint32_t DropFrames() {
-    uint32_t drop_frames = drop_frames_;
-    drop_frames_ = 0;
-    return drop_frames;
-  }
 
  private:
   void UpdateRatio();
@@ -99,7 +94,6 @@ class FrameDropper {
   // UI customization
   float reduce_kbits_;
   float expected_bits_per_frame_;
-  uint32_t drop_frames_;
   uint64_t prev_time_ms_;
 };
 
