@@ -267,15 +267,19 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 
 // UI customization
 uint32_t FrameDropper::GetReducedBits() {
+  if (reduce_kbits_ == 0)
+    return 0;
   float reduced_kbits = kReduceKiloBitsPerSec;
   auto now_time_ms = rtc::TimeMillis();
   if (prev_time_ms_ > 0) {
     float interval = (now_time_ms - prev_time_ms_) / 1000.0f;
+    // rescale to current inerval to guarantee we don't reduce the bitrate 
+    // exceed "kReduceKiloBitsPerSec" kbps.
     reduced_kbits = kReduceKiloBitsPerSec * interval;
   }
+  if (reduced_kbits > reduce_kbits_)
+    reduced_kbits = reduce_kbits_;
   reduce_kbits_ -= reduced_kbits;
-  if (reduce_kbits_ < 0.0f)
-    reduce_kbits_ = 0.0f;
   prev_time_ms_ = now_time_ms;
   return reduced_kbits * 1000;
 }
