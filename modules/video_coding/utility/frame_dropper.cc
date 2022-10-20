@@ -267,7 +267,7 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 
 // UI customization
 uint32_t FrameDropper::GetReducedBits() {
-  if (reduce_kbits_ == 0)
+  if (reduce_kbits_ <= 0)
     return 0;
   float reduced_kbits = kReduceKiloBitsPerSec;
   auto now_time_ms = rtc::TimeMillis();
