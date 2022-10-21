@@ -93,8 +93,8 @@ class FrameDropper {
 
   // UI customization
   float reduce_kbits_;
-  float expected_bits_per_frame_;
   uint64_t prev_time_ms_;
+  bool drop_frame_;
 };
 
 }  // namespace webrtc

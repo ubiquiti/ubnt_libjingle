@@ -51,8 +51,8 @@ FrameDropper::FrameDropper()
       enabled_(true),
       max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
       reduce_kbits_(0.0f),
-      expected_bits_per_frame_(0.0f),
-      prev_time_ms_(0) {
+      prev_time_ms_(0), 
+      drop_frame_(false) {
   Reset();
 }
 
@@ -124,7 +124,10 @@ void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
     key_frame_ratio_.Apply(1.0, 0.0);
   }
   // UI customization
-  reduce_kbits_ += (framesize_kbits - expected_bits_per_frame_);
+  if (drop_frame_) {
+    reduce_kbits_ += framesize_kbits;
+    drop_frame_ = false;
+  }
   // Change the level of the accumulator (bucket)
   accumulator_ += framesize_kbits;
   CapAccumulator();
@@ -152,8 +155,6 @@ void FrameDropper::Leak(uint32_t input_framerate) {
   if (accumulator_ < 0.0f) {
     accumulator_ = 0.0f;
   }
-  // UI customization
-  expected_bits_per_frame_ = expected_bits_per_frame;
   UpdateRatio();
 }
 
@@ -210,6 +211,8 @@ bool FrameDropper::DropFrame() {
       drop_count_ = -drop_count_;
     }
     if (drop_count_ < limit) {
+      // UI customization
+      drop_frame_ = true;
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
@@ -235,6 +238,8 @@ bool FrameDropper::DropFrame() {
     }
     if (drop_count_ > limit) {
       if (drop_count_ == 0) {
+        // UI customization
+        drop_frame_ = true;
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;
