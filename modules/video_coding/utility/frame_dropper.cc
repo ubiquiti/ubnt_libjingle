@@ -52,7 +52,8 @@ FrameDropper::FrameDropper()
       max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
       reduce_kbits_(0.0f),
       prev_time_ms_(0), 
-      drop_frame_(false) {
+      drop_frame_(false),
+      expected_bits_per_frame_(0.0f) {
   Reset();
 }
 
@@ -88,6 +89,9 @@ void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
     return;
   }
   float framesize_kbits = 8.0f * static_cast<float>(framesize_bytes) / 1000.0f;
+  // UI customization
+  if (!drop_frame_)
+    reduce_kbits_ += (framesize_kbits - expected_bits_per_frame_);
   if (!delta_frame) {
     key_frame_ratio_.Apply(1.0, 1.0);
     // Do not spread if we are already doing it (or we risk dropping bits that
@@ -125,7 +129,10 @@ void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
   }
   // UI customization
   if (drop_frame_) {
-    reduce_kbits_ += framesize_kbits;
+    if (framesize_kbits > 0)
+      reduce_kbits_ += framesize_kbits;
+    else
+      reduce_kbits_ += large_frame_accumulation_chunk_size_;
     drop_frame_ = false;
   }
   // Change the level of the accumulator (bucket)
@@ -155,6 +162,8 @@ void FrameDropper::Leak(uint32_t input_framerate) {
   if (accumulator_ < 0.0f) {
     accumulator_ = 0.0f;
   }
+  // UI customization
+  expected_bits_per_frame_ = expected_bits_per_frame;
   UpdateRatio();
 }
 
