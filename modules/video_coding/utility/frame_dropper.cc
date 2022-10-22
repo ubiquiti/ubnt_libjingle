@@ -89,9 +89,6 @@ void FrameDropper::Fill(size_t framesize_bytes, bool delta_frame) {
     return;
   }
   float framesize_kbits = 8.0f * static_cast<float>(framesize_bytes) / 1000.0f;
-  // UI customization
-  if (!drop_frame_)
-    reduce_kbits_ += (framesize_kbits - expected_bits_per_frame_);
   if (!delta_frame) {
     key_frame_ratio_.Apply(1.0, 1.0);
     // Do not spread if we are already doing it (or we risk dropping bits that
