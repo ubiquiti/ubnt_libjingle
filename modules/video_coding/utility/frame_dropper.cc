@@ -13,8 +13,6 @@
 
 #include <algorithm>
 
-#define kReduceKiloBitsPerSec 200  // 200kbps
-
 namespace webrtc {
 
 namespace {
@@ -42,6 +40,9 @@ const int kLargeDeltaFactor = 3;
 
 // Cap on the frame size accumulator to prevent excessive drops.
 const float kAccumulatorCapBufferSizeSecs = 3.0f;
+
+// UI customization
+const float kDefaultReducedBitrateKbps = 200.0f;
 }  // namespace
 
 FrameDropper::FrameDropper()
@@ -271,13 +272,13 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 uint32_t FrameDropper::GetReducedBits() {
   if (reduce_kbits_ <= 0)
     return 0;
-  float reduced_kbits = kReduceKiloBitsPerSec;
+  float reduced_kbits = kDefaultReducedBitrateKbps;
   auto now_time_ms = rtc::TimeMillis();
   if (prev_time_ms_ > 0) {
     float interval = (now_time_ms - prev_time_ms_) / 1000.0f;
-    // rescale to current inerval to guarantee we don't reduce the bitrate 
-    // exceed "kReduceKiloBitsPerSec" kbps.
-    reduced_kbits = kReduceKiloBitsPerSec * interval;
+    // rescale to current inerval to guarantee we won't reduce the bitrate 
+    // exceeding "kDefaultReducedBitrateKbps" in 1 sec.
+    reduced_kbits = kDefaultReducedBitrateKbps * interval;
   }
   if (reduced_kbits > reduce_kbits_)
     reduced_kbits = reduce_kbits_;
