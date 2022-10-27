@@ -94,7 +94,6 @@ class FrameDropper {
   // UI customization
   float reduce_kbits_;
   uint64_t prev_time_ms_;
-  bool drop_frame_;
   float expected_bits_per_frame_;
 };
 
