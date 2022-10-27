@@ -1690,15 +1690,18 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       new_rate_settings.rate_control.framerate_fps =
           static_cast<double>(framerate_fps);
       // UI customization
+      auto rate_settings = UpdateBitrateAllocation(new_rate_settings);
       uint32_t reduced_bits = frame_dropper_.GetReducedBits();
       if (reduced_bits > 0) {
         RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] reducing bitrate=" << reduced_bits / 1000.0f << "kbps";
-        new_rate_settings.encoder_target = (new_rate_settings.encoder_target.bps() - reduced_bits > kDefaultMinTargetBitrate) 
-            ? DataRate::BitsPerSec(new_rate_settings.encoder_target.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
-        new_rate_settings.stable_encoder_target = (new_rate_settings.stable_encoder_target.bps() - reduced_bits > kDefaultMinTargetBitrate) 
-            ? DataRate::BitsPerSec(new_rate_settings.stable_encoder_target.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
+        if (rate_settings.rate_control.bitrate.get_sum_bps() - reduced_bits > kDefaultMinTargetBitrate)
+          rate_settings.rate_control.bitrate.reduce_sum_bps(reduced_bits);
+        // new_rate_settings.encoder_target = (new_rate_settings.encoder_target.bps() - reduced_bits > kDefaultMinTargetBitrate) 
+        //     ? DataRate::BitsPerSec(new_rate_settings.encoder_target.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
+        // new_rate_settings.stable_encoder_target = (new_rate_settings.stable_encoder_target.bps() - reduced_bits > kDefaultMinTargetBitrate) 
+        //     ? DataRate::BitsPerSec(new_rate_settings.stable_encoder_target.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
       }
-      SetEncoderRates(UpdateBitrateAllocation(new_rate_settings));
+      SetEncoderRates(rate_settings);
     }
     last_parameters_update_ms_.emplace(now_ms);
   }
@@ -2219,20 +2222,28 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
 
   uint32_t framerate_fps = GetInputFramerateFps();
   // UI customization
-  uint32_t reduced_bits = frame_dropper_.GetReducedBits();
-  if (reduced_bits > 0) {
-    RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bitrate=" << reduced_bits / 1000.0f << "kbps";
-    stable_target_bitrate = (stable_target_bitrate.bps() - reduced_bits > kDefaultMinTargetBitrate) 
-        ? DataRate::BitsPerSec(stable_target_bitrate.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
-    target_bitrate = (target_bitrate.bps() - reduced_bits > kDefaultMinTargetBitrate) 
-        ? DataRate::BitsPerSec(target_bitrate.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
-  }
+  // uint32_t reduced_bits = frame_dropper_.GetReducedBits();
+  // if (reduced_bits > 0) {
+  //   RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bitrate=" << reduced_bits / 1000.0f << "kbps";
+  //   stable_target_bitrate = (stable_target_bitrate.bps() - reduced_bits > kDefaultMinTargetBitrate) 
+  //       ? DataRate::BitsPerSec(stable_target_bitrate.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
+  //   target_bitrate = (target_bitrate.bps() - reduced_bits > kDefaultMinTargetBitrate) 
+  //       ? DataRate::BitsPerSec(target_bitrate.bps() - reduced_bits) : DataRate::BitsPerSec(kDefaultMinTargetBitrate);
+  // }
   frame_dropper_.SetRates((target_bitrate.bps() + 500) / 1000, framerate_fps);
 
   EncoderRateSettings new_rate_settings{
       VideoBitrateAllocation(), static_cast<double>(framerate_fps),
       link_allocation, target_bitrate, stable_target_bitrate};
-  SetEncoderRates(UpdateBitrateAllocation(new_rate_settings));
+  // UI customization
+  auto rate_settings = UpdateBitrateAllocation(new_rate_settings);
+  uint32_t reduced_bits = frame_dropper_.GetReducedBits();
+  if (reduced_bits > 0) {
+    RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bitrate=" << reduced_bits / 1000.0f << "kbps";
+    if (rate_settings.rate_control.bitrate.get_sum_bps() - reduced_bits > kDefaultMinTargetBitrate)
+      rate_settings.rate_control.bitrate.reduce_sum_bps(reduced_bits);
+  }
+  SetEncoderRates(rate_settings);
 
   if (target_bitrate.bps() != 0)
     encoder_target_bitrate_bps_ = target_bitrate.bps();
