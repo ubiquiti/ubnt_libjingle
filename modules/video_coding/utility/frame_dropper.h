@@ -57,6 +57,9 @@ class FrameDropper {
 
   // UI customized
   uint32_t GetReducedBits();
+  void ResetReducedBits() {
+    reduce_kbits_ = 0.0f;
+  }
 
  private:
   void UpdateRatio();

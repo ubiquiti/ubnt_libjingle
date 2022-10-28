@@ -47,6 +47,7 @@
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
+#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/metrics.h"
 #include "video/adaptation/video_stream_encoder_resource_manager.h"
@@ -80,7 +81,9 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
 // UI customization
-constexpr int kDefaultMinTargetBitrate = 100000;  // 100kbps
+constexpr uint32_t kDefaultMinEncodingBitrate = 100000;  // 100kbps
+constexpr uint32_t kDefaultIncreasedBitsPerSec = 50000;  // 50kbps
+constexpr uint32_t kDefaultMaxDiffBitrate = 1000000;  // 1000kbps
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
                           const VideoCodec& new_send_codec,
@@ -697,7 +700,9 @@ VideoStreamEncoder::VideoStreamEncoder(
           kSwitchEncoderOnInitializationFailuresFieldTrial)),
       vp9_low_tier_core_threshold_(
           ParseVp9LowTierCoreCountThreshold(field_trials)),
-      encoder_queue_(std::move(encoder_queue)) {
+      encoder_queue_(std::move(encoder_queue)),
+      prev_encoder_bitrate_bps_(0),
+      last_increase_bitrate_time_ms_(0) {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
@@ -1692,13 +1697,40 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       // UI customization
       auto rate_settings = UpdateBitrateAllocation(new_rate_settings);
       uint32_t reduced_bits = frame_dropper_.GetReducedBits();
-      if (reduced_bits > 0) {
-        RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] reducing bitrate=" << reduced_bits << "bps";
-        if (rate_settings.rate_control.bitrate.get_sum_bps() - reduced_bits > kDefaultMinTargetBitrate)
-          rate_settings.rate_control.bitrate.reduce_sum_bps(reduced_bits);
-        else
-          rate_settings.rate_control.bitrate.reduce_sum_bps((rate_settings.rate_control.bitrate.get_sum_bps() - kDefaultMinTargetBitrate));
+      if (prev_encoder_bitrate_bps_ > 0) {
+        if (reduced_bits > 0) {
+          RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
+          auto expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
+          if (rate_settings.rate_control.bitrate.get_sum_bps() - expected_bitrate > kDefaultMaxDiffBitrate) {
+            rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
+            frame_dropper_.ResetReducedBits();
+          } else {
+            RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] decreasing bitrate by " << reduced_bits << "bps";
+            if (expected_bitrate > kDefaultMinEncodingBitrate)
+              rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+            else
+              rate_settings.rate_control.bitrate.set_sum_bps(kDefaultMinEncodingBitrate);
+            RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+            if (rate_settings.rate_control.bitrate.get_sum_bps() <= kDefaultMinEncodingBitrate)
+              frame_dropper_.ResetReducedBits();
+          }
+          last_increase_bitrate_time_ms_ = 0;
+        } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec < rate_settings.rate_control.bitrate.get_sum_bps()) {
+          auto now_time_ms = rtc::TimeMillis();
+          uint32_t expected_bitrate = 0;
+          if (last_increase_bitrate_time_ms_ > 0) {
+            float interval = (now_time_ms - last_increase_bitrate_time_ms_) / 1000.0f;
+            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec * interval;
+          } else
+            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec;
+          rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+          RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] increasing bitrate by" << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
+          RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+          last_increase_bitrate_time_ms_ = now_time_ms;
+        } else 
+          last_increase_bitrate_time_ms_ = 0;
       }
+      prev_encoder_bitrate_bps_ = rate_settings.rate_control.bitrate.get_sum_bps();
       SetEncoderRates(rate_settings);
     }
     last_parameters_update_ms_.emplace(now_ms);
@@ -1714,10 +1746,10 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   }
 
   if (DropDueToSize(video_frame.size())) {
-    // UI customization - never drop frames to avoid artifacts
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << "  Too large for target bitrate size="
                       << video_frame.size() << ". Avoid dropping frame";
+    // UI customization - never drop frames to avoid artifacts
 #if 0
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
@@ -2227,13 +2259,40 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   // UI customization
   auto rate_settings = UpdateBitrateAllocation(new_rate_settings);
   uint32_t reduced_bits = frame_dropper_.GetReducedBits();
-  if (reduced_bits > 0) {
-    RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bitrate=" << reduced_bits << "bps";
-    if (rate_settings.rate_control.bitrate.get_sum_bps() - reduced_bits > kDefaultMinTargetBitrate)
-      rate_settings.rate_control.bitrate.reduce_sum_bps(reduced_bits);
-    else
-      rate_settings.rate_control.bitrate.reduce_sum_bps((rate_settings.rate_control.bitrate.get_sum_bps() - kDefaultMinTargetBitrate));
+  if (prev_encoder_bitrate_bps_ > 0) {
+    if (reduced_bits > 0) {
+      RTC_LOG(LS_INFO) << "[OnBitrateUpdated] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
+      auto expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
+      if (rate_settings.rate_control.bitrate.get_sum_bps() - expected_bitrate > kDefaultMaxDiffBitrate) {
+        rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
+        frame_dropper_.ResetReducedBits();
+      } else {
+        RTC_LOG(LS_INFO) << "[OnBitrateUpdated] decreasing bitrate by " << reduced_bits << "bps";
+        if (expected_bitrate > kDefaultMinEncodingBitrate)
+          rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+        else
+          rate_settings.rate_control.bitrate.set_sum_bps(kDefaultMinEncodingBitrate);
+        RTC_LOG(LS_INFO) << "[OnBitrateUpdated] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+        if (rate_settings.rate_control.bitrate.get_sum_bps() <= kDefaultMinEncodingBitrate)
+          frame_dropper_.ResetReducedBits();
+      }
+      last_increase_bitrate_time_ms_ = 0;
+    } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec < rate_settings.rate_control.bitrate.get_sum_bps()) {
+      auto now_time_ms = rtc::TimeMillis();
+      uint32_t expected_bitrate = 0;
+      if (last_increase_bitrate_time_ms_ > 0) {
+        float interval = (now_time_ms - last_increase_bitrate_time_ms_) / 1000.0f;
+        expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec * interval;
+      } else
+        expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec;
+      rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+      RTC_LOG(LS_INFO) << "[OnBitrateUpdated] increasing bitrate by" << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
+      RTC_LOG(LS_INFO) << "[OnBitrateUpdated] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+      last_increase_bitrate_time_ms_ = now_time_ms;
+    } else 
+      last_increase_bitrate_time_ms_ = 0;
   }
+  prev_encoder_bitrate_bps_ = rate_settings.rate_control.bitrate.get_sum_bps();
   SetEncoderRates(rate_settings);
 
   if (target_bitrate.bps() != 0)
