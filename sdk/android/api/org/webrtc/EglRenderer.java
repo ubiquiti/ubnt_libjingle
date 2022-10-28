@@ -515,7 +515,6 @@ public class EglRenderer implements VideoSink {
       synchronized (frameLock) {
         dropOldFrame = (pendingFrame != null);
         if (dropOldFrame) {
-          logW("Dropping old frame, timestamp=" + frame.getTimestampNs() / 1000000 + "ms");
           pendingFrame.release();
         }
         pendingFrame = frame;
@@ -622,7 +621,7 @@ public class EglRenderer implements VideoSink {
       } else {
         final long currentTimeNs = System.nanoTime();
         if (currentTimeNs < nextFrameTimeNs) {
-          logW("Skipping frame rendering - fps reduction is active.");
+          logD("Skipping frame rendering - fps reduction is active.");
           shouldRenderFrame = false;
         } else {
           nextFrameTimeNs += minRenderPeriodNs;
@@ -670,7 +669,6 @@ public class EglRenderer implements VideoSink {
           eglBase.swapBuffers(frame.getTimestampNs());
         } else {
           eglBase.swapBuffers();
-          logW(" render frame timestamp=" + frame.getTimestampNs() / 1000000);
         }
 
         final long currentTimeNs = System.nanoTime();

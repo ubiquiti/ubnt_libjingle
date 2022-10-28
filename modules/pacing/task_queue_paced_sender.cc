@@ -20,7 +20,6 @@
 #include "rtc_base/experiments/field_trial_units.h"
 #include "rtc_base/system/unused.h"
 #include "rtc_base/trace_event.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 

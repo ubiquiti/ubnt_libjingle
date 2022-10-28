@@ -1693,7 +1693,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       auto rate_settings = UpdateBitrateAllocation(new_rate_settings);
       uint32_t reduced_bits = frame_dropper_.GetReducedBits();
       if (reduced_bits > 0) {
-        RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] reducing bitrate=" << reduced_bits / 1000.0f << "kbps";
+        RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] reducing bitrate=" << reduced_bits << "bps";
         if (rate_settings.rate_control.bitrate.get_sum_bps() - reduced_bits > kDefaultMinTargetBitrate)
           rate_settings.rate_control.bitrate.reduce_sum_bps(reduced_bits);
         else
@@ -1714,10 +1714,10 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   }
 
   if (DropDueToSize(video_frame.size())) {
+    // UI customization - never drop frames to avoid artifacts
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << "  Too large for target bitrate size="
                       << video_frame.size() << ". Avoid dropping frame";
-    // UI customization - never drop frames to avoid artifacts
 #if 0
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
@@ -2228,7 +2228,7 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
   auto rate_settings = UpdateBitrateAllocation(new_rate_settings);
   uint32_t reduced_bits = frame_dropper_.GetReducedBits();
   if (reduced_bits > 0) {
-    RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bitrate=" << reduced_bits / 1000.0f << "kbps";
+    RTC_LOG(LS_INFO) << "[OnBitrateUpdated] reducing bitrate=" << reduced_bits << "bps";
     if (rate_settings.rate_control.bitrate.get_sum_bps() - reduced_bits > kDefaultMinTargetBitrate)
       rate_settings.rate_control.bitrate.reduce_sum_bps(reduced_bits);
     else

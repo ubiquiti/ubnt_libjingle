@@ -276,8 +276,6 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
     }
     buffer.put(frame.buffer);
 
-    Logging.e(TAG, "decode() - EncodedImage capture time=" + frame.captureTimeMs + "ms" + " frame type=" + frame.frameType);
-
     frameInfos.offer(new FrameInfo(SystemClock.elapsedRealtime(), frame.rotation));
     try {
       codec.queueInputBuffer(index, 0 /* offset */, size,
@@ -374,7 +372,6 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
   protected void deliverDecodedFrame() {
     outputThreadChecker.checkIsOnValidThread();
     try {
-      Logging.e(TAG, "Deliver decoded frame");
       MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
       // Block until an output buffer is available (up to 100 milliseconds).  If the timeout is
       // exceeded, deliverDecodedFrame() will be called again on the next iteration of the output
@@ -401,7 +398,7 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
 
       hasDecodedFirstFrame = true;
 
-      Logging.e(TAG, "dequeueOutputBuffer - decode time=" + decodeTimeMs + "ms" + " frame pts=" + info.presentationTimeUs / 1000 + "ms");
+      Logging.d(TAG, "dequeueOutputBuffer - decode time=" + decodeTimeMs + "ms" + " frame pts=" + info.presentationTimeUs / 1000 + "ms");
 
       if (surfaceTextureHelper != null) {
         deliverTextureFrame(index, info, rotation, decodeTimeMs);

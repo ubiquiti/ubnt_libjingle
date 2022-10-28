@@ -655,7 +655,7 @@ bool RTPSenderVideo::SendVideo(
 
   if (num_packets == 0)
     return false;
-  
+
   bool first_frame = first_frame_sent_();
   std::vector<std::unique_ptr<RtpPacketToSend>> rtp_packets;
   for (size_t i = 0; i < num_packets; ++i) {
