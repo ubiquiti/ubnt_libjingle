@@ -1702,7 +1702,8 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
         auto bitrate_from_estimater = rate_settings.rate_control.bitrate.get_sum_bps();
         if (reduced_bits > 0) {
           RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
-          if (prev_encoder_bitrate_bps_ > reduced_bits && prev_encoder_bitrate_bps_ - reduced_bits > kDefaultMinEncodingBitrate) 
+          if (prev_encoder_bitrate_bps_ > reduced_bits && 
+              prev_encoder_bitrate_bps_ - reduced_bits > kDefaultMinEncodingBitrate) 
             expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
           else
             expected_bitrate = kDefaultMinEncodingBitrate;
@@ -2268,8 +2269,9 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
     uint32_t expected_bitrate = 0;
     auto bitrate_from_estimater = rate_settings.rate_control.bitrate.get_sum_bps();
     if (reduced_bits > 0) {
-      RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
-      if (prev_encoder_bitrate_bps_ > reduced_bits && prev_encoder_bitrate_bps_ - reduced_bits > kDefaultMinEncodingBitrate) 
+      RTC_LOG(LS_INFO) << "[OnBitrateUpdated] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
+      if (prev_encoder_bitrate_bps_ > reduced_bits && 
+          prev_encoder_bitrate_bps_ - reduced_bits > kDefaultMinEncodingBitrate) 
         expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
       else
         expected_bitrate = kDefaultMinEncodingBitrate;
@@ -2278,9 +2280,9 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
         rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
         frame_dropper_.ResetReducedBits();  // eliminate remaining reduced bits
       } else {
-        RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] decreasing bitrate by " << reduced_bits << "bps";
+        RTC_LOG(LS_INFO) << "[OnBitrateUpdated] decreasing bitrate by " << reduced_bits << "bps";
         rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
-        RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+        RTC_LOG(LS_INFO) << "[OnBitrateUpdated] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
         if (rate_settings.rate_control.bitrate.get_sum_bps() <= kDefaultMinEncodingBitrate)
           frame_dropper_.ResetReducedBits();  // eliminate remaining reduced bits
       }
@@ -2296,8 +2298,8 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
       } else
         expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec;
       rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
-      RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
-      RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+      RTC_LOG(LS_INFO) << "[OnBitrateUpdated] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
+      RTC_LOG(LS_INFO) << "[OnBitrateUpdated] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
       last_increase_bitrate_time_ms_ = now_time_ms;
     } else 
       last_increase_bitrate_time_ms_ = 0;
