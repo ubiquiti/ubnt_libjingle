@@ -83,7 +83,7 @@ constexpr int kDefaultMinScreenSharebps = 1200000;
 // UI customization
 constexpr uint32_t kDefaultMinEncodingBitrate = 100000;  // 100kbps
 constexpr uint32_t kDefaultIncreasedBitsPerSec = 50000;  // 50kbps
-constexpr uint32_t kDefaultMaxDiffBitrate = 1000000;  // 1000kbps
+constexpr uint32_t kDefaultMaxDiffBitrate = 500000;  // 500kbps
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
                           const VideoCodec& new_send_codec,
