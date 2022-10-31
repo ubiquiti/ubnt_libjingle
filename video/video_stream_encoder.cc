@@ -703,7 +703,7 @@ VideoStreamEncoder::VideoStreamEncoder(
       encoder_queue_(std::move(encoder_queue)),
       prev_encoder_bitrate_bps_(0),
       last_increase_bitrate_time_ms_(0),
-      init_encoder_(false) {
+      init_encoder_bitrate_(false) {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
@@ -1287,7 +1287,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     rate_settings.rate_control.framerate_fps = GetInputFramerateFps();
 
     SetEncoderRates(UpdateBitrateAllocation(rate_settings));
-    init_encoder_ = true;
+    init_encoder_bitrate_ = true;
   }
 
   encoder_stats_observer_->OnEncoderReconfigured(encoder_config_, streams);
@@ -1550,7 +1550,7 @@ VideoStreamEncoder::UpdateBitrateAllocation(
   }
 
   // UI customization
-  if (init_encoder_) {
+  if (init_encoder_bitrate_) {
     uint32_t reduced_bits = frame_dropper_.GetReducedBits();
     if (prev_encoder_bitrate_bps_ > 0) {
       uint32_t expected_bitrate = 0;
@@ -2396,7 +2396,7 @@ void VideoStreamEncoder::ReleaseEncoder() {
   }
   encoder_->Release();
   encoder_initialized_ = false;
-  init_encoder_ = false;
+  init_encoder_bitrate_ = false;
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::Release");
 }
 

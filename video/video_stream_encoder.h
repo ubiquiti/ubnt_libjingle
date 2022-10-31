@@ -470,7 +470,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // UI customization
   uint32_t prev_encoder_bitrate_bps_;
   uint64_t last_increase_bitrate_time_ms_;
-  bool init_encoder_;
+  bool init_encoder_bitrate_;
 };
 
 }  // namespace webrtc
