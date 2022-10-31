@@ -82,7 +82,7 @@ constexpr int kDefaultMinScreenSharebps = 1200000;
 
 // UI customization
 constexpr uint32_t kDefaultMinEncodingBitrate = 100000;  // 100kbps
-constexpr uint32_t kDefaultIncreasedBitsPerSec = 50000;  // 50kbps
+constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
 constexpr uint32_t kDefaultMaxDiffBitrate = 500000;  // 500kbps
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
@@ -1719,16 +1719,16 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
               frame_dropper_.ResetReducedBits();  // eliminate remaining reduced bits
           }
           last_increase_bitrate_time_ms_ = 0;
-        } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec < bitrate_from_estimater) {
+        } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps < bitrate_from_estimater) {
           auto now_time_ms = rtc::TimeMillis();
           uint32_t expected_bitrate = 0;
           if (last_increase_bitrate_time_ms_ > 0) {
             // rescale to current inerval to guarantee we won't increase the bitrate 
-            // exceeding "kDefaultIncreasedBitsPerSec" in 1 sec.
+            // exceeding "kDefaultIncreasedBps" in 1 sec.
             float interval = (now_time_ms - last_increase_bitrate_time_ms_) / 1000.0f;
-            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec * interval;
+            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBps * interval;
           } else
-            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec;
+            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBps;
           rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
           RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
           RTC_LOG(LS_INFO) << "[MaybeEncodeVideoFrame] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
@@ -2287,16 +2287,16 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
           frame_dropper_.ResetReducedBits();  // eliminate remaining reduced bits
       }
       last_increase_bitrate_time_ms_ = 0;
-    } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec < bitrate_from_estimater) {
+    } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps < bitrate_from_estimater) {
       auto now_time_ms = rtc::TimeMillis();
       uint32_t expected_bitrate = 0;
       if (last_increase_bitrate_time_ms_ > 0) {
         // rescale to current inerval to guarantee we won't increase the bitrate 
-        // exceeding "kDefaultIncreasedBitsPerSec" in 1 sec.
+        // exceeding "kDefaultIncreasedBps" in 1 sec.
         float interval = (now_time_ms - last_increase_bitrate_time_ms_) / 1000.0f;
-        expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec * interval;
+        expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBps * interval;
       } else
-        expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBitsPerSec;
+        expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBps;
       rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
       RTC_LOG(LS_INFO) << "[OnBitrateUpdated] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
       RTC_LOG(LS_INFO) << "[OnBitrateUpdated] bitrate for encoder=" << rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
