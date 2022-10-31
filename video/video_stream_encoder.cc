@@ -81,7 +81,7 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
 // UI customization
-constexpr uint32_t kDefaultMinEncodingBitrate = 100000;  // 100kbps
+constexpr uint32_t kDefaultMinEncodingBitrate = 200000;  // 200kbps
 constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
 constexpr uint32_t kDefaultMaxDiffBitrate = 500000;  // 500kbps
 
