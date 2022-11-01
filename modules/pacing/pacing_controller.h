@@ -162,6 +162,11 @@ class PacingController {
 
   bool IsProbing() const;
 
+  // UI customization
+  void SetFrameInterval(int64_t interval) {
+    frame_interval_ = interval;
+  }
+
  private:
   TimeDelta UpdateTimeAndGetElapsed(Timestamp now);
   bool ShouldSendKeepalive(Timestamp now) const;
@@ -238,6 +243,9 @@ class PacingController {
   TimeDelta queue_time_limit_;
   bool account_for_audio_;
   bool include_overhead_;
+
+  // UI customization
+  int64_t frame_interval_;
 };
 }  // namespace webrtc
 

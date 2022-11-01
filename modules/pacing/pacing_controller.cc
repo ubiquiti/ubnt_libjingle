@@ -35,6 +35,9 @@ constexpr TimeDelta kMaxDebtInTime = TimeDelta::Millis(500);
 constexpr TimeDelta kMaxElapsedTime = TimeDelta::Seconds(2);
 constexpr TimeDelta kTargetPaddingDuration = TimeDelta::Millis(5);
 
+// UI customizaiton
+const int kPacketLeftTimeMargin = 10;
+
 bool IsDisabled(const FieldTrialsView& field_trials, absl::string_view key) {
   return absl::StartsWith(field_trials.Lookup(key), "Disabled");
 }
@@ -88,7 +91,8 @@ PacingController::PacingController(Clock* clock,
       congested_(false),
       queue_time_limit_(kMaxExpectedQueueLength),
       account_for_audio_(false),
-      include_overhead_(false) {
+      include_overhead_(false),
+      frame_interval_(0) {
   if (!drain_large_queues_) {
     RTC_LOG(LS_WARNING) << "Pacer queues will not be drained,"
                            "pushback experiment must be enabled.";
@@ -652,10 +656,20 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
     // has avg_time_left_ms left to get queue_size_bytes out of the queue, if
     // time constraint shall be met. Determine bitrate needed for that.
     packet_queue_.UpdateAverageQueueTime(now);
+    auto avg_queue_time = packet_queue_.AverageQueueTime();
     TimeDelta avg_time_left =
         std::max(TimeDelta::Millis(1),
-                 queue_time_limit_ - packet_queue_.AverageQueueTime());
+                 queue_time_limit_ - avg_queue_time);
+
+    // UI customization - if the average left time in the pending queue is greater than "frame_interval_",
+    // then we increase the sending rate.
+    if (avg_queue_time.ms() > frame_interval_ + kPacketLeftTimeMargin) {
+      // RTC_LOG(LS_VERBOSE) << "avg_queue_time_ms=" << avg_queue_time.ms() << " frame_interval_ms=" << frame_interval_;
+      avg_time_left = TimeDelta::Millis(frame_interval_);
+    }
+    
     DataRate min_rate_needed = queue_size_data / avg_time_left;
+
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
       RTC_LOG(LS_VERBOSE) << "bwe:large_pacing_queue pacing_rate_kbps="
