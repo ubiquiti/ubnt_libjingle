@@ -47,6 +47,7 @@
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
+#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/metrics.h"
 #include "video/adaptation/video_stream_encoder_resource_manager.h"
@@ -78,6 +79,11 @@ const int64_t kParameterUpdateIntervalMs = 1000;
 constexpr int kMaxAnimationPixels = 1280 * 720;
 
 constexpr int kDefaultMinScreenSharebps = 1200000;
+
+// UI customization
+constexpr uint32_t kDefaultMinEncodingBitrate = 200000;  // 200kbps
+constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
+constexpr uint32_t kDefaultMaxDiffBitrate = 500000;  // 500kbps
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
                           const VideoCodec& new_send_codec,
@@ -694,7 +700,10 @@ VideoStreamEncoder::VideoStreamEncoder(
           kSwitchEncoderOnInitializationFailuresFieldTrial)),
       vp9_low_tier_core_threshold_(
           ParseVp9LowTierCoreCountThreshold(field_trials)),
-      encoder_queue_(std::move(encoder_queue)) {
+      encoder_queue_(std::move(encoder_queue)),
+      prev_encoder_bitrate_bps_(0),
+      last_bitrate_adjusted_time_ms_(0),
+      init_encoder_bitrate_(false) {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(encoder_stats_observer);
@@ -1260,7 +1269,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
       (num_layers > 1 && codec.mode == VideoCodecMode::kScreensharing);
 
   // UI customization - never drop frames to avoid artifacts
-  force_disable_frame_dropper_ = true;
+  // force_disable_frame_dropper_ = true;
 
   VideoEncoder::EncoderInfo info = encoder_->GetEncoderInfo();
   if (rate_control_settings_.UseEncoderBitrateAdjuster()) {
@@ -1278,6 +1287,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     rate_settings.rate_control.framerate_fps = GetInputFramerateFps();
 
     SetEncoderRates(UpdateBitrateAllocation(rate_settings));
+    init_encoder_bitrate_ = true;
   }
 
   encoder_stats_observer_->OnEncoderReconfigured(encoder_config_, streams);
@@ -1437,6 +1447,8 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
                       << frames_scheduled_for_processing << ". Avoid dropping frame";
     cwnd_frame_drop = false;
     frames_scheduled_for_processing = 1;
+    // UI customization
+    frame_dropper_.AccumulateReducedBits();
   }
 
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
@@ -1537,6 +1549,53 @@ VideoStreamEncoder::UpdateBitrateAllocation(
                         << new_allocation.ToString() << ", to "
                         << adjusted_allocation.ToString();
     new_rate_settings.rate_control.bitrate = adjusted_allocation;
+  }
+
+  // UI customization
+  if (init_encoder_bitrate_) {
+    uint32_t reduced_bits = frame_dropper_.GetReducedBits();
+    if (prev_encoder_bitrate_bps_ > 0) {
+      uint32_t expected_bitrate = 0;
+      auto bitrate_from_estimator = new_rate_settings.rate_control.bitrate.get_sum_bps();
+      auto now_time_ms = rtc::TimeMillis();
+      if (reduced_bits > 0) {
+        RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
+        if (prev_encoder_bitrate_bps_ > reduced_bits && prev_encoder_bitrate_bps_ - reduced_bits > kDefaultMinEncodingBitrate) 
+          expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
+        else
+          expected_bitrate = kDefaultMinEncodingBitrate;
+        if (bitrate_from_estimator > expected_bitrate) {
+          if (bitrate_from_estimator - expected_bitrate > kDefaultMaxDiffBitrate) {
+            new_rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
+            frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
+          } else {
+            RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] decreasing bitrate by " << reduced_bits << "bps";
+            new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+            RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+            if (new_rate_settings.rate_control.bitrate.get_sum_bps() <= kDefaultMinEncodingBitrate)
+              frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
+          }
+        }
+      } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps < bitrate_from_estimator) {
+        uint32_t tmp_rate = 0;
+        if (bitrate_from_estimator - (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps) <= kDefaultMaxDiffBitrate)
+          tmp_rate = kDefaultIncreasedBps;
+        else
+          tmp_rate = kDefaultMaxDiffBitrate;
+        if (last_bitrate_adjusted_time_ms_ > 0) {
+          float interval = (now_time_ms - last_bitrate_adjusted_time_ms_) / 1000.0f;
+          expected_bitrate = prev_encoder_bitrate_bps_ + tmp_rate * interval;
+        } else
+          expected_bitrate = prev_encoder_bitrate_bps_ + tmp_rate;
+        if (expected_bitrate < bitrate_from_estimator) {
+          new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+          RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
+        }
+        RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+      }
+      last_bitrate_adjusted_time_ms_ = now_time_ms;
+    }
+    prev_encoder_bitrate_bps_ = new_rate_settings.rate_control.bitrate.get_sum_bps();
   }
 
   return new_rate_settings;
@@ -1764,11 +1823,14 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
                 ? last_encoder_rate_settings_->encoder_target.bps()
                 : 0)
         << ", input frame rate " << framerate_fps;
+  // UI customization, don't actually drop the frame
+#if 0
     OnDroppedFrame(
         EncodedImageCallback::DropReason::kDroppedByMediaOptimizations);
     accumulated_update_rect_.Union(video_frame.update_rect());
     accumulated_update_rect_is_valid_ &= video_frame.has_update_rect();
     return;
+#endif
   }
 
   EncodeVideoFrame(video_frame, time_when_posted_us);
@@ -2343,6 +2405,7 @@ void VideoStreamEncoder::ReleaseEncoder() {
   }
   encoder_->Release();
   encoder_initialized_ = false;
+  init_encoder_bitrate_ = false;
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::Release");
 }
 

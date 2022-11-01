@@ -35,6 +35,10 @@ constexpr TimeDelta kMaxDebtInTime = TimeDelta::Millis(500);
 constexpr TimeDelta kMaxElapsedTime = TimeDelta::Seconds(2);
 constexpr TimeDelta kTargetPaddingDuration = TimeDelta::Millis(5);
 
+// UI customiation - limit the media sending rate, 
+// make sure we can send all pending packets during ”kDefaultPacketSendTime“
+constexpr TimeDelta kDefaultPacketSendTime = TimeDelta::Millis(20);
+
 bool IsDisabled(const FieldTrialsView& field_trials, absl::string_view key) {
   return absl::StartsWith(field_trials.Lookup(key), "Disabled");
 }
@@ -656,6 +660,10 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
         std::max(TimeDelta::Millis(1),
                  queue_time_limit_ - packet_queue_.AverageQueueTime());
     DataRate min_rate_needed = queue_size_data / avg_time_left;
+
+    // UI customization
+    min_rate_needed = std::max(min_rate_needed, queue_size_data / kDefaultPacketSendTime);
+
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
       RTC_LOG(LS_VERBOSE) << "bwe:large_pacing_queue pacing_rate_kbps="
