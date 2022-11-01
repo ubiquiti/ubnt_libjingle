@@ -20,6 +20,7 @@
 #include "rtc_base/experiments/field_trial_units.h"
 #include "rtc_base/system/unused.h"
 #include "rtc_base/trace_event.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -74,7 +75,8 @@ TaskQueuePacedSender::TaskQueuePacedSender(
       include_overhead_(false),
       task_queue_(task_queue_factory->CreateTaskQueue(
           "TaskQueuePacedSender",
-          TaskQueueFactory::Priority::NORMAL)) {
+          TaskQueueFactory::Priority::NORMAL)),
+      last_sending_time_(0) {
   RTC_DCHECK_GE(max_hold_back_window_, PacingController::kMinSleepTime);
   // There are multiple field trials that can affect burst. If multiple bursts
   // are specified we pick the largest of the values.
@@ -153,6 +155,15 @@ void TaskQueuePacedSender::SetPacingRates(DataRate pacing_rate,
 
 void TaskQueuePacedSender::EnqueuePackets(
     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
+
+  // UI customization
+  int64_t now_ms = rtc::TimeMillis();
+  if (last_sending_time_ > 0) {
+    int64_t interval = now_ms - last_sending_time_;
+    pacing_controller_.SetFrameInterval(interval);
+  }
+  last_sending_time_ = now_ms;
+
   task_queue_.PostTask([this, packets = std::move(packets)]() mutable {
     RTC_DCHECK_RUN_ON(&task_queue_);
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),

@@ -466,6 +466,11 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // Public methods are proxied to the task queues. The queues must be destroyed
   // first to make sure no tasks run that use other members.
   rtc::TaskQueue encoder_queue_;
+
+  // UI customization
+  uint32_t prev_encoder_bitrate_bps_;
+  uint64_t last_bitrate_adjusted_time_ms_;
+  bool init_encoder_bitrate_;
 };
 
 }  // namespace webrtc

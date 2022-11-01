@@ -9,6 +9,7 @@
  */
 
 #include "modules/video_coding/utility/frame_dropper.h"
+#include "rtc_base/time_utils.h"
 
 #include <algorithm>
 
@@ -39,6 +40,9 @@ const int kLargeDeltaFactor = 3;
 
 // Cap on the frame size accumulator to prevent excessive drops.
 const float kAccumulatorCapBufferSizeSecs = 3.0f;
+
+// UI customization
+const float kDefaultDecreaseKbps = 200.0f;
 }  // namespace
 
 FrameDropper::FrameDropper()
@@ -46,7 +50,10 @@ FrameDropper::FrameDropper()
       delta_frame_size_avg_kbits_(kDefaultFrameSizeAlpha),
       drop_ratio_(kDefaultDropRatioAlpha, kDefaultDropRatioValue),
       enabled_(true),
-      max_drop_duration_secs_(kDefaultMaxDropDurationSecs) {
+      max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
+      reduce_kbits_(0.0f),
+      prev_time_ms_(0), 
+      expected_bits_per_frame_(0.0f) {
   Reset();
 }
 
@@ -144,6 +151,8 @@ void FrameDropper::Leak(uint32_t input_framerate) {
   if (accumulator_ < 0.0f) {
     accumulator_ = 0.0f;
   }
+  // UI customization
+  expected_bits_per_frame_ = expected_bits_per_frame;
   UpdateRatio();
 }
 
@@ -200,6 +209,8 @@ bool FrameDropper::DropFrame() {
       drop_count_ = -drop_count_;
     }
     if (drop_count_ < limit) {
+      // UI customization
+      reduce_kbits_ += expected_bits_per_frame_;
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
@@ -225,6 +236,8 @@ bool FrameDropper::DropFrame() {
     }
     if (drop_count_ > limit) {
       if (drop_count_ == 0) {
+        // UI customization
+        reduce_kbits_ += expected_bits_per_frame_;
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;
@@ -253,6 +266,32 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
   target_bitrate_ = bitrate;
   CapAccumulator();
   incoming_frame_rate_ = incoming_frame_rate;
+}
+
+// UI customization
+void FrameDropper::AccumulateReducedBits() {
+  if (expected_bits_per_frame_ > 0)
+    reduce_kbits_ += expected_bits_per_frame_;
+  else
+    reduce_kbits_ += (target_bitrate_ / incoming_frame_rate_);
+}
+
+uint32_t FrameDropper::GetReducedBits() {
+  if (reduce_kbits_ <= 0)
+    return 0;
+  float reduced_kbits = kDefaultDecreaseKbps;
+  auto now_time_ms = rtc::TimeMillis();
+  if (prev_time_ms_ > 0) {
+    float interval = (now_time_ms - prev_time_ms_) / 1000.0f;
+    // rescale to current inerval to guarantee we won't reduce the bitrate 
+    // exceeding "kDefaultDecreaseKbps" in 1 sec.
+    reduced_kbits = kDefaultDecreaseKbps * interval;
+  }
+  if (reduced_kbits > reduce_kbits_)
+    reduced_kbits = reduce_kbits_;
+  reduce_kbits_ -= reduced_kbits;
+  prev_time_ms_ = now_time_ms;
+  return reduced_kbits * 1000;
 }
 
 // Put a cap on the accumulator, i.e., don't let it grow beyond some level.

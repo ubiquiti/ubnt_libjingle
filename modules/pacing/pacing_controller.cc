@@ -88,7 +88,8 @@ PacingController::PacingController(Clock* clock,
       congested_(false),
       queue_time_limit_(kMaxExpectedQueueLength),
       account_for_audio_(false),
-      include_overhead_(false) {
+      include_overhead_(false),
+      frame_interval_(0) {
   if (!drain_large_queues_) {
     RTC_LOG(LS_WARNING) << "Pacer queues will not be drained,"
                            "pushback experiment must be enabled.";
@@ -655,7 +656,16 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
     TimeDelta avg_time_left =
         std::max(TimeDelta::Millis(1),
                  queue_time_limit_ - packet_queue_.AverageQueueTime());
+
+    // UI customization
+    RTC_LOG(LS_INFO) << "pacing frame interval=" << frame_interval_ << "ms";
+    auto min_time_left =  TimeDelta::Millis(frame_interval_) >= TimeDelta::Millis(1) 
+      ? TimeDelta::Millis(frame_interval_) : TimeDelta::Millis(1);
+    if (frame_interval_ > 0 && avg_time_left > min_time_left)
+      avg_time_left = min_time_left;
+
     DataRate min_rate_needed = queue_size_data / avg_time_left;
+
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
       RTC_LOG(LS_VERBOSE) << "bwe:large_pacing_queue pacing_rate_kbps="
