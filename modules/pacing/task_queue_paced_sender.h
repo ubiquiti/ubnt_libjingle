@@ -191,6 +191,10 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
   Stats current_stats_ RTC_GUARDED_BY(stats_mutex_);
 
   rtc::TaskQueue task_queue_;
+
+  // UI customization
+  int64_t last_sending_time_;
+  int accumulate_frames_;
 };
 }  // namespace webrtc
 #endif  // MODULES_PACING_TASK_QUEUE_PACED_SENDER_H_
