@@ -1554,14 +1554,15 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     uint32_t reduced_bits = frame_dropper_.GetReducedBits();
     if (prev_encoder_bitrate_bps_ > 0) {
       uint32_t expected_bitrate = 0;
+      auto bitrate_from_estimater = new_rate_settings.rate_control.bitrate.get_sum_bps();
       if (reduced_bits > 0) {
         RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
         if (prev_encoder_bitrate_bps_ > reduced_bits && prev_encoder_bitrate_bps_ - reduced_bits > kDefaultMinEncodingBitrate) 
           expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
         else
           expected_bitrate = kDefaultMinEncodingBitrate;
-        if (new_rate_settings.rate_control.bitrate.get_sum_bps() > expected_bitrate && 
-            new_rate_settings.rate_control.bitrate.get_sum_bps() - expected_bitrate > kDefaultMaxDiffBitrate) {
+        if (bitrate_from_estimater > expected_bitrate && 
+            bitrate_from_estimater - expected_bitrate > kDefaultMaxDiffBitrate) {
           new_rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
           frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
         } else {
