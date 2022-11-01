@@ -1560,15 +1560,16 @@ VideoStreamEncoder::UpdateBitrateAllocation(
           expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
         else
           expected_bitrate = kDefaultMinEncodingBitrate;
-        if (new_rate_settings.rate_control.bitrate.get_sum_bps() - expected_bitrate > kDefaultMaxDiffBitrate) {
+        if (new_rate_settings.rate_control.bitrate.get_sum_bps() > expected_bitrate && 
+            new_rate_settings.rate_control.bitrate.get_sum_bps() - expected_bitrate > kDefaultMaxDiffBitrate) {
           new_rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
-          frame_dropper_.ResetReducedBits();
+          frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
         } else {
           RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] decreasing bitrate by " << reduced_bits << "bps";
           new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
           RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
           if (new_rate_settings.rate_control.bitrate.get_sum_bps() <= kDefaultMinEncodingBitrate)
-            frame_dropper_.ResetReducedBits();
+            frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
         }
         last_increase_bitrate_time_ms_ = 0;
       } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps < new_rate_settings.rate_control.bitrate.get_sum_bps()) {
