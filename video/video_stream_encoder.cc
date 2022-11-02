@@ -1575,20 +1575,21 @@ VideoStreamEncoder::UpdateBitrateAllocation(
         }
         last_increase_bitrate_time_ms_ = 0;
       } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps < bitrate_from_estimator) {
-        if (bitrate_from_estimator - (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps) <= kDefaultMaxDiffBitrate) {
-          auto now_time_ms = rtc::TimeMillis();
-          uint32_t expected_bitrate = 0;
-          if (last_increase_bitrate_time_ms_ > 0) {
-            float interval = (now_time_ms - last_increase_bitrate_time_ms_) / 1000.0f;
-            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBps * interval;
-          } else
-            expected_bitrate = prev_encoder_bitrate_bps_ + kDefaultIncreasedBps;
-          new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
-          RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
-          RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
-          last_increase_bitrate_time_ms_ = now_time_ms;
+        uint32_t tmp_rate = 0;
+        if (bitrate_from_estimator - (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps) <= kDefaultMaxDiffBitrate)
+          tmp_rate = kDefaultIncreasedBps;
+        else
+          tmp_rate = kDefaultMaxDiffBitrate;
+        auto now_time_ms = rtc::TimeMillis();
+        if (last_increase_bitrate_time_ms_ > 0) {
+          float interval = (now_time_ms - last_increase_bitrate_time_ms_) / 1000.0f;
+          expected_bitrate = prev_encoder_bitrate_bps_ + tmp_rate * interval;
         } else
-          last_increase_bitrate_time_ms_ = 0;
+          expected_bitrate = prev_encoder_bitrate_bps_ + tmp_rate;
+        new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+        RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] increasing bitrate by " << expected_bitrate - prev_encoder_bitrate_bps_ << "bps";
+        RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+        last_increase_bitrate_time_ms_ = now_time_ms;
       } else 
         last_increase_bitrate_time_ms_ = 0;
     }
