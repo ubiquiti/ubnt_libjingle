@@ -658,11 +658,9 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
                  queue_time_limit_ - packet_queue_.AverageQueueTime());
 
     // UI customization
-    RTC_LOG(LS_INFO) << "pacing frame interval=" << frame_interval_ << "ms";
-    auto min_time_left =  TimeDelta::Millis(frame_interval_) >= TimeDelta::Millis(1) 
-      ? TimeDelta::Millis(frame_interval_) : TimeDelta::Millis(1);
-    if (frame_interval_ > 0 && avg_time_left > min_time_left)
-      avg_time_left = min_time_left;
+    // RTC_LOG(LS_INFO) << "pacing frame interval=" << frame_interval_ << "ms";
+    if (frame_interval_ > 0 && avg_time_left > TimeDelta::Millis(frame_interval_))
+      avg_time_left = TimeDelta::Millis(frame_interval_);
 
     DataRate min_rate_needed = queue_size_data / avg_time_left;
 

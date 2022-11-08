@@ -31,6 +31,9 @@ constexpr const char* kBurstyPacerFieldTrial = "WebRTC-BurstyPacer";
 constexpr const char* kSlackedTaskQueuePacedSenderFieldTrial =
     "WebRTC-SlackedTaskQueuePacedSender";
 
+// UI customization
+constexpr const int64_t kDefaultMinFrameInterval = 20;
+
 }  // namespace
 
 const int TaskQueuePacedSender::kNoPacketHoldback = -1;
@@ -155,19 +158,21 @@ void TaskQueuePacedSender::SetPacingRates(DataRate pacing_rate,
 
 void TaskQueuePacedSender::EnqueuePackets(
     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
-
-  // UI customization
-  int64_t now_ms = rtc::TimeMillis();
-  if (last_sending_time_ > 0) {
-    int64_t interval = now_ms - last_sending_time_;
-    pacing_controller_.SetFrameInterval(interval);
-  }
-  last_sending_time_ = now_ms;
-
   task_queue_.PostTask([this, packets = std::move(packets)]() mutable {
     RTC_DCHECK_RUN_ON(&task_queue_);
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),
                  "TaskQueuePacedSender::EnqueuePackets");
+
+    // UI customization
+    int64_t now_ms = rtc::TimeMillis();
+    if (last_sending_time_ > 0) {
+      int64_t interval = now_ms - last_sending_time_;
+      if (interval < kDefaultMinFrameInterval)
+        interval = kDefaultMinFrameInterval;
+      pacing_controller_.SetFrameInterval(interval);
+    }
+    last_sending_time_ = now_ms;
+    
     for (auto& packet : packets) {
       TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("webrtc"),
                    "TaskQueuePacedSender::EnqueuePackets::Loop",
