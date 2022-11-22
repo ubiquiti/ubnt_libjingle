@@ -243,8 +243,17 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
                        [](rtc::StringBuilder& sb, StreamID stream_id) {
                          sb << *stream_id;
                        });
+        // UI customization - the new req_seq_nbr is unnecessary, as it will cause client 
+        // side thought that current stream should be closed at the moment. In other words, 
+        // if there is a retransmission(an outgoing request with new req_seq_nbr) sent from 
+        // console side before it receiving the 2nd response, client will thought there 
+        // was stream need to be reset, so it sends an outgoing request after responding, 
+        // thus when console receiving this outgoing request from app, it will close the 
+        // stream which just opened a while ago - then playback 3-dots.
+#if 0
         // Force this request to be sent again, but with new req_seq_nbr.
         current_request_->PrepareRetransmission();
+#endif
         reconfig_timer_->set_duration(ctx_->current_rto());
         reconfig_timer_->Start();
         break;
