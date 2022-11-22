@@ -81,18 +81,8 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
 // UI customization - const variables for the adaptive bitrate adjustment
-
-// The bitrate used for judging if the bitrate in 'RateControlParameters' is lower than this 
-// value or not. If it is, we will change the bitrate in 'RateControlParameters' to the one 
-// in bandwidth allocation, to avoid too lower bitrate which will result in lower fps(due to 
-// rate control in camera FW) for bad viewing UX.
-constexpr uint32_t kDefaultMinAcceptableBitrate = 500000;  // 500kbps
 // bitrate increase per second
 constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
-// The max difference bitrate between 'bitrate_from_estimator' and 'expected_bitrate', 
-// where are represented the bitrate estimated by Google and the one after 
-// increasing/decreasing respectively.
-constexpr uint32_t kDefaultMaxDiffBitrate = 500000;  // 500kbps
 // Min bitrate to enable the adaptive bitrate method
 constexpr uint32_t kBitrateToEnableAdaptive = 1000000;  // 1Mbps
 
@@ -1565,13 +1555,6 @@ VideoStreamEncoder::UpdateBitrateAllocation(
   // UI customization
   if (new_rate_settings.rate_control.bitrate.get_sum_bps() <= kBitrateToEnableAdaptive) {
     frame_dropper_.ResetReducedBits();
-    if (new_rate_settings.rate_control.bitrate.get_sum_bps() < kDefaultMinAcceptableBitrate) {
-      auto bwe = new_rate_settings.rate_control.bandwidth_allocation.bps();
-      if (bwe >= kDefaultMinAcceptableBitrate)
-        new_rate_settings.rate_control.bitrate.set_sum_bps(kDefaultMinAcceptableBitrate);
-      else
-        new_rate_settings.rate_control.bitrate.set_sum_bps(bwe);
-    }
     return new_rate_settings;
   }
   if (init_encoder_bitrate_) {
@@ -1585,14 +1568,10 @@ VideoStreamEncoder::UpdateBitrateAllocation(
         if (prev_encoder_bitrate_bps_ > reduced_bits) 
           expected_bitrate = prev_encoder_bitrate_bps_ - reduced_bits;
         if (bitrate_from_estimator > expected_bitrate) {
-          if (bitrate_from_estimator - expected_bitrate > kDefaultMaxDiffBitrate) {
-            new_rate_settings.rate_control.bitrate.set_sum_bps(prev_encoder_bitrate_bps_);
-            frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
-          } else {
-            RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] decreasing bitrate by " << reduced_bits << "bps";
-            new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
-            RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
-          }
+          RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] decreasing bitrate by " << reduced_bits << "bps";
+          new_rate_settings.rate_control.bitrate.set_sum_bps(expected_bitrate);
+          RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] bitrate for encoder=" << new_rate_settings.rate_control.bitrate.get_sum_bps() << "bps";
+          frame_dropper_.ResetReducedBits();  // eliminate the remaining bits
         }
       } else if (prev_encoder_bitrate_bps_ + kDefaultIncreasedBps < bitrate_from_estimator) {
         if (last_bitrate_adjusted_time_ms_ > 0) {
