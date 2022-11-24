@@ -54,6 +54,9 @@ const TimeDelta PacingController::kMinSleepTime = TimeDelta::Millis(1);
 const TimeDelta PacingController::kMaxEarlyProbeProcessing =
     TimeDelta::Millis(1);
 
+// UI customization - to increase fault tolerance to make sure the bitrate won't drop too low
+const float kTimeMultiplier = 2.5f;
+
 PacingController::PacingController(Clock* clock,
                                    PacketSender* packet_sender,
                                    const FieldTrialsView& field_trials)
@@ -658,7 +661,7 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
         // in the pacer queue, not exceed to the frame interval
 #if 1
         std::max(TimeDelta::Millis(1),
-                 TimeDelta::Millis(frame_interval_) - packet_queue_.AverageQueueTime());
+                 TimeDelta::Millis(kTimeMultiplier * frame_interval_) - packet_queue_.AverageQueueTime());
 #else
         std::max(TimeDelta::Millis(1),
                  queue_time_limit_ - packet_queue_.AverageQueueTime());
