@@ -125,6 +125,11 @@ class ReassemblyQueue {
   void AddHandoverState(DcSctpSocketHandoverState& state);
   void RestoreFromState(const DcSctpSocketHandoverState& state);
 
+  // UI customization - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+  ReconfigRequestSN lcr_request_sequence_number() const {
+    return last_completed_reset_req_seq_nbr_;
+  }
+
  private:
   bool IsConsistent() const;
   void AddReassembledMessage(rtc::ArrayView<const UnwrappedTSN> tsns,
