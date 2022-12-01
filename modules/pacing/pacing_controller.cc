@@ -55,7 +55,9 @@ const TimeDelta PacingController::kMaxEarlyProbeProcessing =
     TimeDelta::Millis(1);
 
 // UI customization - to increase fault tolerance to make sure the bitrate won't drop too low
+#ifdef UI_CUSTOMIZATION
 const float kTimeMultiplier = 2.5f;
+#endif
 
 PacingController::PacingController(Clock* clock,
                                    PacketSender* packet_sender,
@@ -91,8 +93,11 @@ PacingController::PacingController(Clock* clock,
       congested_(false),
       queue_time_limit_(kMaxExpectedQueueLength),
       account_for_audio_(false),
-      include_overhead_(false),
-      frame_interval_(0) {
+      include_overhead_(false)
+#ifdef UI_CUSTOMIZATION
+      , frame_interval_(0) 
+#endif
+      {
   if (!drain_large_queues_) {
     RTC_LOG(LS_WARNING) << "Pacer queues will not be drained,"
                            "pushback experiment must be enabled.";
@@ -659,7 +664,7 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
     TimeDelta avg_time_left =
         // UI customization - specify the longest time we want packets to spend waiting 
         // in the pacer queue, not exceed to the frame interval
-#if 1
+#ifdef UI_CUSTOMIZATION
         std::max(TimeDelta::Millis(1),
                  TimeDelta::Millis(kTimeMultiplier * frame_interval_) - packet_queue_.AverageQueueTime());
 #else

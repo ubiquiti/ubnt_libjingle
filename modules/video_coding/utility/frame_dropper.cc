@@ -42,7 +42,9 @@ const int kLargeDeltaFactor = 3;
 const float kAccumulatorCapBufferSizeSecs = 3.0f;
 
 // UI customization
+#ifdef UI_CUSTOMIZATION
 const float kDefaultDecreaseKbps = 100.0f;
+#endif
 }  // namespace
 
 FrameDropper::FrameDropper()
@@ -50,10 +52,13 @@ FrameDropper::FrameDropper()
       delta_frame_size_avg_kbits_(kDefaultFrameSizeAlpha),
       drop_ratio_(kDefaultDropRatioAlpha, kDefaultDropRatioValue),
       enabled_(true),
-      max_drop_duration_secs_(kDefaultMaxDropDurationSecs),
-      reduce_kbits_(0.0f),
+      max_drop_duration_secs_(kDefaultMaxDropDurationSecs)
+#ifdef UI_CUSTOMIZATION
+      , reduce_kbits_(0.0f),
       prev_time_ms_(0), 
-      expected_bits_per_frame_(0.0f) {
+      expected_bits_per_frame_(0.0f) 
+#endif
+    {
   Reset();
 }
 
@@ -152,7 +157,9 @@ void FrameDropper::Leak(uint32_t input_framerate) {
     accumulator_ = 0.0f;
   }
   // UI customization
+#ifdef UI_CUSTOMIZATION
   expected_bits_per_frame_ = expected_bits_per_frame;
+#endif
   UpdateRatio();
 }
 
@@ -210,7 +217,9 @@ bool FrameDropper::DropFrame() {
     }
     if (drop_count_ < limit) {
       // UI customization
-      reduce_kbits_ += expected_bits_per_frame_;
+#ifdef UI_CUSTOMIZATION
+      AccumulateReducedBits();
+#endif
       // As long we are below the limit we should drop frames.
       drop_count_++;
       return true;
@@ -237,7 +246,9 @@ bool FrameDropper::DropFrame() {
     if (drop_count_ > limit) {
       if (drop_count_ == 0) {
         // UI customization
-        reduce_kbits_ += expected_bits_per_frame_;
+#ifdef UI_CUSTOMIZATION
+        AccumulateReducedBits();
+#endif
         // Drop frames when we reset drop_count_.
         drop_count_--;
         return true;
@@ -269,6 +280,7 @@ void FrameDropper::SetRates(float bitrate, float incoming_frame_rate) {
 }
 
 // UI customization
+#ifdef UI_CUSTOMIZATION
 void FrameDropper::AccumulateReducedBits() {
   if (expected_bits_per_frame_ > 0)
     reduce_kbits_ += expected_bits_per_frame_;
@@ -293,6 +305,7 @@ uint32_t FrameDropper::GetReducedBits() {
   prev_time_ms_ = now_time_ms;
   return reduced_kbits * 1000;
 }
+#endif
 
 // Put a cap on the accumulator, i.e., don't let it grow beyond some level.
 // This is a temporary fix for screencasting where very large frames from
