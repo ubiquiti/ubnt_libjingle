@@ -136,7 +136,7 @@ bool StreamResetHandler::ValidateReqSeqNbr(
   if (req_seq_nbr == last_processed_req_seq_nbr_) {
     // UI customization - check if req_seq_nbr is less than the last completed reset 
     // req_seq_nbr, i.e. it has left from deferred mode or not.
-#if 1
+#ifdef UI_CUSTOMIZATION
     if (req_seq_nbr <= reassembly_queue_->lcr_request_sequence_number()) {
       RTC_DLOG(LS_VERBOSE) << log_prefix_ << "req=" << *req_seq_nbr
                            << " already completed, last_completed_reset_req_seq_nbr="
@@ -260,7 +260,7 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
         // was stream need to be reset, so it sends an outgoing request after responding, 
         // thus when console receiving this outgoing request from app, it will close the 
         // stream which just opened a while ago - then playback 3-dots.
-#if 0
+#ifndef UI_CUSTOMIZATION
         // Force this request to be sent again, but with new req_seq_nbr.
         current_request_->PrepareRetransmission();
 #endif

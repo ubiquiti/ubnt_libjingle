@@ -163,9 +163,11 @@ class PacingController {
   bool IsProbing() const;
 
   // UI customization
+#ifdef UI_CUSTOMIZATION
   void SetFrameInterval(int64_t interval) {
     frame_interval_ = interval;
   }
+#endif
 
  private:
   TimeDelta UpdateTimeAndGetElapsed(Timestamp now);
@@ -245,7 +247,9 @@ class PacingController {
   bool include_overhead_;
 
   // UI customization
+#ifdef UI_CUSTOMIZATION
   int64_t frame_interval_;
+#endif
 };
 }  // namespace webrtc
 

@@ -158,7 +158,9 @@ std::string VideoBitrateAllocation::ToString() const {
       if (si > 0)
         ssb << ",";
       // UI customization - reduce logs to one line
-      // ssb << '\n' << "  [";
+#ifndef UI_CUSTOMIZATION
+      ssb << '\n' << "  [";
+#endif
       ssb << "  [";
     }
     spatial_cumulator += layer_sum;

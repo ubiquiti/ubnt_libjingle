@@ -74,9 +74,11 @@ class RTC_EXPORT VideoBitrateAllocation {
   }
 
   // UI customization
+#ifdef UI_CUSTOMIZATION
   void set_sum_bps(uint32_t bits) {
     sum_ = bits;
   }
+#endif
 
   bool operator==(const VideoBitrateAllocation& other) const;
   inline bool operator!=(const VideoBitrateAllocation& other) const {

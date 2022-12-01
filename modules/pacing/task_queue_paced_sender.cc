@@ -32,7 +32,9 @@ constexpr const char* kSlackedTaskQueuePacedSenderFieldTrial =
     "WebRTC-SlackedTaskQueuePacedSender";
 
 // UI customization
+#ifdef UI_CUSTOMIZATION
 constexpr const int64_t kSlideWindowSize = 1000;
+#endif
 
 }  // namespace
 
@@ -78,9 +80,12 @@ TaskQueuePacedSender::TaskQueuePacedSender(
       include_overhead_(false),
       task_queue_(task_queue_factory->CreateTaskQueue(
           "TaskQueuePacedSender",
-          TaskQueueFactory::Priority::NORMAL)),
-      last_sending_time_(0),
-      accumulate_frames_(0) {
+          TaskQueueFactory::Priority::NORMAL))
+#ifdef UI_CUSTOMIZATION
+      , last_sending_time_(0),
+      accumulate_frames_(0)
+#endif
+      {
   RTC_DCHECK_GE(max_hold_back_window_, PacingController::kMinSleepTime);
   // There are multiple field trials that can affect burst. If multiple bursts
   // are specified we pick the largest of the values.
@@ -164,7 +169,8 @@ void TaskQueuePacedSender::EnqueuePackets(
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),
                  "TaskQueuePacedSender::EnqueuePackets");
 
-    // UI customization
+    // UI customization - for calculating the avg frame interval during 1 sec
+#ifdef UI_CUSTOMIZATION
     if (!packets.empty() && packets[0]->packet_type() == RtpPacketMediaType::kVideo) {
       ++accumulate_frames_;
       int64_t now_ms = rtc::TimeMillis();
@@ -179,6 +185,7 @@ void TaskQueuePacedSender::EnqueuePackets(
       } else
         last_sending_time_ = now_ms;
     }
+#endif
     
     for (auto& packet : packets) {
       TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("webrtc"),

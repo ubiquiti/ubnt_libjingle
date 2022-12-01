@@ -265,6 +265,11 @@ config("common_config") {
   cflags_objc = []
   defines = []
 
+  # UI customization
+  if (rtc_enable_unifi_customization) {
+    defines += [ "UI_CUSTOMIZATION" ]
+  }
+
   if (rtc_enable_protobuf) {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {

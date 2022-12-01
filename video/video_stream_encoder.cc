@@ -81,10 +81,12 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
 // UI customization - const variables for the adaptive bitrate adjustment
+#ifdef UI_CUSTOMIZATION
 // bitrate increase per second
 constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
 // Min bitrate to enable the adaptive bitrate method
 constexpr uint32_t kBitrateToEnableAdaptive = 1000000;  // 1Mbps
+#endif
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
                           const VideoCodec& new_send_codec,
@@ -1441,6 +1443,7 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
       (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
 
   // UI customization - never drop frames to avoid artifacts
+#ifdef UI_CUSTOMIZATION
   if (frames_scheduled_for_processing != 1 || cwnd_frame_drop) {
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << " cwnd_frame_drop=" << cwnd_frame_drop
@@ -1448,9 +1451,9 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
                       << frames_scheduled_for_processing << ". Avoid dropping frame";
     cwnd_frame_drop = false;
     frames_scheduled_for_processing = 1;
-    // UI customization
     frame_dropper_.AccumulateReducedBits();
   }
+#endif
 
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
     MaybeEncodeVideoFrame(incoming_frame, post_time.us());
@@ -1553,6 +1556,7 @@ VideoStreamEncoder::UpdateBitrateAllocation(
   }
 
   // UI customization
+#ifdef UI_CUSTOMIZATION
   if (new_rate_settings.rate_control.bitrate.get_sum_bps() <= kBitrateToEnableAdaptive) {
     frame_dropper_.ResetReducedBits();
     return new_rate_settings;
@@ -1589,6 +1593,7 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     }
     prev_encoder_bitrate_bps_ = new_rate_settings.rate_control.bitrate.get_sum_bps();
   }
+#endif
 
   return new_rate_settings;
 }
@@ -1756,7 +1761,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << "  Too large for target bitrate size="
                       << video_frame.size() << ". Avoid dropping frame";
-#if 0
+#ifndef UI_CUSTOMIZATION
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
     // Storing references to a native buffer risks blocking frame capture.
@@ -1816,7 +1821,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
                 : 0)
         << ", input frame rate " << framerate_fps;
   // UI customization, don't actually drop the frame
-#if 0
+#ifndef UI_CUSTOMIZATION
     OnDroppedFrame(
         EncodedImageCallback::DropReason::kDroppedByMediaOptimizations);
     accumulated_update_rect_.Union(video_frame.update_rect());
