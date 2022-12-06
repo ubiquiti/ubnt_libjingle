@@ -42,10 +42,10 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
     // at very low rates, where for instance retransmissions would never be
     // allowed due to too high bitrate caused by a single packet.
 
+#ifndef UI_CUSTOMIZATION
     size_t bitrate_addition_bps =
         (packet_size_bytes * 8 * 1000) / window_size_ms_;
     if (*current_rate + bitrate_addition_bps > max_rate_bps_)
-#ifndef UI_CUSTOMIZATION
       return false;
 #endif
   }

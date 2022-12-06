@@ -86,6 +86,8 @@ constexpr int kDefaultMinScreenSharebps = 1200000;
 constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
 // Min bitrate to enable the adaptive bitrate method
 constexpr uint32_t kBitrateToEnableAdaptive = 1000000;  // 1Mbps
+// The lowbound bitrate for keeping the highest fps
+constexpr uint32_t kLowboundHighestFpsBitrate = 500000 * 8 / 7; // 500kbps
 #endif
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
@@ -1562,7 +1564,12 @@ VideoStreamEncoder::UpdateBitrateAllocation(
 
   // UI customization
 #ifdef UI_CUSTOMIZATION
-  if (new_rate_settings.rate_control.bitrate.get_sum_bps() <= kBitrateToEnableAdaptive) {
+  auto bitrate_from_estimator = new_rate_settings.rate_control.bitrate.get_sum_bps();
+  if (bitrate_from_estimator <= kBitrateToEnableAdaptive) {
+    if (bitrate_from_estimator < kLowboundHighestFpsBitrate && 
+          new_rate_settings.rate_control.bandwidth_allocation.bps() > kLowboundHighestFpsBitrate) {
+      new_rate_settings.rate_control.bitrate.set_sum_bps(kLowboundHighestFpsBitrate);
+    }
     frame_dropper_.ResetReducedBits();
     return new_rate_settings;
   }
@@ -1570,7 +1577,6 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     uint32_t reduced_bits = frame_dropper_.GetReducedBits();
     if (prev_encoder_bitrate_bps_ > 0) {
       uint32_t expected_bitrate = 0;
-      auto bitrate_from_estimator = new_rate_settings.rate_control.bitrate.get_sum_bps();
       auto now_time_ms = rtc::TimeMillis();
       if (reduced_bits > 0) {
         RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] previous bitrate=" << prev_encoder_bitrate_bps_ << "bps";
