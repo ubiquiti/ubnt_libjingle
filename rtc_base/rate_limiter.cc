@@ -45,7 +45,9 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
     size_t bitrate_addition_bps =
         (packet_size_bytes * 8 * 1000) / window_size_ms_;
     if (*current_rate + bitrate_addition_bps > max_rate_bps_)
+#ifndef UI_CUSTOMIZATION
       return false;
+#endif
   }
 
   current_rate_.Update(packet_size_bytes, now_ms);
