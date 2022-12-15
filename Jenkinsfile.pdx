@@ -54,7 +54,7 @@ pipeline {
                             steps {
                                 node(label: 'rix-macos-amd64') {
 					deleteDir()
-					checkout([$class : 'GitSCM', branches: [[name: '*/master']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: scm.userRemoteConfigs[0].credentialsId, url: 'https://github.com/ubiquiti/libjingle-build']]])
+					checkout([$class : 'GitSCM', branches: [[name: '*/feature/jenkins-build']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: scm.userRemoteConfigs[0].credentialsId, url: 'https://github.com/ubiquiti/libjingle-build']]])
                                 }
                             }
                         }
@@ -62,7 +62,7 @@ pipeline {
                         stage('MacOS build') {
                             steps {
                                 node(label: 'rix-macos-amd64') {
-                                    sh label: 'build', script: "echo BRANCH=${BRANCH} TAG_NAME=${TAG_NAME}"
+                                    sh label: 'build', script: "sh BRANCH=\"${BRANCH}\" TAG_NAME=\"${TAG_NAME}\" generic_xcframework.sh"
                                 }
                             }
                         }
