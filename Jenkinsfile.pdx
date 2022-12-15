@@ -1,8 +1,4 @@
-def APP = 'ems'
-
-def doMacOS='''
-sh generic_xcframework.sh 0.0.66
-'''
+def APP = 'googlewebrtc'
 
 def HASH
 def BRANCH
@@ -39,6 +35,17 @@ pipeline {
 
     stages {
     
+        stage('Prepare') {
+            steps {
+                script {
+                      BUILD_DATE = sh(returnStdout: true, script: 'date -u +\'%Y-%m-%dT%H:%M:%SZ\'').trim()
+                      BRANCH = env.BRANCH_NAME
+                      TAG_NAME = env.TAG_NAME
+                      if (BRANCH.startsWith('origin/')) BRANCH = BRANCH.substring('origin/'.length())
+                }
+            }
+        }
+    
         stage('Build') {
             parallel {
                 stage('MacOS') {
@@ -55,7 +62,7 @@ pipeline {
                         stage('MacOS build') {
                             steps {
                                 node(label: 'rix-macos-amd64') {
-                                    sh label: 'build', script: "${doMacOS}"
+                                    sh label: 'build', script: "echo BRANCH=${BRANCH} TAG=${TAG}"
                                 }
                             }
                         }
