@@ -62,7 +62,7 @@ pipeline {
                         stage('MacOS build') {
                             steps {
                                 node(label: 'rix-macos-amd64') {
-                                    sh label: 'build', script: "sh BRANCH=\"${BRANCH}\" TAG_NAME=\"${TAG_NAME}\" generic_xcframework.sh"
+                                    sh label: 'build', script: "sh BRANCH=${BRANCH} TAG_NAME=${TAG_NAME} generic_xcframework.sh"
                                 }
                             }
                         }
