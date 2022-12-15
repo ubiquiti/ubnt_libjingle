@@ -62,7 +62,7 @@ pipeline {
                         stage('MacOS build') {
                             steps {
                                 node(label: 'rix-macos-amd64') {
-                                    sh label: 'build', script: "echo BRANCH=${BRANCH} TAG=${TAG}"
+                                    sh label: 'build', script: "echo BRANCH=${BRANCH} TAG_NAME=${TAG_NAME}"
                                 }
                             }
                         }
