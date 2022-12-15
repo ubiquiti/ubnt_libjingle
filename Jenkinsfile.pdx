@@ -1,0 +1,72 @@
+def APP = 'ems'
+
+def doMacOS='''
+sh generic_xcframework.sh 0.0.66
+'''
+
+def HASH
+def BRANCH
+def TAG_NAME
+def VERSION
+def BUILD_DATE
+
+def DOCKER_ARM64
+def DOCKER_AMD64
+def DOCKER_UBUNTU_20_04_AMD64
+
+properties([
+    [$class: 'CopyArtifactPermissionProperty', projectNames: '*'],
+])
+
+
+pipeline {
+
+    agent {
+        node ('docker')
+    }
+
+    environment {
+        ARTIFACTORY_URL='https://pdx-artifacts.rad.ubnt.com'
+        ARTIFACTORY_CREDS=credentials('ARTIFACTORY_CREDS')
+        ARTIFACTORY_CENTRALIZED_UPLOAD='yes'
+        GITHUB_READ_FILE_TOKEN=credentials('GITHUB_READ_FILE_TOKEN')
+    }
+
+    options {
+        skipDefaultCheckout true
+    }
+
+
+    stages {
+    
+        stage('Build') {
+            parallel {
+                stage('MacOS') {
+                    stages {
+                        stage('Checkout') {
+                            steps {
+                                node(label: 'rix-macos-amd64') {
+					deleteDir()
+					checkout([$class : 'GitSCM', branches: [[name: '*/master']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: scm.userRemoteConfigs[0].credentialsId, url: 'https://github.com/ubiquiti/libjingle-build']]])
+                                }
+                            }
+                        }
+                        
+                        stage('MacOS build') {
+                            steps {
+                                node(label: 'rix-macos-amd64') {
+                                    sh label: 'build', script: "${doMacOS}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs deleteDirs: true, notFailBuild: true
+        }
+    }
+}
