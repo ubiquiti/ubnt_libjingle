@@ -366,6 +366,11 @@ void AudioDeviceIOS::OnChangedOutputVolume() {
   thread_->PostTask(SafeTask(safety_, [this] { HandleOutputVolumeChange(); }));
 }
 
+void AudioDeviceIOS::OnMicrophoneEnableChange(bool is_microphone_enabled) {
+  RTC_DCHECK(thread_);
+  thread_->PostTask(SafeTask(safety_, [this, is_microphone_enabled] { HandleMicrophoneEnableChange(is_microphone_enabled); }));
+}
+
 OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
                                                const AudioTimeStamp* time_stamp,
                                                UInt32 bus_number,
@@ -637,6 +642,17 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
   // Store time of this detection so it can be used to defer detection of
   // glitches too close in time to this event.
   last_output_volume_change_time_ = rtc::TimeMillis();
+}
+
+void AudioDeviceIOS::HandleMicrophoneEnableChange(bool is_microphone_enabled) {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTCLog(@"Handling MicrophoneEnable change to %d", is_microphone_enabled);
+  if (is_microphone_enabled) {
+    InitRecording();
+    StartRecording();
+  } else {
+    StopRecording();
+  }
 }
 
 void AudioDeviceIOS::UpdateAudioDeviceBuffer() {

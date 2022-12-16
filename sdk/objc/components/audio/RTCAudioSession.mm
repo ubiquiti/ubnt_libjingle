@@ -55,6 +55,7 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   BOOL _isAudioEnabled;
   BOOL _canPlayOrRecord;
   BOOL _isInterrupted;
+  BOOL _isMicrophoneEnabled;
 }
 
 @synthesize session = _session;
@@ -190,6 +191,31 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
 - (BOOL)isAudioEnabled {
   @synchronized(self) {
     return _isAudioEnabled;
+  }
+}
+
+- (void)setIsMicrophoneEnabled:(BOOL)isMicrophoneEnabled {
+  @synchronized(self) {
+    if (_isMicrophoneEnabled == isMicrophoneEnabled) {
+      return;
+    }
+    _isMicrophoneEnabled = isMicrophoneEnabled;
+  }
+  [self notifyDidChangeMicrophoneEnable];
+}
+
+- (BOOL)isMicrophoneEnabled {
+  @synchronized(self) {
+    return _isMicrophoneEnabled;
+  }
+}
+
+- (void)notifyDidChangeMicrophoneEnable {
+  for (auto delegate : self.delegates) {
+    SEL sel = @selector(audioSession:didChangeMicrophoneEnable:);
+    if ([delegate respondsToSelector:sel]) {
+      [delegate audioSession:self didChangeMicrophoneEnable:self.isMicrophoneEnabled];
+    }
   }
 }
 

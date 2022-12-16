@@ -112,16 +112,22 @@ bool VoiceProcessingAudioUnit::Init() {
   }
 
   // Enable input on the input scope of the input element.
-  UInt32 enable_input = 1;
-  result = AudioUnitSetProperty(vpio_unit_, kAudioOutputUnitProperty_EnableIO,
-                                kAudioUnitScope_Input, kInputBus, &enable_input,
-                                sizeof(enable_input));
-  if (result != noErr) {
-    DisposeAudioUnit();
-    RTCLogError(@"Failed to enable input on input scope of input element. "
-                 "Error=%ld.",
-                (long)result);
-    return false;
+  RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
+  if (webRTCConfiguration.isMicrophoneEnabled) {
+    RTCLog("@Enable input on the input scope of the input element.");
+    UInt32 enable_input = 1;
+    result = AudioUnitSetProperty(vpio_unit_, kAudioOutputUnitProperty_EnableIO,
+                                  kAudioUnitScope_Input, kInputBus, &enable_input,
+                                  sizeof(enable_input));
+    if (result != noErr) {
+      DisposeAudioUnit();
+      RTCLogError(@"Failed to enable input on input scope of input element. "
+                   "Error=%ld.",
+                  (long)result);
+      return false;
+    }
+  } else {
+    RTCLog("@NOT Enable input on the input scope of the input element.");
   }
 
   // Enable output on the output scope of the output element.
@@ -155,34 +161,45 @@ bool VoiceProcessingAudioUnit::Init() {
 
   // Disable AU buffer allocation for the recorder, we allocate our own.
   // TODO(henrika): not sure that it actually saves resource to make this call.
-  UInt32 flag = 0;
-  result = AudioUnitSetProperty(
-      vpio_unit_, kAudioUnitProperty_ShouldAllocateBuffer,
-      kAudioUnitScope_Output, kInputBus, &flag, sizeof(flag));
-  if (result != noErr) {
-    DisposeAudioUnit();
-    RTCLogError(@"Failed to disable buffer allocation on the input bus. "
-                 "Error=%ld.",
-                (long)result);
-    return false;
+  if (webRTCConfiguration.isMicrophoneEnabled) {
+    RTCLog("@Disable AU buffer allocation for the recorder, we allocate our own.");
+    UInt32 flag = 0;
+    result = AudioUnitSetProperty(
+        vpio_unit_, kAudioUnitProperty_ShouldAllocateBuffer,
+        kAudioUnitScope_Output, kInputBus, &flag, sizeof(flag));
+    if (result != noErr) {
+      DisposeAudioUnit();
+      RTCLogError(@"Failed to disable buffer allocation on the input bus. "
+                   "Error=%ld.",
+                  (long)result);
+      return false;
+    }
+  } else {
+    RTCLog("@NOT Disable AU buffer allocation for the recorder.");
   }
 
   // Specify the callback to be called by the I/O thread to us when input audio
   // is available. The recorded samples can then be obtained by calling the
   // AudioUnitRender() method.
-  AURenderCallbackStruct input_callback;
-  input_callback.inputProc = OnDeliverRecordedData;
-  input_callback.inputProcRefCon = this;
-  result = AudioUnitSetProperty(vpio_unit_,
-                                kAudioOutputUnitProperty_SetInputCallback,
-                                kAudioUnitScope_Global, kInputBus,
-                                &input_callback, sizeof(input_callback));
-  if (result != noErr) {
-    DisposeAudioUnit();
-    RTCLogError(@"Failed to specify the input callback on the input bus. "
-                 "Error=%ld.",
-                (long)result);
-    return false;
+  if (webRTCConfiguration.isMicrophoneEnabled) {
+    RTCLog("@Specify the callback to be called by the I/O thread to us when input audio");
+        
+    AURenderCallbackStruct input_callback;
+    input_callback.inputProc = OnDeliverRecordedData;
+    input_callback.inputProcRefCon = this;
+    result = AudioUnitSetProperty(vpio_unit_,
+                                  kAudioOutputUnitProperty_SetInputCallback,
+                                  kAudioUnitScope_Global, kInputBus,
+                                  &input_callback, sizeof(input_callback));
+    if (result != noErr) {
+      DisposeAudioUnit();
+      RTCLogError(@"Failed to specify the input callback on the input bus. "
+                   "Error=%ld.",
+                  (long)result);
+      return false;
+    }
+  } else {
+    RTCLog("@NOT Specify the callback to be called by the I/O thread to us.");   
   }
 
   state_ = kUninitialized;
@@ -204,15 +221,21 @@ bool VoiceProcessingAudioUnit::Initialize(Float64 sample_rate) {
   LogStreamDescription(format);
 #endif
 
-  // Set the format on the output scope of the input element/bus.
-  result =
-      AudioUnitSetProperty(vpio_unit_, kAudioUnitProperty_StreamFormat,
-                           kAudioUnitScope_Output, kInputBus, &format, size);
-  if (result != noErr) {
-    RTCLogError(@"Failed to set format on output scope of input bus. "
-                 "Error=%ld.",
-                (long)result);
-    return false;
+  RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
+  if (webRTCConfiguration.isMicrophoneEnabled) {
+    RTCLog("@Setting the format on the output scope of the input element/bus because it's not movie mode");
+    // Set the format on the output scope of the input element/bus.
+    result =
+        AudioUnitSetProperty(vpio_unit_, kAudioUnitProperty_StreamFormat,
+                             kAudioUnitScope_Output, kInputBus, &format, size);
+    if (result != noErr) {
+      RTCLogError(@"Failed to set format on output scope of input bus. "
+                   "Error=%ld.",
+                  (long)result);
+      return false;
+    }
+  } else {
+    RTCLog("@NOT setting the format on the output scope of the input element because it's movie mode");
   }
 
   // Set the format on the input scope of the output element/bus.
