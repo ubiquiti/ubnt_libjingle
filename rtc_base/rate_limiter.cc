@@ -14,6 +14,7 @@
 
 #include "absl/types/optional.h"
 #include "system_wrappers/include/clock.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
