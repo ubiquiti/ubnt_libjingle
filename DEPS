@@ -34,7 +34,7 @@ deps = {
   'src/base':
     'https://chromium.googlesource.com/chromium/src/base@ebdf2642c35049ef93503492f3e094337146f30e',
   'src/build':
-    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@v0.0.22',
+    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@v0.0.23',
   'src/buildtools':
     'https://chromium.googlesource.com/chromium/src/buildtools@e713c13e2fa3b7aa9131276f27990011e1aa6a73',
   # Gradle 6.6.1. Used for testing Android Studio project generation for WebRTC.
@@ -252,7 +252,7 @@ deps = {
 
   # Used by boringssl.
   'src/third_party/nasm': {
-      'url': 'https://chromium.googlesource.com/chromium/deps/nasm.git@9215e8e1d0fe474ffd3e16c1a07a0f97089e6224'
+      'url': 'https://github.com/ubiquiti/ubnt_libjingle_third_party_nasm@v0.0.1'
   },
 
   'src/third_party/openh264/src':
