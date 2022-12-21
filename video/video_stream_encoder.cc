@@ -81,15 +81,10 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
 // UI customization - const variables for the adaptive bitrate adjustment
-#ifdef UI_CUSTOMIZATION
 // bitrate increase per second
 constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
 // Min bitrate to enable the adaptive bitrate method
 constexpr uint32_t kBitrateToEnableAdaptive = 1000000;  // 1Mbps
-// The lowbound bitrate for keeping the highest fps
-constexpr uint32_t kMinHighestFpsBitrate = 500000;  // 500kbps
-constexpr uint32_t kLowboundHighestFpsBitrate = kMinHighestFpsBitrate * 8 / 7;
-#endif
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
                           const VideoCodec& new_send_codec,
@@ -706,12 +701,10 @@ VideoStreamEncoder::VideoStreamEncoder(
           kSwitchEncoderOnInitializationFailuresFieldTrial)),
       vp9_low_tier_core_threshold_(
           ParseVp9LowTierCoreCountThreshold(field_trials)),
-      encoder_queue_(std::move(encoder_queue))
-#ifdef UI_CUSTOMIZATION
-      , prev_encoder_bitrate_bps_(0),
+      encoder_queue_(std::move(encoder_queue)), 
+      prev_encoder_bitrate_bps_(0),
       last_bitrate_adjusted_time_ms_(0),
       init_encoder_bitrate_(false) 
-#endif
       {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
@@ -1296,9 +1289,7 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     rate_settings.rate_control.framerate_fps = GetInputFramerateFps();
 
     SetEncoderRates(UpdateBitrateAllocation(rate_settings));
-#ifdef UI_CUSTOMIZATION
     init_encoder_bitrate_ = true;
-#endif
   }
 
   encoder_stats_observer_->OnEncoderReconfigured(encoder_config_, streams);
@@ -1451,7 +1442,6 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
       (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
 
   // UI customization - never drop frames to avoid artifacts
-#ifdef UI_CUSTOMIZATION
   if (frames_scheduled_for_processing != 1 || cwnd_frame_drop) {
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << " cwnd_frame_drop=" << cwnd_frame_drop
@@ -1461,7 +1451,6 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
     frames_scheduled_for_processing = 1;
     frame_dropper_.AccumulateReducedBits();
   }
-#endif
 
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
     MaybeEncodeVideoFrame(incoming_frame, post_time.us());
@@ -1564,19 +1553,8 @@ VideoStreamEncoder::UpdateBitrateAllocation(
   }
 
   // UI customization
-#ifdef UI_CUSTOMIZATION
   auto bitrate_from_estimator = new_rate_settings.rate_control.bitrate.get_sum_bps();
   if (bitrate_from_estimator <= kBitrateToEnableAdaptive) {
-    auto bandwidth_bps = new_rate_settings.rate_control.bandwidth_allocation.bps();
-    if (bitrate_from_estimator < kLowboundHighestFpsBitrate) {
-      if (bandwidth_bps > kLowboundHighestFpsBitrate) {
-        RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] set bitrate=" << bandwidth_bps << "bps";
-        new_rate_settings.rate_control.bitrate.set_sum_bps(bandwidth_bps);
-      } else {
-        RTC_LOG(LS_INFO) << "[UpdateBitrateAllocation] set bitrate=" << kLowboundHighestFpsBitrate << "bps";
-        new_rate_settings.rate_control.bitrate.set_sum_bps(kLowboundHighestFpsBitrate);
-      }
-    }
     frame_dropper_.ResetReducedBits();
     return new_rate_settings;
   }
@@ -1611,7 +1589,6 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     }
     prev_encoder_bitrate_bps_ = new_rate_settings.rate_control.bitrate.get_sum_bps();
   }
-#endif
 
   return new_rate_settings;
 }
@@ -1779,7 +1756,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
     RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
                       << "  Too large for target bitrate size="
                       << video_frame.size() << ". Avoid dropping frame";
-#ifndef UI_CUSTOMIZATION
+    /*
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
     // Storing references to a native buffer risks blocking frame capture.
@@ -1796,7 +1773,7 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
           VideoStreamEncoderObserver::DropReason::kEncoderQueue);
     }
     return;
-#endif
+    */
 
   }
   stream_resource_manager_.OnMaybeEncodeFrame();
@@ -1838,14 +1815,14 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
                 ? last_encoder_rate_settings_->encoder_target.bps()
                 : 0)
         << ", input frame rate " << framerate_fps;
-  // UI customization, don't actually drop the frame
-#ifndef UI_CUSTOMIZATION
+    // UI customization, don't actually drop the frame
+    /*
     OnDroppedFrame(
         EncodedImageCallback::DropReason::kDroppedByMediaOptimizations);
     accumulated_update_rect_.Union(video_frame.update_rect());
     accumulated_update_rect_is_valid_ &= video_frame.has_update_rect();
     return;
-#endif
+    */
   }
 
   EncodeVideoFrame(video_frame, time_when_posted_us);
@@ -2420,9 +2397,7 @@ void VideoStreamEncoder::ReleaseEncoder() {
   }
   encoder_->Release();
   encoder_initialized_ = false;
-#ifdef UI_CUSTOMIZATION
   init_encoder_bitrate_ = false;
-#endif
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::Release");
 }
 
