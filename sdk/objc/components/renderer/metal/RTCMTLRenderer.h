@@ -30,6 +30,9 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (void)drawFrame:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame;
 
+// UI customization
+- (void)clearView;
+
 /**
  * Sets the provided view as rendering destination if possible.
  *

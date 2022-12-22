@@ -121,6 +121,10 @@ static CVReturn OnDisplayLinkFired(CVDisplayLinkRef displayLink,
   self.videoFrame = frame;
 }
 
+- (void)clearVideoView {
+  
+}
+
 #pragma mark - Private
 
 - (void)drawFrame {
