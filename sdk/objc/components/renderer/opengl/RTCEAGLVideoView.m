@@ -240,6 +240,10 @@
   self.videoFrame = frame;
 }
 
+- (void)clearVideoView {
+  
+}
+
 #pragma mark - Private
 
 - (void)displayLinkTimerDidFire {

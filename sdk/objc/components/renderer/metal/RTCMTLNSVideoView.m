@@ -119,4 +119,8 @@
   self.videoFrame = [frame newI420VideoFrame];
 }
 
+- (void)clearVideoView {
+  
+}
+
 @end

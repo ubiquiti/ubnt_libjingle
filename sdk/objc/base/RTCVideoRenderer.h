@@ -29,6 +29,8 @@ RTC_OBJC_EXPORT
 /** The frame to be displayed. */
 - (void)renderFrame:(nullable RTC_OBJC_TYPE(RTCVideoFrame) *)frame;
 
+- (void)clearVideoView;
+
 @end
 
 RTC_OBJC_EXPORT
