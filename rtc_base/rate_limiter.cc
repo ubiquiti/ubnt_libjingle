@@ -9,6 +9,7 @@
  */
 
 #include "rtc_base/rate_limiter.h"
+#include "rtc_base/logging.h"
 
 #include <limits>
 

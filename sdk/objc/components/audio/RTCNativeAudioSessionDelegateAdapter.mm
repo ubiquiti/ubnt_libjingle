@@ -86,4 +86,9 @@
   _observer->OnChangedOutputVolume();
 }
 
+- (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession 
+    didChangeMicrophoneEnable:(BOOL)isMicrophoneEnabled {
+  _observer->OnMicrophoneEnableChange(isMicrophoneEnabled);
+}
+
 @end

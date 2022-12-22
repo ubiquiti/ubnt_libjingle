@@ -99,6 +99,7 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // TODO(henrika): add support for stereo if needed.
     _inputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
     _outputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
+    _isMicrophoneEnabled = false;
   }
   return self;
 }
