@@ -468,7 +468,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   rtc::TaskQueue encoder_queue_;
 
   // UI customization
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
   uint32_t prev_encoder_bitrate_bps_;
   uint64_t last_bitrate_adjusted_time_ms_;
   bool init_encoder_bitrate_;

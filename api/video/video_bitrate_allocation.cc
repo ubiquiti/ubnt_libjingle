@@ -158,7 +158,7 @@ std::string VideoBitrateAllocation::ToString() const {
       if (si > 0)
         ssb << ",";
       // UI customization - reduce logs to one line
-#ifndef UI_CUSTOMIZATION
+#ifndef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
       ssb << '\n' << "  [";
 #endif
       ssb << "  [";

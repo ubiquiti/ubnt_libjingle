@@ -74,7 +74,7 @@ class RTC_EXPORT VideoBitrateAllocation {
   }
 
   // UI customization
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
   void set_sum_bps(uint32_t bits) {
     sum_ = bits;
   }

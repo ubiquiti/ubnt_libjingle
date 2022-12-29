@@ -265,9 +265,13 @@ config("common_config") {
   cflags_objc = []
   defines = []
 
-  # UI customization
+  # UI customization, for data channel issue fixing and the max times to retry connecting
   if (rtc_enable_unifi_customization) {
     defines += [ "UI_CUSTOMIZATION" ]
+  }
+  
+  if (rtc_enable_unifi_bitrate_adjustment) {
+    defines += [ "UI_CUSTOMIZED_BITRATE_ADJUSTMENT" ]
   }
 
   if (rtc_enable_protobuf) {
