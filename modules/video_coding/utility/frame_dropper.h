@@ -56,7 +56,7 @@ class FrameDropper {
   void SetRates(float bitrate, float incoming_frame_rate);
 
   // UI customization
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
   void AccumulateReducedBits();
   uint32_t GetReducedBits();
   void ResetReducedBits() {
@@ -98,7 +98,7 @@ class FrameDropper {
   const float max_drop_duration_secs_;
 
   // UI customization
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
   float reduce_kbits_;
   uint64_t prev_time_ms_;
   float expected_bits_per_frame_;

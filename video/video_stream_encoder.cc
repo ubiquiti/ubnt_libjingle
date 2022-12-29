@@ -80,11 +80,13 @@ constexpr int kMaxAnimationPixels = 1280 * 720;
 
 constexpr int kDefaultMinScreenSharebps = 1200000;
 
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
 // UI customization - const variables for the adaptive bitrate adjustment
 // bitrate increase per second
 constexpr uint32_t kDefaultIncreasedBps = 50000;  // 50kbps
 // Min bitrate to enable the adaptive bitrate method
 constexpr uint32_t kBitrateToEnableAdaptive = 1000000;  // 1Mbps
+#endif
 
 bool RequiresEncoderReset(const VideoCodec& prev_send_codec,
                           const VideoCodec& new_send_codec,
@@ -701,10 +703,12 @@ VideoStreamEncoder::VideoStreamEncoder(
           kSwitchEncoderOnInitializationFailuresFieldTrial)),
       vp9_low_tier_core_threshold_(
           ParseVp9LowTierCoreCountThreshold(field_trials)),
-      encoder_queue_(std::move(encoder_queue)), 
-      prev_encoder_bitrate_bps_(0),
+      encoder_queue_(std::move(encoder_queue))
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
+      , prev_encoder_bitrate_bps_(0),
       last_bitrate_adjusted_time_ms_(0),
       init_encoder_bitrate_(false) 
+#endif
       {
   TRACE_EVENT0("webrtc", "VideoStreamEncoder::VideoStreamEncoder");
   RTC_DCHECK_RUN_ON(worker_queue_);
@@ -1289,7 +1293,9 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     rate_settings.rate_control.framerate_fps = GetInputFramerateFps();
 
     SetEncoderRates(UpdateBitrateAllocation(rate_settings));
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
     init_encoder_bitrate_ = true;
+#endif
   }
 
   encoder_stats_observer_->OnEncoderReconfigured(encoder_config_, streams);
@@ -1552,6 +1558,7 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     new_rate_settings.rate_control.bitrate = adjusted_allocation;
   }
 
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
   // UI customization
   auto bitrate_from_estimator = new_rate_settings.rate_control.bitrate.get_sum_bps();
   if (bitrate_from_estimator <= kBitrateToEnableAdaptive) {
@@ -1589,6 +1596,7 @@ VideoStreamEncoder::UpdateBitrateAllocation(
     }
     prev_encoder_bitrate_bps_ = new_rate_settings.rate_control.bitrate.get_sum_bps();
   }
+#endif
 
   return new_rate_settings;
 }
@@ -2397,7 +2405,9 @@ void VideoStreamEncoder::ReleaseEncoder() {
   }
   encoder_->Release();
   encoder_initialized_ = false;
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
   init_encoder_bitrate_ = false;
+#endif
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::Release");
 }
 
