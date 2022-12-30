@@ -1455,7 +1455,9 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
                       << frames_scheduled_for_processing << ". Avoid dropping frame";
     cwnd_frame_drop = false;
     frames_scheduled_for_processing = 1;
+#ifdef UI_CUSTOMIZED_BITRATE_ADJUSTMENT
     frame_dropper_.AccumulateReducedBits();
+#endif
   }
 
   if (frames_scheduled_for_processing == 1 && !cwnd_frame_drop) {
