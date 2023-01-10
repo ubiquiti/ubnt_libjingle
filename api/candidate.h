@@ -165,7 +165,13 @@ class RTC_EXPORT Candidate {
 
   std::string ToString() const { return ToStringInternal(false); }
 
-  std::string ToSensitiveString() const { return ToStringInternal(true); }
+  std::string ToSensitiveString() const {
+#ifdef UI_CUSTOMIZED_UNSANITIZE_IP
+    return ToString();
+#else
+    return ToStringInternal(true);
+#endif
+  }
 
   uint32_t GetPriority(uint32_t type_preference,
                        int network_adapter_preference,
