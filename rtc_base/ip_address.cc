@@ -151,6 +151,9 @@ std::string IPAddress::ToString() const {
 }
 
 std::string IPAddress::ToSensitiveString() const {
+#ifdef UI_CUSTOMIZED_UNSANITIZE_IP
+  return ToString();
+#else
   switch (family_) {
     case AF_INET: {
       std::string address = ToString();
@@ -174,6 +177,7 @@ std::string IPAddress::ToSensitiveString() const {
     }
   }
   return std::string();
+#endif
 }
 
 IPAddress IPAddress::Normalized() const {
