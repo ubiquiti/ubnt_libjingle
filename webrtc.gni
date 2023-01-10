@@ -231,6 +231,7 @@ declare_args() {
   # UI customization
   rtc_enable_unifi_customization = false
   rtc_enable_unifi_bitrate_adjustment = false
+  rtc_enable_unifi_unsanitize_ip = false
 }
 
 if (!build_with_mozilla) {

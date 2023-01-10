@@ -274,6 +274,10 @@ config("common_config") {
     defines += [ "UI_CUSTOMIZED_BITRATE_ADJUSTMENT" ]
   }
 
+  if (rtc_enable_unifi_unsanitize_ip) {
+    defines += [ "UI_CUSTOMIZED_UNSANITIZE_IP" ]
+  }
+
   if (rtc_enable_protobuf) {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {
