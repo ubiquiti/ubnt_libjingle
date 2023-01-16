@@ -116,7 +116,15 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
   for (const auto& packet_feedback : packet_feedback_vector) {
     delayed_feedback = false;
     IncomingPacketFeedback(packet_feedback, msg.feedback_time);
+#ifdef UI_CUSTOMIZATION
+    // Just observe sometimes the estimated bitrate will start dropping rapidly when 
+    // the state changes from normal to overuse (0->2), then make a big drop until 
+    // it back to normal, however, the bitrate is becoming too low and becase of no 
+    // probing request, it won't be recovered.
+    if ((prev_detector_state == BandwidthUsage::kBwUnderusing || prev_detector_state == BandwidthUsage::kBwOverusing) &&
+#else
     if (prev_detector_state == BandwidthUsage::kBwUnderusing &&
+#endif
         active_delay_detector_->State() == BandwidthUsage::kBwNormal) {
       recovered_from_overuse = true;
     }
