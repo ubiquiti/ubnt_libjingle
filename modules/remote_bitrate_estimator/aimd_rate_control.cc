@@ -233,8 +233,13 @@ double AimdRateControl::GetNearMaxIncreaseRateBpsPerSecond() const {
 
   // Approximate the over-use estimator delay to 100 ms.
   TimeDelta response_time = rtt_ + TimeDelta::Millis(100);
+#ifnef UI_CUSTMIZATION
+  // Not quite sure about this part, but looks like it's in experiment
+  // although it's enabled by default. Currently, remove it to make the 
+  // BWE recovered a little faster.
   if (in_experiment_)
     response_time = response_time * 2;
+#endif
   double increase_rate_bps_per_second =
       (avg_packet_size / response_time).bps<double>();
   double kMinIncreaseRateBpsPerSecond = 4000;
@@ -423,6 +428,13 @@ void AimdRateControl::ChangeState(const RateControlInput& input,
         time_last_bitrate_change_ = at_time;
         rate_control_state_ = RateControlState::kRcIncrease;
       }
+#ifdef UI_CUSTMIZATION
+      // if the state is in case of normal, it means the bitrate is dropped to the one 
+      // which can adapt current bandwidth, so we can raise it to hold state.
+      else if (rate_control_state_ == RateControlState::kRcDecrease) {
+        rate_control_state_ = RateControlState::kRcHold;
+      }
+#endif
       break;
     case BandwidthUsage::kBwOverusing:
       if (rate_control_state_ != RateControlState::kRcDecrease) {
