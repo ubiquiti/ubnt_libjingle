@@ -209,15 +209,20 @@ std::vector<ProbeClusterConfig> ProbeController::SetBitrates(
 std::vector<ProbeClusterConfig> ProbeController::OnMaxTotalAllocatedBitrate(
     DataRate max_total_allocated_bitrate,
     Timestamp at_time) {
+#ifndef UI_CUSTOMIZATION
   const bool in_alr = alr_start_time_.has_value();
   const bool allow_allocation_probe = in_alr;
+#endif
 
   if (config_.probe_on_max_allocated_bitrate_change &&
       state_ == State::kProbingComplete &&
       max_total_allocated_bitrate != max_total_allocated_bitrate_ &&
       estimated_bitrate_ < max_bitrate_ &&
-      estimated_bitrate_ < max_total_allocated_bitrate &&
-      allow_allocation_probe) {
+      estimated_bitrate_ < max_total_allocated_bitrate 
+#ifndef UI_CUSTOMIZATION
+      && allow_allocation_probe
+#endif
+      ) {
     max_total_allocated_bitrate_ = max_total_allocated_bitrate;
 
     if (!config_.first_allocation_probe_scale)
@@ -360,7 +365,11 @@ std::vector<ProbeClusterConfig> ProbeController::RequestProbe(
             "WebRTC.BWE.BweDropProbingIntervalInS",
             (at_time - last_bwe_drop_probing_time_).seconds());
         last_bwe_drop_probing_time_ = at_time;
+#ifdef UI_CUSTOMIZATION
+        return InitiateProbing(at_time, {suggested_probe}, true);
+#else
         return InitiateProbing(at_time, {suggested_probe}, false);
+#endif
       }
     }
   }
