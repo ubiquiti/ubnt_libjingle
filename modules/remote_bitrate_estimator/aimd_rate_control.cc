@@ -428,13 +428,6 @@ void AimdRateControl::ChangeState(const RateControlInput& input,
         time_last_bitrate_change_ = at_time;
         rate_control_state_ = RateControlState::kRcIncrease;
       }
-#ifdef UI_CUSTMIZATION
-      // if the state is in case of normal, it means the bitrate has dropped to the 
-      // value adapted for current bandwidth, so we can raise it to hold state.
-      else if (rate_control_state_ == RateControlState::kRcDecrease) {
-        rate_control_state_ = RateControlState::kRcHold;
-      }
-#endif
       break;
     case BandwidthUsage::kBwOverusing:
       if (rate_control_state_ != RateControlState::kRcDecrease) {
