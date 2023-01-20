@@ -231,6 +231,7 @@ declare_args() {
   # UI customization
   rtc_enable_unifi_customization = false
   rtc_enable_unifi_unsanitize_ip = false
+  rtc_enable_unifi_bitrate_recovery = false
 
   # When set to true, a run-time check will make sure that all field trial keys
   # have been registered in accordance with the field trial policy. The check
