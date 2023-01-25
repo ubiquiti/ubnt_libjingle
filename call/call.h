@@ -32,6 +32,10 @@
 #include "rtc_base/network_route.h"
 #include "rtc_base/ref_count.h"
 
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+#include "call/rtp_stream_receiver_controller.h"
+#endif
+
 namespace webrtc {
 
 // A Call represents a two-way connection carrying zero or more outgoing
@@ -147,6 +151,10 @@ class Call {
 
   virtual TaskQueueBase* network_thread() const = 0;
   virtual TaskQueueBase* worker_thread() const = 0;
+
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+  virtual RtpStreamReceiverController* receiver_controller() = 0;
+#endif
 
   virtual ~Call() {}
 };

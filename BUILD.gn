@@ -274,6 +274,10 @@ config("common_config") {
     defines += [ "UI_CUSTOMIZED_BITRATE_ADJUSTMENT" ]
   }
 
+  if (rtc_enable_unifi_audio_stream_api) {
+    defines += [ "UI_CUSTOMIZED_AUDIO_STREAM_API" ]
+  }
+
   if (rtc_enable_unifi_unsanitize_ip) {
     defines += [ "UI_CUSTOMIZED_UNSANITIZE_IP" ]
   }
