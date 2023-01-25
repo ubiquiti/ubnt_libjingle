@@ -233,7 +233,7 @@ double AimdRateControl::GetNearMaxIncreaseRateBpsPerSecond() const {
 
   // Approximate the over-use estimator delay to 100 ms.
   TimeDelta response_time = rtt_ + TimeDelta::Millis(100);
-#ifndef UI_CUSTMIZATION
+#ifndef UI_BITRATE_RECOVERY
   // Not quite sure about this part, but looks like it's in experiment
   // although it's enabled by default. Currently, remove it to make the 
   // BWE recovered a little faster.
@@ -289,7 +289,12 @@ void AimdRateControl::ChangeBitrate(const RateControlInput& input,
       // bitrate increases. We allow a bit more lag at very low rates to not too
       // easily get stuck if the encoder produces uneven outputs.
       DataRate increase_limit =
+#ifdef UI_BITRATE_RECOVERY
+          // just increase the upper bound so that the bitrate will be recovered a little bit quick.
+          2.0 * estimated_throughput + DataRate::KilobitsPerSec(10);
+#else
           1.5 * estimated_throughput + DataRate::KilobitsPerSec(10);
+#endif
       if (ignore_throughput_limit_if_network_estimate_ && network_estimate_ &&
           network_estimate_->link_capacity_upper.IsFinite()) {
         // If we have a Network estimate, we do allow the estimate to increase.
@@ -428,13 +433,6 @@ void AimdRateControl::ChangeState(const RateControlInput& input,
         time_last_bitrate_change_ = at_time;
         rate_control_state_ = RateControlState::kRcIncrease;
       }
-#ifdef UI_CUSTMIZATION
-      // if the state is in case of normal, it means the bitrate has dropped to the 
-      // value adapted for current bandwidth, so we can raise it to hold state.
-      else if (rate_control_state_ == RateControlState::kRcDecrease) {
-        rate_control_state_ = RateControlState::kRcHold;
-      }
-#endif
       break;
     case BandwidthUsage::kBwOverusing:
       if (rate_control_state_ != RateControlState::kRcDecrease) {
