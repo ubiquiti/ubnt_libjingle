@@ -242,6 +242,10 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
     if (probe_bitrate) {
       result.probe = true;
       result.updated = true;
+#ifdef UI_BITRATE_RECOVERY
+      // improve the UX, let bitrate won't be dropped that fast
+      if (probe_bitrate->bps() > rate_control_.LatestEstimate().bps())
+#endif
       rate_control_.SetEstimate(*probe_bitrate, at_time);
       result.target_bitrate = rate_control_.LatestEstimate();
     } else {
