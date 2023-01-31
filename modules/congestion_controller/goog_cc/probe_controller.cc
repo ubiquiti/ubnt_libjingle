@@ -485,17 +485,21 @@ std::vector<ProbeClusterConfig> ProbeController::Process(Timestamp at_time) {
   uint32_t elapsed_time = 0;
   if (last_probing_time_.ms() > 0)
     elapsed_time = at_time.ms() - last_probing_time_.ms();
+  bool periodic_probe = elapsed_time > kTimeBetweenProbes.ms();
 #endif
   if (TimeForAlrProbe(at_time) || TimeForNetworkStateProbe(at_time)
 #ifdef UI_BITRATE_RECOVERY
-      || elapsed_time > kTimeBetweenProbes.ms()
+      || periodic_probe
 #endif
       ) {
 #ifdef UI_BITRATE_RECOVERY
     last_probing_time_ = at_time;
-#endif
+    return InitiateProbing(
+        at_time, {estimated_bitrate_ * config_.alr_probe_scale}, !periodic_probe);
+#else
     return InitiateProbing(
         at_time, {estimated_bitrate_ * config_.alr_probe_scale}, true);
+#endif
   }
   return std::vector<ProbeClusterConfig>();
 }
