@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
+#include "absl/strings/match.h"
 #include "api/crypto/crypto_options.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
@@ -35,6 +36,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/trace_event.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -246,6 +248,8 @@ VideoSendStreamImpl::VideoSendStreamImpl(
   RTC_DCHECK_NE(initial_encoder_max_bitrate, 0);
   RTC_LOG(LS_INFO) << "VideoSendStreamImpl: " << config_->ToString();
 
+  RTC_LOG(LS_INFO) << " max_pacing_delay_ms: " << pacing_config_.max_pacing_delay.Get().ms();
+
   RTC_CHECK(AlrExperimentSettings::MaxOneFieldTrialEnabled());
 
   // Only request rotation at the source when we positively know that the remote
@@ -354,12 +358,17 @@ void VideoSendStreamImpl::StartupVideoSendStream() {
           RTC_DCHECK_RUN_ON(rtp_transport_queue_);
           if (!activity_) {
             if (!timed_out_) {
+#ifndef UI_CUSTOMIZATION_VIDEO_PAUSE
+              // We assume that our encoder is always activity unless it is stopped.
               SignalEncoderTimedOut();
+#endif
             }
             timed_out_ = true;
             disable_padding_ = true;
           } else if (timed_out_) {
+#ifndef UI_CUSTOMIZATION_VIDEO_PAUSE
             SignalEncoderActive();
+#endif
             timed_out_ = false;
           }
           activity_ = false;
