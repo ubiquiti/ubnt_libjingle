@@ -52,11 +52,6 @@ class RTC_EXPORT EncodedImageCallback {
 
     Error error;
 
-    Result(Error error, bool video_paused, uint32_t rate) 
-        : error(error), paused(video_paused), paused_rate(rate) {}
-    bool paused = false;
-    uint32_t paused_rate = 0;
-
     // Frame ID assigned to the frame. The frame ID should be the same as the ID
     // seen by the receiver for this frame. RTP timestamp of the frame is used
     // as frame ID when RTP is used to send video. Must be used only when
