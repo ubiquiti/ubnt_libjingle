@@ -434,6 +434,13 @@ void PacingController::ProcessPackets() {
     std::unique_ptr<RtpPacketToSend> rtp_packet =
         GetPendingPacket(pacing_info, target_send_time, now);
     if (rtp_packet == nullptr) {
+#ifdef UI_CUSTOMIZATION_VIDEO_PAUSE
+      // Check if we already have video or audio data, if no, then it is in case 
+      // of a video paused and audio muted situation. So we need to forced activate
+      // probing to generate padding packets for later probing.
+      if (!is_probing && data_sent == DataSize::Zero())
+        prober_.activateProbe();
+#endif
       // No packet available to send, check if we should send padding.
       DataSize padding_to_add = PaddingToAdd(recommended_probe_size, data_sent);
       if (padding_to_add > DataSize::Zero()) {

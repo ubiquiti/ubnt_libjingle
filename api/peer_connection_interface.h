@@ -384,6 +384,14 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
           video_rtcp_report_interval_ms;
     }
 
+    // UI-CUSTOMIZATION
+    bool periodic_alr_bandwidth_probing() const {
+      return media_config.video.periodic_alr_bandwidth_probing;
+    }
+    void set_periodic_alr_bandwidth_probing(bool enable) {
+      media_config.video.periodic_alr_bandwidth_probing = enable;
+    }
+
     // Settings for the port allcoator. Applied only if the port allocator is
     // created by PeerConnectionFactory, not if it is injected with
     // PeerConnectionDependencies

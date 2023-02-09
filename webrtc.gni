@@ -233,6 +233,7 @@ declare_args() {
   rtc_enable_unifi_unsanitize_ip = false
   rtc_enable_unifi_bitrate_recovery = false
   rtc_enable_unifi_audio_stream_api = false
+  rtc_enable_unifi_video_auto_pause = false
   # When set to true, a run-time check will make sure that all field trial keys
   # have been registered in accordance with the field trial policy. The check
   # will only run with builds that have RTC_DCHECKs enabled.
