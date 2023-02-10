@@ -356,17 +356,12 @@ void VideoSendStreamImpl::StartupVideoSendStream() {
           RTC_DCHECK_RUN_ON(rtp_transport_queue_);
           if (!activity_) {
             if (!timed_out_) {
-#ifndef UI_CUSTOMIZATION_VIDEO_PAUSE
-              // We assume that our encoder is always activity unless it is stopped.
               SignalEncoderTimedOut();
-#endif
             }
             timed_out_ = true;
             disable_padding_ = true;
           } else if (timed_out_) {
-#ifndef UI_CUSTOMIZATION_VIDEO_PAUSE
             SignalEncoderActive();
-#endif
             timed_out_ = false;
           }
           activity_ = false;
