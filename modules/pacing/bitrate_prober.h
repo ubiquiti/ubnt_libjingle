@@ -80,13 +80,6 @@ class BitrateProber {
   // the last packet in probe. `size` is the total size of all packets in probe.
   void ProbeSent(Timestamp now, DataSize size);
 
-#ifdef UI_CUSTOMIZATION_VIDEO_PAUSE
-  void activateProbe() {
-    next_probe_time_ = Timestamp::MinusInfinity();
-    probing_state_ = ProbingState::kActive;
-  }
-#endif
-
  private:
   enum class ProbingState {
     // Probing will not be triggered in this state at all times.

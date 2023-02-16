@@ -284,10 +284,6 @@ config("common_config") {
     defines += [ "UI_BITRATE_RECOVERY" ]
   }
 
-  if (rtc_enable_unifi_video_auto_pause) {
-    defines += [ "UI_CUSTOMIZATION_VIDEO_PAUSE" ]
-  }
-
   if (rtc_enable_protobuf) {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {
