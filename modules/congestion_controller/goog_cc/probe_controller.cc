@@ -501,9 +501,9 @@ std::vector<ProbeClusterConfig> ProbeController::Process(Timestamp at_time) {
     return InitiateProbing(
         at_time, {estimated_bitrate_ * config_.alr_probe_scale}, futher_probe);
 #else
-    if (TimeForAlrProbe(at_time) || TimeForNetworkStateProbe(at_time)) {
-      return InitiateProbing(
-          at_time, {estimated_bitrate_ * config_.alr_probe_scale}, true);
+  if (TimeForAlrProbe(at_time) || TimeForNetworkStateProbe(at_time)) {
+    return InitiateProbing(
+        at_time, {estimated_bitrate_ * config_.alr_probe_scale}, true);
 #endif
   }
   return std::vector<ProbeClusterConfig>();
