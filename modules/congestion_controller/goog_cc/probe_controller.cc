@@ -491,11 +491,11 @@ std::vector<ProbeClusterConfig> ProbeController::Process(Timestamp at_time) {
     bool futher_probe = true;
     // check if we are in alr state(alr checking first), if so, do futher probing.
     if (time_for_alr_probe) {
-      RTC_LOG(LS_ERROR) << "Start Alr probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
+      RTC_LOG(LS_INFO) << "Start Alr probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
     } else if (periodic_probe) {
       // If we aren't in alr state, then for periodic probing, we don't do futher probing.
       futher_probe = false;
-      RTC_LOG(LS_ERROR) << "Start periodic probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
+      RTC_LOG(LS_INFO) << "Start periodic probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
     }
     last_probing_time_ = at_time;
     return InitiateProbing(
