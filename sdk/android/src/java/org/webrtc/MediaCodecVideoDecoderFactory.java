@@ -63,9 +63,9 @@ class MediaCodecVideoDecoderFactory implements VideoDecoderFactory {
   public VideoCodecInfo[] getSupportedCodecs() {
     List<VideoCodecInfo> supportedCodecInfos = new ArrayList<VideoCodecInfo>();
     // Generate a list of supported codecs in order of preference:
-    // VP8, VP9, H264 (high profile), and H264 (baseline profile).
-    for (VideoCodecMimeType type : new VideoCodecMimeType[] {VideoCodecMimeType.VP8,
-             VideoCodecMimeType.VP9, VideoCodecMimeType.H264, VideoCodecMimeType.AV1}) {
+    // VP8, VP9, H264 (high profile), and H264 (baseline profile), H.265(optional)
+    for (VideoCodecMimeType type : new VideoCodecMimeType[] {/*VideoCodecMimeType.VP8,
+      VideoCodecMimeType.VP9, */VideoCodecMimeType.H265, VideoCodecMimeType.H264/*, VideoCodecMimeType.AV1*/}) {
       MediaCodecInfo codec = findCodecForType(type);
       if (codec != null) {
         String name = type.name();
