@@ -448,11 +448,14 @@ void RTPSenderVideo::AddRtpHeaderExtensions(const RTPVideoHeader& video_header,
       packet->SetExtension<RtpGenericFrameDescriptorExtension00>(
           generic_descriptor);
     }
+#if 0
     if (video_header.codec == kVideoCodecH264 && last_packet) {
       packet->SetExtension<PictureId>(
           absl::get<RTPVideoHeaderH264>(video_header.video_type_header)
               .picture_id);
-    } else if (video_header.codec == kVideoCodecH265 && last_packet) {
+    } else 
+#endif
+    if (video_header.codec == kVideoCodecH265 && last_packet) {
       packet->SetExtension<PictureId>(
           absl::get<RTPVideoHeaderH265>(video_header.video_type_header)
               .picture_id);
@@ -488,6 +491,8 @@ bool RTPSenderVideo::SendVideo(
                           FrameTypeToString(video_header.frame_type));
   RTC_CHECK_RUNS_SERIALIZED(&send_checker_);
 
+  RTC_LOG(LS_ERROR) << "    RTPSenderVideo::SendVideo";
+
   if (video_header.frame_type == VideoFrameType::kEmptyFrame)
     return true;
 
@@ -502,10 +507,12 @@ bool RTPSenderVideo::SendVideo(
   if (codec_type == VideoCodecType::kVideoCodecH264) {
     // Backward compatibility for older receivers without temporal layer logic.
     retransmission_settings = kRetransmitBaseLayer | kRetransmitHigherLayers;
+#if 0
     if (!absl::get<RTPVideoHeaderH264>(video_header.video_type_header)
              .has_last_fragement) {
       frame_completed = false;
     }
+#endif
   }
 #ifdef WEBRTC_USE_H265
   else if (codec_type == VideoCodecType::kVideoCodecH265) {
@@ -738,11 +745,11 @@ bool RTPSenderVideo::SendVideo(
 
     if (first_frame) {
       if (i == 0) {
-        RTC_LOG(LS_INFO)
+        RTC_LOG(LS_ERROR)
             << "Sent first RTP packet of the first video frame (pre-pacer)";
       }
       if (i == num_packets - 1) {
-        RTC_LOG(LS_INFO)
+        RTC_LOG(LS_ERROR)
             << "Sent last RTP packet of the first video frame (pre-pacer)";
       }
     }

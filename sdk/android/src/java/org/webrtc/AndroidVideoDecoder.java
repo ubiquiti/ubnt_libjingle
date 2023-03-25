@@ -146,6 +146,10 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
 
   @Override
   public VideoCodecStatus initDecode(Settings settings, Callback callback) {
+
+    Logging.w(TAG, "#-> VideoCodecStatus::initDecode() ");
+
+
     this.decoderThreadChecker = new ThreadChecker();
 
     this.callback = callback;
@@ -154,11 +158,15 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
       surface = new Surface(surfaceTextureHelper.getSurfaceTexture());
       surfaceTextureHelper.startListening(this);
     }
+    Logging.w(TAG, "<-# VideoCodecStatus::initDecode() ");
     return initDecodeInternal(settings.width, settings.height);
   }
 
   // Internal variant is used when restarting the codec due to reconfiguration.
   private VideoCodecStatus initDecodeInternal(int width, int height) {
+
+    Logging.w(TAG, "#-> VideoCodecStatus::initDecodeInternal() width: " + width + " height: " + height +" codecName: " + codecName);
+
     decoderThreadChecker.checkIsOnValidThread();
     Logging.d(TAG,
         "initDecodeInternal name: " + codecName + " type: " + codecType + " width: " + width
@@ -200,7 +208,7 @@ class AndroidVideoDecoder implements VideoDecoder, VideoSink {
     outputThread = createOutputThread();
     outputThread.start();
 
-    Logging.d(TAG, "initDecodeInternal done");
+    Logging.d(TAG, "<-# VideoCodecStatus::initDecodeInternal() done");
     return VideoCodecStatus.OK;
   }
 

@@ -253,7 +253,7 @@ bool VCMGenericDecoder::Configure(const VideoDecoder::Settings& settings) {
 
   bool ok = decoder_->Configure(settings);
   decoder_info_ = decoder_->GetDecoderInfo();
-  RTC_LOG(LS_INFO) << "Decoder implementation: " << decoder_info_.ToString();
+  RTC_LOG(LS_INFO) << "VCMGenericDecoder::Configure() Decoder implementation: " << decoder_info_.ToString();
   if (_callback) {
     _callback->OnDecoderInfoChanged(decoder_info_);
   }

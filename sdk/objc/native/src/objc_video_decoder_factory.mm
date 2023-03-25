@@ -45,6 +45,9 @@ class ObjCVideoDecoder : public VideoDecoder {
   int32_t Decode(const EncodedImage &input_image,
                  bool missing_frames,
                  int64_t render_time_ms = -1) override {
+    
+    RTC_LOG(LS_ERROR) << "#-> ObjCVideoDecoder::decode " << render_time_ms;
+
     RTC_OBJC_TYPE(RTCEncodedImage) *encodedImage =
         [[RTC_OBJC_TYPE(RTCEncodedImage) alloc] initWithNativeEncodedImage:input_image];
 
@@ -94,9 +97,20 @@ id<RTC_OBJC_TYPE(RTCVideoDecoderFactory)> ObjCVideoDecoderFactory::wrapped_decod
 
 std::unique_ptr<VideoDecoder> ObjCVideoDecoderFactory::CreateVideoDecoder(
     const SdpVideoFormat &format) {
+  
+  NSLog(@"#-> ObjCVideoDecoderFactory::CreateVideoDecoder %s", format.name.c_str());
+
   NSString *codecName = [NSString stringWithUTF8String:format.name.c_str()];
+  
+  NSLog(@"    ObjCVideoDecoderFactory::CreateVideoDecoder %@", codecName);
+
+
   for (RTC_OBJC_TYPE(RTCVideoCodecInfo) * codecInfo in decoder_factory_.supportedCodecs) {
+    
+    NSLog(@"    ObjCVideoDecoderFactory::CreateVideoDecoder %@", codecInfo.name);
+
     if ([codecName isEqualToString:codecInfo.name]) {
+
       id<RTC_OBJC_TYPE(RTCVideoDecoder)> decoder = [decoder_factory_ createDecoder:codecInfo];
 
       if ([decoder isKindOfClass:[RTC_OBJC_TYPE(RTCWrappedNativeVideoDecoder) class]]) {

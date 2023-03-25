@@ -26,9 +26,10 @@ public class SoftwareVideoDecoderFactory implements VideoDecoderFactory {
   @Nullable
   @Override
   public VideoDecoder createDecoder(VideoCodecInfo info) {
+    Logging.w(TAG, "#-> SoftwareVideoDecoderFactory::createDecoder()" + info);
     long nativeDecoder = nativeCreateDecoder(nativeFactory, info);
     if (nativeDecoder == 0) {
-      Logging.w(TAG, "Trying to create decoder for unsupported format. " + info);
+      Logging.w(TAG, "<-# SoftwareVideoDecoderFactory::createDecoder() FAILED! Trying to create decoder for unsupported format. " + info);
       return null;
     }
 

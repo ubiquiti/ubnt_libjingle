@@ -97,6 +97,9 @@ std::vector<SdpVideoFormat> MultiplexDecoderFactory::GetSupportedFormats()
 
 std::unique_ptr<VideoDecoder> MultiplexDecoderFactory::CreateVideoDecoder(
     const SdpVideoFormat& format) {
+  
+  RTC_LOG(LS_ERROR) << "#-> MultiplexDecoderFactory::CreateVideoDecoder";
+
   if (!IsMultiplexCodec(cricket::VideoCodec(format)))
     return factory_->CreateVideoDecoder(format);
   const auto& it =

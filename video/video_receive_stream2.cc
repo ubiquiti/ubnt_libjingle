@@ -136,6 +136,9 @@ class NullVideoDecoder : public webrtc::VideoDecoder {
   int32_t Decode(const webrtc::EncodedImage& input_image,
                  bool missing_frames,
                  int64_t render_time_ms) override {
+    
+    RTC_LOG(LS_ERROR) << "#-> NullVideoDecoder::decode " << render_time_ms;
+
     RTC_LOG(LS_ERROR) << "The NullVideoDecoder doesn't support decoding.";
     return WEBRTC_VIDEO_CODEC_OK;
   }
@@ -558,6 +561,9 @@ void VideoReceiveStream2::SetAssociatedPayloadTypes(
 
 void VideoReceiveStream2::CreateAndRegisterExternalDecoder(
     const Decoder& decoder) {
+
+  RTC_LOG(LS_INFO) << "#-> VideoReceiveStream2::" << __func__;
+  
   TRACE_EVENT0("webrtc",
                "VideoReceiveStream2::CreateAndRegisterExternalDecoder");
   std::unique_ptr<VideoDecoder> video_decoder =
@@ -659,6 +665,7 @@ void VideoReceiveStream2::OnFrame(const VideoFrame& video_frame) {
 
   // TODO(bugs.webrtc.org/10739): we should set local capture clock offset for
   // `video_frame.packet_infos`. But VideoFrame is const qualified here.
+  RTC_LOG(LS_ERROR) << "#-> VideoReceiveStream2::OnFrame ";
 
   call_->worker_thread()->PostTask(
       SafeTask(task_safety_.flag(), [frame_meta, this]() {
@@ -783,6 +790,9 @@ bool VideoReceiveStream2::SetMinimumPlayoutDelay(int delay_ms) {
 
 void VideoReceiveStream2::OnEncodedFrame(std::unique_ptr<EncodedFrame> frame) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+
+  RTC_LOG(LS_INFO) << "#-> VideoReceiveStream2::" << __func__;
+
   Timestamp now = clock_->CurrentTime();
   const bool keyframe_request_is_due =
       !last_keyframe_request_ ||
@@ -827,6 +837,8 @@ void VideoReceiveStream2::OnEncodedFrame(std::unique_ptr<EncodedFrame> frame) {
                    buffer_->StartNextDecode(keyframe_required_);
                  }));
   });
+
+  RTC_LOG(LS_INFO) << "<-# VideoReceiveStream2::" << __func__;
 }
 
 void VideoReceiveStream2::OnDecodableFrameTimeout(TimeDelta wait) {
@@ -863,6 +875,8 @@ VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue(
     bool keyframe_required) {
   RTC_DCHECK_RUN_ON(&decode_queue_);
 
+  RTC_LOG(LS_INFO) << "#-> VideoReceiveStream2::" << __func__;
+
   bool force_request_key_frame = false;
   absl::optional<int64_t> decoded_frame_picture_id;
 
@@ -893,6 +907,7 @@ VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue(
     //                 has been fixed.
     force_request_key_frame = true;
   }
+  RTC_LOG(LS_INFO) << "<-# VideoReceiveStream2::" << __func__;
 
   return DecodeFrameResult{
       .force_request_key_frame = force_request_key_frame,
@@ -903,6 +918,10 @@ VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue(
 
 int VideoReceiveStream2::DecodeAndMaybeDispatchEncodedFrame(
     std::unique_ptr<EncodedFrame> frame) {
+
+
+  RTC_LOG(LS_INFO) << "#-> VideoReceiveStream2::DecodeAndMaybeDispatchEncodedFrame";
+
   RTC_DCHECK_RUN_ON(&decode_queue_);
 
   // If `buffered_encoded_frames_` grows out of control (=60 queued frames),

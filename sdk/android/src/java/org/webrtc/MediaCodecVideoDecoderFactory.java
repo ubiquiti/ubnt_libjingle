@@ -46,6 +46,9 @@ class MediaCodecVideoDecoderFactory implements VideoDecoderFactory {
   @Nullable
   @Override
   public VideoDecoder createDecoder(VideoCodecInfo codecType) {
+
+    Logging.w(TAG, "#-> MediaCodecVideoDecoderFactory::createDecoder()" + codecType);
+
     VideoCodecMimeType type = VideoCodecMimeType.valueOf(codecType.getName());
     MediaCodecInfo info = findCodecForType(type);
 
@@ -61,11 +64,14 @@ class MediaCodecVideoDecoderFactory implements VideoDecoderFactory {
 
   @Override
   public VideoCodecInfo[] getSupportedCodecs() {
+
+    Logging.w(TAG, "#-> MediaCodecVideoDecoderFactory::getSupportedCodecs()");
+
     List<VideoCodecInfo> supportedCodecInfos = new ArrayList<VideoCodecInfo>();
     // Generate a list of supported codecs in order of preference:
     // VP8, VP9, H264 (high profile), and H264 (baseline profile), H.265(optional)
-    for (VideoCodecMimeType type : new VideoCodecMimeType[] {VideoCodecMimeType.VP8,
-             VideoCodecMimeType.VP9, VideoCodecMimeType.H264, VideoCodecMimeType.H265, VideoCodecMimeType.AV1}) {
+    for (VideoCodecMimeType type : new VideoCodecMimeType[] {/*VideoCodecMimeType.VP8,
+      VideoCodecMimeType.VP9, VideoCodecMimeType.H264, */VideoCodecMimeType.H265/*, VideoCodecMimeType.AV1*/}) {
       MediaCodecInfo codec = findCodecForType(type);
       if (codec != null) {
         String name = type.name();
@@ -78,6 +84,7 @@ class MediaCodecVideoDecoderFactory implements VideoDecoderFactory {
             name, MediaCodecUtils.getCodecProperties(type, /* highProfile= */ false)));
       }
     }
+    Logging.w(TAG, "<-# MediaCodecVideoDecoderFactory::getSupportedCodecs() size=" + supportedCodecInfos.size());
 
     return supportedCodecInfos.toArray(new VideoCodecInfo[supportedCodecInfos.size()]);
   }

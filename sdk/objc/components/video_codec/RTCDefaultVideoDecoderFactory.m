@@ -28,6 +28,9 @@
 @implementation RTC_OBJC_TYPE (RTCDefaultVideoDecoderFactory)
 
 - (NSArray<RTC_OBJC_TYPE(RTCVideoCodecInfo) *> *)supportedCodecs {
+
+  NSLog(@"#-> RTCDefaultVideoDecodeFactory::supportedCodecs !!!!!!!!!!!!!!!!!!");
+
   NSDictionary<NSString *, NSString *> *constrainedHighParams = @{
     @"profile-level-id" : kRTCMaxSupportedH264ProfileLevelConstrainedHigh,
     @"level-asymmetry-allowed" : @"1",
@@ -49,17 +52,19 @@
   RTC_OBJC_TYPE(RTCVideoCodecInfo) *vp8Info =
       [[RTC_OBJC_TYPE(RTCVideoCodecInfo) alloc] initWithName:kRTCVideoCodecVp8Name];
 
-#ifdef WEBRTC_USE_H265
+//#ifdef WEBRTC_USE_H265
   RTCVideoCodecInfo *h265Info = [[RTCVideoCodecInfo alloc] initWithName:kRTCVideoCodecH265Name];
-#endif
+
+  NSLog(@"    RTCDefaultVideoDecodeFactory::supportedCodecs H265 added !!!!!!!!!!!!!!!!!!");
+//#endif
 
   NSMutableArray<RTC_OBJC_TYPE(RTCVideoCodecInfo) *> *result = [@[
     constrainedHighInfo,
     constrainedBaselineInfo,
     vp8Info,
-#ifdef WEBRTC_USE_H265
+//#ifdef WEBRTC_USE_H265
     h265Info,
-#endif
+//#endif
   ] mutableCopy];
 
   if ([RTC_OBJC_TYPE(RTCVideoDecoderVP9) isSupported]) {
@@ -71,14 +76,17 @@
   [result addObject:[[RTC_OBJC_TYPE(RTCVideoCodecInfo) alloc] initWithName:kRTCVideoCodecAv1Name]];
 #endif
 
-#if defined(RTC_USE_H265)
-  [result addObject:h265Info];
-#endif
-
+//#if defined(RTC_USE_H265)
+//  [result addObject:h265Info];
+//#endif
+  NSLog(@"<-# RTCDefaultVideoDecodeFactory::supportedCodecs !!!!!!!!!!!!!!!!!");
   return result;
 }
 
 - (id<RTC_OBJC_TYPE(RTCVideoDecoder)>)createDecoder:(RTC_OBJC_TYPE(RTCVideoCodecInfo) *)info {
+  
+  NSLog(@"#-> RTCDefaultVideoDecodeFactory::createDecoder %@", info.name);
+
   if ([info.name isEqualToString:kRTCVideoCodecH264Name]) {
     return [[RTC_OBJC_TYPE(RTCVideoDecoderH264) alloc] init];
   } else if ([info.name isEqualToString:kRTCVideoCodecVp8Name]) {
@@ -93,13 +101,15 @@
     return [RTC_OBJC_TYPE(RTCVideoDecoderAV1) av1Decoder];
   }
 #endif
-#ifdef WEBRTC_USE_H265
-  if (@available(iOS 11, *)) {
+//#ifdef WEBRTC_USE_H265
+  //if (@available(iOS 11, *)) {
     if ([info.name isEqualToString:kRTCVideoCodecH265Name]) {
+      NSLog(@"<-# RTCDefaultVideoDecodeFactory::createDecoder H265 OK!");
       return [[RTCVideoDecoderH265 alloc] init];
     }
-  }
-#endif
+  //}
+//#endif
+  NSLog(@"<-# RTCDefaultVideoDecodeFactory::createDecoder FAILED!");
   return nil;
 }
 

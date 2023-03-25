@@ -47,6 +47,7 @@ void h265DecompressionOutputCallback(void* decoder,
                                      CVImageBufferRef imageBuffer,
                                      CMTime timestamp,
                                      CMTime duration) {
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::h265DecompressionOutputCallback ";
   std::unique_ptr<RTCH265FrameDecodeParams> decodeParams(
       reinterpret_cast<RTCH265FrameDecodeParams*>(params));
   if (status != noErr) {
@@ -93,7 +94,10 @@ void h265DecompressionOutputCallback(void* decoder,
       codecSpecificInfo:(__nullable id<RTCCodecSpecificInfo>)info
            renderTimeMs:(int64_t)renderTimeMs {
   RTC_DCHECK(inputImage.buffer);
-
+  
+  
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::decode length=" << inputImage.buffer.length;
+  
   if (_error != noErr) {
     RTC_LOG(LS_WARNING) << "Last frame decode failed.";
     _error = noErr;
@@ -101,13 +105,18 @@ void h265DecompressionOutputCallback(void* decoder,
   }
 
   rtc::ScopedCFTypeRef<CMVideoFormatDescriptionRef> inputFormat =
-      rtc::ScopedCF(webrtc::CreateVideoFormatDescription(
+      rtc::ScopedCF(webrtc::CreateH265VideoFormatDescription(
           (uint8_t*)inputImage.buffer.bytes, inputImage.buffer.length));
+  
+  
   if (inputFormat) {
-    CMVideoDimensions dimensions =
-        CMVideoFormatDescriptionGetDimensions(inputFormat.get());
-    RTC_LOG(LS_INFO) << "Resolution: " << dimensions.width << " x "
-                     << dimensions.height;
+
+
+    CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(inputFormat.get());
+    
+    
+    RTC_LOG(LS_INFO) << "Resolution: " << dimensions.width << " x " << dimensions.height;
+    
     // Check if the video format has changed, and reinitialize decoder if
     // needed.
     if (!CMFormatDescriptionEqual(inputFormat.get(), _videoFormat)) {
@@ -179,6 +188,7 @@ void h265DecompressionOutputCallback(void* decoder,
 #pragma mark - Private
 
 - (int)resetDecompressionSession {
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::decode ";
   [self destroyDecompressionSession];
 
   // Need to wait for the first SPS to initialize decoder.
@@ -196,7 +206,9 @@ void h265DecompressionOutputCallback(void* decoder,
   // we can pass CVPixelBuffers as native handles in decoder output.
   static size_t const attributesSize = 3;
   CFTypeRef keys[attributesSize] = {
-#if defined(WEBRTC_IOS)
+#if defined(WEBRTC_IOS) && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR)
+    kCVPixelBufferMetalCompatibilityKey,
+#elif defined(WEBRTC_IOS)
     kCVPixelBufferOpenGLESCompatibilityKey,
 #elif defined(WEBRTC_MAC)
     kCVPixelBufferOpenGLCompatibilityKey,
@@ -259,6 +271,9 @@ void h265DecompressionOutputCallback(void* decoder,
 }
 
 - (void)setVideoFormat:(CMVideoFormatDescriptionRef)videoFormat {
+
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::setVideoFormat ";
+
   if (_videoFormat == videoFormat) {
     return;
   }
@@ -269,6 +284,8 @@ void h265DecompressionOutputCallback(void* decoder,
   if (_videoFormat) {
     CFRetain(_videoFormat);
   }
+  RTC_LOG(LS_ERROR) << "<-# RTCVideoDecoderH265::setVideoFormat ";
+
 }
 
 - (NSString*)implementationName {

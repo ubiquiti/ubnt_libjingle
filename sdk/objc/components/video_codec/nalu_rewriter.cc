@@ -33,7 +33,7 @@ bool H264CMSampleBufferToAnnexBBuffer(CMSampleBufferRef avcc_sample_buffer,
                                       bool is_keyframe,
                                       rtc::Buffer* annexb_buffer) {
   RTC_DCHECK(avcc_sample_buffer);
-
+  RTC_LOG(LS_ERROR) << "#-> " << __func__;
   // Get format description from the sample buffer.
   CMVideoFormatDescriptionRef description =
       CMSampleBufferGetFormatDescription(avcc_sample_buffer);
@@ -128,6 +128,8 @@ bool H264CMSampleBufferToAnnexBBuffer(CMSampleBufferRef avcc_sample_buffer,
   RTC_DCHECK_EQ(bytes_remaining, (size_t)0);
 
   CFRelease(contiguous_buffer);
+
+  RTC_LOG(LS_ERROR) << "<-# " << __func__;
   return true;
 }
 
@@ -140,7 +142,7 @@ bool H264AnnexBBufferToCMSampleBuffer(const uint8_t* annexb_buffer,
   RTC_DCHECK(out_sample_buffer);
   RTC_DCHECK(video_format);
   *out_sample_buffer = nullptr;
-
+  RTC_LOG(LS_ERROR) << "#-> " << __func__;
   AnnexBBufferReader reader(annexb_buffer, annexb_buffer_size);
   if (reader.SeekToNextNaluOfType(kSps)) {
     // Buffer contains an SPS NALU - skip it and the following PPS
@@ -230,6 +232,8 @@ bool H265CMSampleBufferToAnnexBBuffer(
     bool is_keyframe,
     rtc::Buffer* annexb_buffer) {
   RTC_DCHECK(hvcc_sample_buffer);
+
+  RTC_LOG(LS_ERROR) << "#-> " << __func__;
 
   // Get format description from the sample buffer.
   CMVideoFormatDescriptionRef description =
@@ -349,6 +353,8 @@ bool H265AnnexBBufferToCMSampleBuffer(const uint8_t* annexb_buffer,
   RTC_DCHECK(video_format);
   *out_sample_buffer = nullptr;
 
+  RTC_LOG(LS_ERROR) << "#-> " << __func__;
+
   AnnexBBufferReader reader(annexb_buffer, annexb_buffer_size);
   if (reader.SeekToNextNaluOfType(H265::kVps)) {
     // Buffer contains an SPS NALU - skip it and the following PPS
@@ -439,6 +445,9 @@ bool H265AnnexBBufferToCMSampleBuffer(const uint8_t* annexb_buffer,
 CMVideoFormatDescriptionRef CreateVideoFormatDescription(
     const uint8_t* annexb_buffer,
     size_t annexb_buffer_size) {
+
+  RTC_LOG(LS_ERROR) << "#-> CreateVideoFormatDescription H264! annexb_buffer_size=" << annexb_buffer_size;
+
   const uint8_t* param_set_ptrs[2] = {};
   size_t param_set_sizes[2] = {};
   AnnexBBufferReader reader(annexb_buffer, annexb_buffer_size);
@@ -470,6 +479,9 @@ CMVideoFormatDescriptionRef CreateVideoFormatDescription(
 CMVideoFormatDescriptionRef CreateH265VideoFormatDescription(
     const uint8_t* annexb_buffer,
     size_t annexb_buffer_size) {
+ 
+  RTC_LOG(LS_ERROR) << "#-> " << __func__;
+ 
   const uint8_t* param_set_ptrs[3] = {};
   size_t param_set_sizes[3] = {};
   AnnexBBufferReader reader(annexb_buffer, annexb_buffer_size);
@@ -499,6 +511,8 @@ CMVideoFormatDescriptionRef CreateH265VideoFormatDescription(
     RTC_LOG(LS_ERROR) << "Failed to create video format description.";
     return nullptr;
   }
+
+  RTC_LOG(LS_ERROR) << "<-# " << __func__;
   return description;
 }
 #endif
@@ -541,25 +555,40 @@ void AnnexBBufferReader::SeekToStart() {
 }
 
 bool AnnexBBufferReader::SeekToNextNaluOfType(NaluType type) {
+  RTC_LOG(LS_ERROR) << "#-> AnnexBBufferReader::SeekToNextNaluOfTypeH264 " << type;
   for (; offset_ != offsets_.end(); ++offset_) {
     if (offset_->payload_size < 1)
       continue;
-    if (ParseNaluType(*(start_ + offset_->payload_start_offset)) == type)
+    auto ntype = ParseNaluType(*(start_ + offset_->payload_start_offset));
+
+    if (ntype == type) {
+      RTC_LOG(LS_ERROR) << "<-# AnnexBBufferReader::SeekToNextNaluOfTypeH264 OK";
       return true;
+    }
   }
   return false;
 }
 
 #ifdef WEBRTC_USE_H265
 bool AnnexBBufferReader::SeekToNextNaluOfType(H265::NaluType type) {
+  RTC_LOG(LS_ERROR) << "#-> AnnexBBufferReader::SeekToNextNaluOfTypeH265";
   for (; offset_ != offsets_.end(); ++offset_) {
     if (offset_->payload_size < 1)
       continue;
-    if (H265::ParseNaluType(*(start_ + offset_->payload_start_offset)) == type)
+
+    auto ntype = H265::ParseNaluType(*(start_ + offset_->payload_start_offset));
+    RTC_LOG(LS_ERROR) << "    AnnexBBufferReader::SeekToNextNaluOfTypeH265 type=" << type << " ntype=" << ntype;
+
+    if (ntype == type) {
+      RTC_LOG(LS_ERROR) << "<-# AnnexBBufferReader::SeekToNextNaluOfTypeH265 OK";
       return true;
+    }
   }
+  RTC_LOG(LS_ERROR) << "<-# AnnexBBufferReader::SeekToNextNaluOfType265 FALSE!";
   return false;
 }
+#else
+#error "WEBRTC_USE_H265 not defined"
 #endif
 
 AvccBufferWriter::AvccBufferWriter(uint8_t* const avcc_buffer, size_t length)

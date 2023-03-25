@@ -14,6 +14,6 @@
 #import "RTCVideoDecoderFactory.h"
 
 RTC_OBJC_EXPORT
-API_AVAILABLE(ios(11.0))
+//API_AVAILABLE(ios(11.0))
 @interface RTCVideoDecoderFactoryH265 : NSObject <RTCVideoDecoderFactory>
 @end
