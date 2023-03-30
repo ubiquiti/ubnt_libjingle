@@ -566,7 +566,7 @@ void DcSctpTransport::OnStreamsResetPerformed(
 
     StreamState& stream_state = it->second;
     // UI customization
-    if (1 && stream_state.closure_initiated) {
+    if (1 /*&& stream_state.closure_initiated*/) {
       stream_state.outgoing_reset_done = true;
       RTC_LOG(LS_ERROR) << debug_name_
                        << "->OnStreamsResetPerformed(...): ############ Outgoing stream reset for stream with reused "
