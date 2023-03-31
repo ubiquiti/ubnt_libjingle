@@ -271,12 +271,12 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
         // was stream need to be reset, so it sends an outgoing request after responding, 
         // thus when console receiving this outgoing request from app, it will close the 
         // stream which just opened a while ago - then playback 3-dots.
-#ifndef UI_CUSTOMIZATION
+//#ifndef UI_CUSTOMIZATION
         // Force this request to be sent again, but with new req_seq_nbr.
         current_request_->PrepareRetransmission();
-#else
-        RTC_LOG(LS_ERROR) << "############ StreamResetHandler::HandleResponse UI_CUSTOMIZATION - do not retransmit";
-#endif
+//#else
+//        RTC_LOG(LS_ERROR) << "############ StreamResetHandler::HandleResponse UI_CUSTOMIZATION - do not retransmit";
+//#endif
         reconfig_timer_->set_duration(ctx_->current_rto());
         reconfig_timer_->Start();
         break;

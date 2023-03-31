@@ -231,7 +231,7 @@ bool DcSctpTransport::ResetStream(int sid) {
   RTC_DCHECK_RUN_ON(network_thread_);
   RTC_DLOG(LS_INFO) << "#-> DcSctpTransport::ResetStream(" << sid << ").";
   if (!socket_) {
-    RTC_LOG(LS_ERROR) "<-# DcSctpTransport::ResetStream(sid=" << sid << "): Transport is not started.";
+    RTC_LOG(LS_ERROR) << "<-# DcSctpTransport::ResetStream(sid=" << sid << "): Transport is not started.";
     return false;
   }
 
@@ -644,6 +644,7 @@ void DcSctpTransport::OnIncomingStreamsReset(rtc::ArrayView<const dcsctp::Stream
         RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### data_channel_sink_->OnChannelClosed() 3 sid=" << stream_id.value();
         data_channel_sink_->OnChannelClosed(stream_id.value());
       }
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### ERASE stream_state for sid=" << stream_id.value() << " !!!!!!!!!!!!!!!!!!";
       stream_states_.erase(stream_id);
     }
   }
