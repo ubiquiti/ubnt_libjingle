@@ -97,9 +97,11 @@ RTCError SctpTransport::SendData(int channel_id,
 }
 
 RTCError SctpTransport::CloseChannel(int channel_id) {
+  RTC_DLOG(LS_ERROR) << "#-> SctpTransport::ResetStream(" << channel_id << ").";
   RTC_DCHECK_RUN_ON(owner_thread_);
   RTC_DCHECK(internal_sctp_transport_);
   internal_sctp_transport_->ResetStream(channel_id);
+  RTC_DLOG(LS_ERROR) << "<-# SctpTransport::ResetStream(" << channel_id << ").";
   return RTCError::OK();
 }
 

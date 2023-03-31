@@ -229,10 +229,9 @@ bool DcSctpTransport::OpenStream(int sid) {
 
 bool DcSctpTransport::ResetStream(int sid) {
   RTC_DCHECK_RUN_ON(network_thread_);
-  RTC_DLOG(LS_INFO) << debug_name_ << "->ResetStream(" << sid << ").";
+  RTC_DLOG(LS_INFO) << "#-> DcSctpTransport::ResetStream(" << sid << ").";
   if (!socket_) {
-    RTC_LOG(LS_ERROR) << debug_name_ << "->ResetStream(sid=" << sid
-                      << "): Transport is not started.";
+    RTC_LOG(LS_ERROR) "<-# DcSctpTransport::ResetStream(sid=" << sid << "): Transport is not started.";
     return false;
   }
 
@@ -240,20 +239,30 @@ bool DcSctpTransport::ResetStream(int sid) {
 
   auto it = stream_states_.find(streams[0]);
   if (it == stream_states_.end()) {
-    RTC_LOG(LS_ERROR) << debug_name_ << "->ResetStream(sid=" << sid
-                      << "): Stream is not open.";
+    RTC_LOG(LS_ERROR) << "<-# DcSctpTransport::ResetStream(sid=" << sid << "): Stream is not open.";
     return false;
   }
 
   StreamState& stream_state = it->second;
-  if (stream_state.closure_initiated || stream_state.incoming_reset_done ||
-      stream_state.outgoing_reset_done) {
+  if (stream_state.closure_initiated || stream_state.incoming_reset_done || stream_state.outgoing_reset_done) {
+
+    RTC_LOG(LS_ERROR) << "<-##### DcSctpTransport::ResetStream(sid=" << sid << "): Closure already initiaited - do nothing " 
+        << " c=" << stream_state.closure_initiated
+        << " i=" << stream_state.incoming_reset_done
+        << " o=" << stream_state.outgoing_reset_done;
+
     // The closing procedure was already initiated by the remote, don't do
     // anything.
     return false;
   }
   stream_state.closure_initiated = true;
   socket_->ResetStreams(streams);
+
+  RTC_DLOG(LS_ERROR) << "<-##### DcSctpTransport::ResetStream(" << sid << ") OK. CLOSURE_INITIATED => TRUE" 
+        << " c=" << stream_state.closure_initiated
+        << " i=" << stream_state.incoming_reset_done
+        << " o=" << stream_state.outgoing_reset_done;
+
   return true;
 }
 
@@ -282,8 +291,7 @@ bool DcSctpTransport::SendData(int sid,
   auto stream_state =
       stream_states_.find(dcsctp::StreamID(static_cast<uint16_t>(sid)));
   if (stream_state == stream_states_.end()) {
-    RTC_LOG(LS_VERBOSE) << "Skipping message on non-open stream with sid: "
-                        << sid;
+    RTC_LOG(LS_ERROR) << "    DcSctpTransport::SendData ### Skipping message on non-open stream with sid=" << sid << " ==================== ERROR ====================";
     *result = cricket::SDR_ERROR;
     return false;
   }
@@ -291,18 +299,17 @@ bool DcSctpTransport::SendData(int sid,
   if (stream_state->second.closure_initiated ||
       stream_state->second.incoming_reset_done ||
       stream_state->second.outgoing_reset_done) {
-    RTC_LOG(LS_VERBOSE) << "Skipping message on closing stream with sid: "
-                        << sid;
+    RTC_LOG(LS_ERROR) << "    DcSctpTransport::SendData ### Skipping message on closing stream with sid=" << sid 
+        << " c=" << stream_state->second.closure_initiated
+        << " i=" << stream_state->second.incoming_reset_done
+        << " o=" << stream_state->second.outgoing_reset_done;
     *result = cricket::SDR_ERROR;
     return false;
   }
 
   auto max_message_size = socket_->options().max_message_size;
   if (max_message_size > 0 && payload.size() > max_message_size) {
-    RTC_LOG(LS_WARNING) << debug_name_
-                        << "->SendData(...): "
-                           "Trying to send packet bigger "
-                           "than the max message size: "
+    RTC_LOG(LS_ERROR) << "    DcSctpTransport::SendData ### Trying to send packet bigger than the max message size: "
                         << payload.size() << " vs max of " << max_message_size;
     *result = cricket::SDR_ERROR;
     return false;
@@ -347,8 +354,7 @@ bool DcSctpTransport::SendData(int sid,
       ready_to_send_data_ = false;
       break;
     default:
-      RTC_LOG(LS_ERROR) << debug_name_
-                        << "->SendData(...): send() failed with error "
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::SendData ### send() failed with error "
                         << dcsctp::ToString(error) << ".";
       *result = cricket::SDR_ERROR;
       break;
@@ -537,30 +543,28 @@ void DcSctpTransport::OnStreamsResetFailed(
     absl::string_view reason) {
   // TODO(orphis): Need a test to check for correct behavior
   for (auto& stream_id : outgoing_streams) {
-    RTC_LOG(LS_WARNING)
-        << debug_name_
-        << "->OnStreamsResetFailed(...): Outgoing stream reset failed"
+    RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetFailed() ### Outgoing stream reset failed"
         << ", sid=" << stream_id.value() << ", reason: " << reason << ".";
   }
 }
 
-void DcSctpTransport::OnStreamsResetPerformed(
-    rtc::ArrayView<const dcsctp::StreamID> outgoing_streams) {
+void DcSctpTransport::OnStreamsResetPerformed(rtc::ArrayView<const dcsctp::StreamID> outgoing_streams) {
+
+  RTC_LOG(LS_ERROR) << "#-> DcSctpTransport::OnStreamsResetPerformed() ###";
+
   RTC_DCHECK_RUN_ON(network_thread_);
+  
+  
   for (auto& stream_id : outgoing_streams) {
-    RTC_LOG(LS_INFO) << debug_name_
-                     << "->OnStreamsResetPerformed(...): Outgoing stream reset"
-                     << ", sid=" << stream_id.value();
+    
+    RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetPerformed() ### Outgoing stream reset sid=" << stream_id.value();
 
     auto it = stream_states_.find(stream_id);
     if (it == stream_states_.end()) {
       // Ignoring an outgoing stream reset for a closed stream
 
       // UI customization
-      RTC_LOG(LS_ERROR) << debug_name_
-                       << "->OnStreamsResetPerformed(...): Ignoring an "
-                          "outgoing stream reset for a closed stream"
-                       << ", sid=" << stream_id.value();
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetPerformed() ### Ignoring an outgoing stream reset for a closed stream sid=" << stream_id.value();
       continue;
     }
 
@@ -568,55 +572,67 @@ void DcSctpTransport::OnStreamsResetPerformed(
     // UI customization
     if (1 /*&& stream_state.closure_initiated*/) {
       stream_state.outgoing_reset_done = true;
-      RTC_LOG(LS_ERROR) << debug_name_
-                       << "->OnStreamsResetPerformed(...): ############ Outgoing stream reset for stream with reused "
-                       << ", sid=" << stream_id.value();
+
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetPerformed() ### Outgoing stream reset for stream with reused sid=" << stream_id.value() << " OUTGOING_RESET_DONE=>true "
+            << " c=" << stream_state.closure_initiated
+            << " i=" << stream_state.incoming_reset_done
+            << " o=" << stream_state.outgoing_reset_done;
     } else {
-      RTC_LOG(LS_ERROR) << debug_name_
-                       << "->OnStreamsResetPerformed(...): Ignoring an "
-                          "outgoing stream reset for stream with reused "
-                       << ", sid=" << stream_id.value();
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetPerformed() ### Outgoing stream reset for stream with reused sid=" << stream_id.value() << " closure_initiated = false "
+            << " c=" << stream_state.closure_initiated
+            << " i=" << stream_state.incoming_reset_done
+            << " o=" << stream_state.outgoing_reset_done;
     }
 
     if (stream_state.incoming_reset_done) {
       //  When the close was not initiated locally, we can signal the end of the
       //  data channel close procedure when the remote ACKs the reset.
       if (data_channel_sink_) {
+        RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetPerformed() ### data_channel_sink_->OnChannelClosed() 1 sid=" << stream_id.value();
         data_channel_sink_->OnChannelClosed(stream_id.value());
       }
+
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnStreamsResetPerformed() ### incoming_reset_done=true ERASE stream_state for sid=" << stream_id.value() << " !!!!!!!!!!!!!!!!!!";
       stream_states_.erase(stream_id);
     }
   }
+
+  RTC_LOG(LS_ERROR) << "<-# DcSctpTransport::OnStreamsResetPerformed() ###";
+
 }
 
-void DcSctpTransport::OnIncomingStreamsReset(
-    rtc::ArrayView<const dcsctp::StreamID> incoming_streams) {
+void DcSctpTransport::OnIncomingStreamsReset(rtc::ArrayView<const dcsctp::StreamID> incoming_streams) {
+
   RTC_DCHECK_RUN_ON(network_thread_);
+  
+  
   for (auto& stream_id : incoming_streams) {
-    RTC_LOG(LS_INFO) << debug_name_
-                     << "->OnIncomingStreamsReset(...): Incoming stream reset"
-                     << ", sid=" << stream_id.value();
+    RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### Incoming stream reset sid=" << stream_id.value();
 
     auto it = stream_states_.find(stream_id);
     if (it == stream_states_.end()) {
       // Ignoring incoming stream reset for a closed stream
-      RTC_LOG(LS_ERROR) << debug_name_
-                       << "->OnIncomingStreamsReset(...): Ignoring "
-                          "incoming stream reset for a closed stream"
-                       << ", sid=" << stream_id.value();
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### Ignoring incoming stream reset for a closed stream sid=" << stream_id.value() << "  !!!!!!!!!!!!!!!!!!";
       continue;
     }
 
     StreamState& stream_state = it->second;
     stream_state.incoming_reset_done = true;
 
+      RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### Incoming stream reset sid=" << stream_id.value() << " incoming_reset_done = TRUE "
+            << " c=" << stream_state.closure_initiated
+            << " i=" << stream_state.incoming_reset_done
+            << " o=" << stream_state.outgoing_reset_done;
+
     if (!stream_state.closure_initiated) {
       // When receiving an incoming stream reset event for a non local close
       // procedure, the transport needs to reset the stream in the other
       // direction too.
+      
       dcsctp::StreamID streams[1] = {stream_id};
       socket_->ResetStreams(streams);
       if (data_channel_sink_) {
+        RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### data_channel_sink_->OnChannelClosed() 2 sid=" << stream_id.value();
         data_channel_sink_->OnChannelClosing(stream_id.value());
       }
     }
@@ -625,6 +641,7 @@ void DcSctpTransport::OnIncomingStreamsReset(
       // The close procedure that was initiated locally is complete when we
       // receive and incoming reset event.
       if (data_channel_sink_) {
+        RTC_LOG(LS_ERROR) << "    DcSctpTransport::OnIncomingStreamsReset() ### data_channel_sink_->OnChannelClosed() 3 sid=" << stream_id.value();
         data_channel_sink_->OnChannelClosed(stream_id.value());
       }
       stream_states_.erase(stream_id);

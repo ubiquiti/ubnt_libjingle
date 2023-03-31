@@ -78,12 +78,11 @@ bool StreamResetHandler::Validate(const ReConfigChunk& chunk) {
     }
   }
 
-  RTC_LOG(LS_WARNING) << "Invalid set of RE-CONFIG parameters";
+  RTC_LOG(LS_ERROR) << "Invalid set of RE-CONFIG parameters ================ ERROR ===================";
   return false;
 }
 
-absl::optional<std::vector<ReconfigurationResponseParameter>>
-StreamResetHandler::Process(const ReConfigChunk& chunk) {
+absl::optional<std::vector<ReconfigurationResponseParameter>> StreamResetHandler::Process(const ReConfigChunk& chunk) {
   if (!Validate(chunk)) {
     return absl::nullopt;
   }
@@ -93,14 +92,17 @@ StreamResetHandler::Process(const ReConfigChunk& chunk) {
   for (const ParameterDescriptor& desc : chunk.parameters().descriptors()) {
     switch (desc.type) {
       case OutgoingSSNResetRequestParameter::kType:
+        RTC_LOG(LS_ERROR) <<  "############## StreamResetHandler::ValidateReqSeqNbr() " << " OutgoingSSNResetRequestParameter ##############";
         HandleResetOutgoing(desc, responses);
         break;
 
       case IncomingSSNResetRequestParameter::kType:
+        RTC_LOG(LS_ERROR) <<  "############## StreamResetHandler::ValidateReqSeqNbr() " << " IncomingSSNResetRequestParameter ##############";
         HandleResetIncoming(desc, responses);
         break;
 
       case ReconfigurationResponseParameter::kType:
+        RTC_LOG(LS_ERROR) <<  "############## StreamResetHandler::ValidateReqSeqNbr() " << " ReconfigurationResponseParameter ##############";
         HandleResponse(desc);
         break;
     }
@@ -138,9 +140,7 @@ bool StreamResetHandler::ValidateReqSeqNbr(
     // req_seq_nbr, i.e. it has left from deferred mode or not.
 #ifdef UI_CUSTOMIZATION
     if (req_seq_nbr <= reassembly_queue_->lcr_request_sequence_number()) {
-      RTC_DLOG(LS_VERBOSE) << log_prefix_ << "req=" << *req_seq_nbr
-                           << " already completed, last_completed_reset_req_seq_nbr="
-                           << *reassembly_queue_->lcr_request_sequence_number();
+      RTC_LOG(LS_ERROR) <<  "############## StreamResetHandler::ValidateReqSeqNbr() req=" << *req_seq_nbr << " already completed, last_completed_reset_req_seq_nbr=" << *reassembly_queue_->lcr_request_sequence_number();
       return true;
     }
 #endif
@@ -149,11 +149,10 @@ bool StreamResetHandler::ValidateReqSeqNbr(
     // analysis of the Re-configuration Request Sequence Numbers this is the
     // last received RE-CONFIG chunk (i.e., a retransmission), the same
     // RE-CONFIG chunk MUST to be sent back in response, as it was earlier."
-    RTC_DLOG(LS_VERBOSE) << log_prefix_ << "req=" << *req_seq_nbr
+    RTC_LOG(LS_ERROR) << "############ StreamResetHandler::ValidateReqSeqNbr() req=" << *req_seq_nbr
                          << " already processed, returning result="
                          << ToString(last_processed_req_result_);
-    responses.push_back(ReconfigurationResponseParameter(
-        req_seq_nbr, last_processed_req_result_));
+    responses.push_back(ReconfigurationResponseParameter(req_seq_nbr, last_processed_req_result_));
     return false;
   }
 
@@ -163,7 +162,7 @@ bool StreamResetHandler::ValidateReqSeqNbr(
     // server to another. The client will notice this and may decide to close
     // old data channels, which may be sent to the wrong (or both) servers
     // during a handover.
-    RTC_DLOG(LS_VERBOSE) << log_prefix_ << "req=" << *req_seq_nbr
+    RTC_LOG(LS_ERROR) << "############ StreamResetHandler::ValidateReqSeqNbr() req=" << *req_seq_nbr
                          << " bad seq_nbr";
     responses.push_back(ReconfigurationResponseParameter(
         req_seq_nbr, ResponseResult::kErrorBadSequenceNumber));
@@ -173,53 +172,61 @@ bool StreamResetHandler::ValidateReqSeqNbr(
   return true;
 }
 
-void StreamResetHandler::HandleResetOutgoing(
-    const ParameterDescriptor& descriptor,
-    std::vector<ReconfigurationResponseParameter>& responses) {
-  absl::optional<OutgoingSSNResetRequestParameter> req =
-      OutgoingSSNResetRequestParameter::Parse(descriptor.data);
+void StreamResetHandler::HandleResetOutgoing(const ParameterDescriptor& descriptor, std::vector<ReconfigurationResponseParameter>& responses) {
+
+  RTC_LOG(LS_ERROR) << "#-> StreamResetHandler::HandleResetOutgoing ### " << " descriptor.data.size()=" << descriptor.data.size();
+
+  absl::optional<OutgoingSSNResetRequestParameter> req = OutgoingSSNResetRequestParameter::Parse(descriptor.data);
+  
   if (!req.has_value()) {
-    ctx_->callbacks().OnError(ErrorKind::kParseFailed,
-                              "Failed to parse Outgoing Reset command");
+    ctx_->callbacks().OnError(ErrorKind::kParseFailed, "Failed to parse Outgoing Reset command");
     return;
   }
 
   if (ValidateReqSeqNbr(req->request_sequence_number(), responses)) {
-    RTC_DLOG(LS_VERBOSE) << log_prefix_
-                         << "Reset outgoing streams with req_seq_nbr="
+    RTC_LOG(LS_ERROR) << "   StreamResetHandler::HandleResetOutgoing ### Reset outgoing streams with req_seq_nbr="
                          << *req->request_sequence_number();
 
     last_processed_req_seq_nbr_ = req->request_sequence_number();
     last_processed_req_result_ = reassembly_queue_->ResetStreams(
         *req, data_tracker_->last_cumulative_acked_tsn());
+
     if (last_processed_req_result_ == ResponseResult::kSuccessPerformed) {
       ctx_->callbacks().OnIncomingStreamsReset(req->stream_ids());
     }
     responses.push_back(ReconfigurationResponseParameter(
         req->request_sequence_number(), last_processed_req_result_));
   }
-}
 
-void StreamResetHandler::HandleResetIncoming(
-    const ParameterDescriptor& descriptor,
-    std::vector<ReconfigurationResponseParameter>& responses) {
-  absl::optional<IncomingSSNResetRequestParameter> req =
-      IncomingSSNResetRequestParameter::Parse(descriptor.data);
+  RTC_LOG(LS_ERROR) << "<-# StreamResetHandler::HandleResetOutgoing ### ";
+}
+//==================================================================================================
+void StreamResetHandler::HandleResetIncoming(const ParameterDescriptor& descriptor, std::vector<ReconfigurationResponseParameter>& responses) {
+  
+  RTC_LOG(LS_ERROR) << "#-> StreamResetHandler::HandleResetIncoming ### " << " descriptor.data.size()=" << descriptor.data.size();
+
+  absl::optional<IncomingSSNResetRequestParameter> req = IncomingSSNResetRequestParameter::Parse(descriptor.data);
+
   if (!req.has_value()) {
-    ctx_->callbacks().OnError(ErrorKind::kParseFailed,
-                              "Failed to parse Incoming Reset command");
+    ctx_->callbacks().OnError(ErrorKind::kParseFailed, "Failed to parse Incoming Reset command");
     return;
   }
   if (ValidateReqSeqNbr(req->request_sequence_number(), responses)) {
-    responses.push_back(ReconfigurationResponseParameter(
-        req->request_sequence_number(), ResponseResult::kSuccessNothingToDo));
+    responses.push_back(ReconfigurationResponseParameter(req->request_sequence_number(), ResponseResult::kSuccessNothingToDo));
     last_processed_req_seq_nbr_ = req->request_sequence_number();
   }
+  RTC_LOG(LS_ERROR) << "<-# StreamResetHandler::HandleResetIncoming ### ";
 }
 
+
+//==================================================================================================
 void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
-  absl::optional<ReconfigurationResponseParameter> resp =
-      ReconfigurationResponseParameter::Parse(descriptor.data);
+  
+  RTC_LOG(LS_ERROR) << "#-> StreamResetHandler::HandleResponse ### "
+      << " descriptor.data.size()=" << descriptor.data.size();
+    
+  absl::optional<ReconfigurationResponseParameter> resp = ReconfigurationResponseParameter::Parse(descriptor.data);
+  
   if (!resp.has_value()) {
     ctx_->callbacks().OnError(
         ErrorKind::kParseFailed,
@@ -227,15 +234,17 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
     return;
   }
 
-  if (current_request_.has_value() && current_request_->has_been_sent() &&
-      resp->response_sequence_number() == current_request_->req_seq_nbr()) {
+  if (current_request_.has_value() && current_request_->has_been_sent() && resp->response_sequence_number() == current_request_->req_seq_nbr()) {
+
     reconfig_timer_->Stop();
 
     switch (resp->result()) {
+
+
+
       case ResponseResult::kSuccessNothingToDo:
       case ResponseResult::kSuccessPerformed:
-        RTC_DLOG(LS_VERBOSE)
-            << log_prefix_ << "Reset stream success, req_seq_nbr="
+        RTC_LOG(LS_ERROR) << "    StreamResetHandler::HandleResponse ### Reset stream success, req_seq_nbr="
             << *current_request_->req_seq_nbr() << ", streams="
             << StrJoin(current_request_->streams(), ",",
                        [](rtc::StringBuilder& sb, StreamID stream_id) {
@@ -245,9 +254,11 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
         current_request_ = absl::nullopt;
         retransmission_queue_->CommitResetStreams();
         break;
+
+
+
       case ResponseResult::kInProgress:
-        RTC_DLOG(LS_VERBOSE)
-            << log_prefix_ << "Reset stream still pending, req_seq_nbr="
+        RTC_LOG(LS_ERROR) << "############ StreamResetHandler::HandleResponse Reset stream still pending, req_seq_nbr="
             << *current_request_->req_seq_nbr() << ", streams="
             << StrJoin(current_request_->streams(), ",",
                        [](rtc::StringBuilder& sb, StreamID stream_id) {
@@ -263,6 +274,8 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
 #ifndef UI_CUSTOMIZATION
         // Force this request to be sent again, but with new req_seq_nbr.
         current_request_->PrepareRetransmission();
+#else
+        RTC_LOG(LS_ERROR) << "############ StreamResetHandler::HandleResponse UI_CUSTOMIZATION - do not retransmit";
 #endif
         reconfig_timer_->set_duration(ctx_->current_rto());
         reconfig_timer_->Start();
@@ -271,8 +284,7 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
       case ResponseResult::kDenied:
       case ResponseResult::kErrorWrongSSN:
       case ResponseResult::kErrorBadSequenceNumber:
-        RTC_DLOG(LS_WARNING)
-            << log_prefix_ << "Reset stream error=" << ToString(resp->result())
+        RTC_LOG(LS_ERROR) << "############ StreamResetHandler::HandleResponse Reset stream error=" << ToString(resp->result())
             << ", req_seq_nbr=" << *current_request_->req_seq_nbr()
             << ", streams="
             << StrJoin(current_request_->streams(), ",",
@@ -286,6 +298,7 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
         break;
     }
   }
+  RTC_LOG(LS_ERROR) << "<-# StreamResetHandler::HandleResponse ### ";
 }
 
 absl::optional<ReConfigChunk> StreamResetHandler::MakeStreamResetRequest() {
