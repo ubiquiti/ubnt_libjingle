@@ -89,14 +89,16 @@ const UInt32 VoiceProcessingAudioUnit::kBytesPerSample = 2;
 bool VoiceProcessingAudioUnit::Init() {
   RTC_DCHECK_EQ(state_, kInitRequired);
 
+  RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
+
   // Create an audio component description to identify the Voice Processing
   // I/O audio unit.
   AudioComponentDescription vpio_unit_description;
   vpio_unit_description.componentType = kAudioUnitType_Output;
-  // TODO: Currently, MS is not used for 2-way audio, but when it is, we need to find a way to make 
-  // kAudioUnitSubType_VoiceProcessingIO for 2-way audio, while kAudioUnitSubType_RemoteIO is used 
-  // for playing audio.
-  vpio_unit_description.componentSubType = kAudioUnitSubType_RemoteIO;
+  if (webRTCConfiguration.isMicrophoneEnabled)
+    vpio_unit_description.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
+  else
+    vpio_unit_description.componentSubType = kAudioUnitSubType_RemoteIO;
   // vpio_unit_description.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
   vpio_unit_description.componentManufacturer = kAudioUnitManufacturer_Apple;
   vpio_unit_description.componentFlags = 0;
@@ -116,7 +118,6 @@ bool VoiceProcessingAudioUnit::Init() {
   }
 
   // Enable input on the input scope of the input element.
-  RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
   if (webRTCConfiguration.isMicrophoneEnabled) {
     RTCLog("@Enable input on the input scope of the input element.");
     UInt32 enable_input = 1;
