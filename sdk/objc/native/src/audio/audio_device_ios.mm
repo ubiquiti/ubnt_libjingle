@@ -648,10 +648,19 @@ void AudioDeviceIOS::HandleMicrophoneEnableChange(bool is_microphone_enabled) {
   RTC_DCHECK_RUN_ON(thread_);
   RTCLog(@"Handling MicrophoneEnable change to %d", is_microphone_enabled);
   if (is_microphone_enabled) {
+    // stop playout as we need to re-create AudioUnit for new settings
+    // otherwise, since current implementation in Google won't do it if
+    // we don't unitialize AudioUnit first. See the implementation in 
+    // StopPlayout and StopRecording for detail.
+    StopPlayout();
     InitRecording();
     StartRecording();
+    StartPlayout();
   } else {
     StopRecording();
+    StopPlayout();
+    InitPlayout();
+    StartPlayout();
   }
 }
 
