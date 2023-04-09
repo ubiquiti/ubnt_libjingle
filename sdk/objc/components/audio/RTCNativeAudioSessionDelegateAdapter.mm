@@ -87,8 +87,13 @@
 }
 
 - (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession 
-    didChangeMicrophoneEnable:(BOOL)isMicrophoneEnabled {
-  _observer->OnMicrophoneEnableChange(isMicrophoneEnabled);
+    didChangeMicrophoneEnabled:(BOOL)isMicrophoneEnabled {
+  _observer->OnMicrophoneEnabledChange(isMicrophoneEnabled);
+}
+
+- (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession 
+    didChangeMicrophoneMuted:(BOOL)isMicrophoneMuted {
+  _observer->OnMicrophoneMutedChange(isMicrophoneMuted);
 }
 
 @end

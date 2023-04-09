@@ -104,7 +104,8 @@ AudioDeviceIOS::AudioDeviceIOS(bool bypass_voice_processing)
       num_detected_playout_glitches_(0),
       last_playout_time_(0),
       num_playout_callbacks_(0),
-      last_output_volume_change_time_(0) {
+      last_output_volume_change_time_(0),
+      is_microphone_muted_(true) {
   LOGI() << "ctor" << ios::GetCurrentThreadDescription()
          << ",bypass_voice_processing=" << bypass_voice_processing_;
   io_thread_checker_.Detach();
@@ -366,9 +367,14 @@ void AudioDeviceIOS::OnChangedOutputVolume() {
   thread_->PostTask(SafeTask(safety_, [this] { HandleOutputVolumeChange(); }));
 }
 
-void AudioDeviceIOS::OnMicrophoneEnableChange(bool is_microphone_enabled) {
+void AudioDeviceIOS::OnMicrophoneEnabledChange(bool is_microphone_enabled) {
   RTC_DCHECK(thread_);
-  thread_->PostTask(SafeTask(safety_, [this, is_microphone_enabled] { HandleMicrophoneEnableChange(is_microphone_enabled); }));
+  thread_->PostTask(SafeTask(safety_, [this, is_microphone_enabled] { HandleMicrophoneEnabledChange(is_microphone_enabled); }));
+}
+
+void AudioDeviceIOS::OnMicrophoneMutedChange(bool is_microphone_muted) {
+  RTC_DCHECK(thread_);
+  thread_->PostTask(SafeTask(safety_, [this, is_microphone_muted] { HandleMicrophoneMutedChange(is_microphone_muted); }));
 }
 
 OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
@@ -378,6 +384,8 @@ OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags
                                                AudioBufferList* /* io_data */) {
   RTC_DCHECK_RUN_ON(&io_thread_checker_);
   OSStatus result = noErr;
+  // UI customization
+  if (is_microphone_muted_) return result;
   // Simply return if recording is not enabled.
   if (!recording_.load(std::memory_order_acquire)) return result;
 
@@ -644,14 +652,12 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
   last_output_volume_change_time_ = rtc::TimeMillis();
 }
 
-void AudioDeviceIOS::HandleMicrophoneEnableChange(bool is_microphone_enabled) {
+void AudioDeviceIOS::HandleMicrophoneEnabledChange(bool is_microphone_enabled) {
   RTC_DCHECK_RUN_ON(thread_);
-  RTCLog(@"Handling MicrophoneEnable change to %d", is_microphone_enabled);
+  RTCLog(@"Handling MicrophoneEnabled change to %d", is_microphone_enabled);
+  // Recording won't be initialized if playback has already been initialized, and vice versa. 
+  // So we must stop both recording and playback before enabling and disabling microphone.
   if (is_microphone_enabled) {
-    // stop playout as we need to re-create AudioUnit for new settings
-    // otherwise, since current implementation in Google won't do it if
-    // we don't unitialize AudioUnit first. See the implementation in 
-    // StopPlayout and StopRecording for detail.
     StopPlayout();
     InitRecording();
     StartRecording();
@@ -662,6 +668,12 @@ void AudioDeviceIOS::HandleMicrophoneEnableChange(bool is_microphone_enabled) {
     InitPlayout();
     StartPlayout();
   }
+}
+
+void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);
+  is_microphone_muted_ = is_microphone_muted;
 }
 
 void AudioDeviceIOS::UpdateAudioDeviceBuffer() {

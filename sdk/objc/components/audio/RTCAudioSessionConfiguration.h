@@ -33,6 +33,7 @@ RTC_OBJC_EXPORT
 @property(nonatomic, assign) NSInteger inputNumberOfChannels;
 @property(nonatomic, assign) NSInteger outputNumberOfChannels;
 @property(nonatomic, assign) bool isMicrophoneEnabled;
+@property(nonatomic, assign) bool isMicrophoneMuted;
 
 /** Initializes configuration to defaults. */
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
