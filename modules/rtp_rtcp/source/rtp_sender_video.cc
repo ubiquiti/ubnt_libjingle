@@ -743,11 +743,11 @@ bool RTPSenderVideo::SendVideo(
 
     if (first_frame) {
       if (i == 0) {
-        RTC_LOG(LS_INFO)
+        RTC_LOG(LS_ERROR)
             << "Sent first RTP packet of the first video frame (pre-pacer)";
       }
       if (i == num_packets - 1) {
-        RTC_LOG(LS_INFO)
+        RTC_LOG(LS_ERROR)
             << "Sent last RTP packet of the first video frame (pre-pacer)";
       }
     }
