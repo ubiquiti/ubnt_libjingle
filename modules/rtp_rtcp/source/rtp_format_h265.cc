@@ -84,6 +84,9 @@ RtpPacketizerH265::RtpPacketizerH265(
     : limits_(limits),
       num_packets_left_(0),
       end_of_frame_(end_of_frame) {
+
+  RTC_LOG(LS_ERROR) << "#-> RtpPacketizerH265::" << __func__ << " payload.size() = " << payload.size() << " limits_.max_payload_len = " << limits_.max_payload_len << " limits_.single_packet_reduction_len = " << limits_.single_packet_reduction_len << " limits_.first_packet_reduction_len = " << limits_.first_packet_reduction_len << " limits_.last_packet_reduction_len = " << limits_.last_packet_reduction_len;
+
   // Guard against uninitialized memory in packetization_mode.
   RTC_CHECK(packetization_mode == H265PacketizationMode::NonInterleaved ||
             packetization_mode == H265PacketizationMode::SingleNalUnit);
@@ -103,6 +106,8 @@ RtpPacketizerH265::RtpPacketizerH265(
       packets_.pop();
     }
   }
+
+  RTC_LOG(LS_ERROR) << "<-# RtpPacketizerH265::" << __func__ << " payload.size() = " << payload.size() << " limits_.max_payload_len = " << limits_.max_payload_len << " limits_.single_packet_reduction_len = " << limits_.single_packet_reduction_len << " limits_.first_packet_reduction_len = " << limits_.first_packet_reduction_len << " limits_.last_packet_reduction_len = " << limits_.last_packet_reduction_len;
 }
 
 RtpPacketizerH265::~RtpPacketizerH265() {}
@@ -139,6 +144,9 @@ bool RtpPacketizerH265::GeneratePackets(
 }
 
 bool RtpPacketizerH265::PacketizeFu(size_t fragment_index) {
+
+  RTC_LOG(LS_ERROR) << "#-> RtpPacketizerH265::" << __func__ ;
+
   // Fragment payload into packets (FU).
   // Strip out the original header and leave room for the FU header.
   rtc::ArrayView<const uint8_t> fragment = input_fragments_[fragment_index];
@@ -184,11 +192,16 @@ bool RtpPacketizerH265::PacketizeFu(size_t fragment_index) {
   }
   num_packets_left_ += payload_sizes.size();
   RTC_CHECK_EQ(0, payload_left);
+
+  RTC_LOG(LS_ERROR) << "<-# RtpPacketizerH265::" << __func__ ;
   return true;
 }
 
 
 bool RtpPacketizerH265::PacketizeSingleNalu(size_t fragment_index) {
+
+  RTC_LOG(LS_ERROR) << "#-> RtpPacketizerH265::" << __func__ ;
+
   // Add a single NALU to the queue, no aggregation.
   size_t payload_size_left = limits_.max_payload_len;
   if (input_fragments_.size() == 1)
@@ -214,6 +227,9 @@ bool RtpPacketizerH265::PacketizeSingleNalu(size_t fragment_index) {
 }
 
 int RtpPacketizerH265::PacketizeAp(size_t fragment_index) {
+
+  RTC_LOG(LS_ERROR) << "#-> RtpPacketizerH265::" << __func__ ;
+
   // Aggregate fragments into one packet (STAP-A).
   size_t payload_size_left = limits_.max_payload_len;
   if (input_fragments_.size() == 1)
@@ -241,6 +257,7 @@ int RtpPacketizerH265::PacketizeAp(size_t fragment_index) {
   };
 
   while (payload_size_left >= payload_size_needed()) {
+    
     RTC_CHECK_GT(fragment.size(), 0);
     packets_.push(PacketUnit(fragment, aggregated_fragments == 0, false, true,
                              fragment[0]));
@@ -263,6 +280,9 @@ int RtpPacketizerH265::PacketizeAp(size_t fragment_index) {
   }
   RTC_CHECK_GT(aggregated_fragments, 0);
   packets_.back().last_fragment = true;
+  
+  RTC_LOG(LS_ERROR) << "<-# RtpPacketizerH265::" << __func__ ;
+
   return fragment_index;
 }
 
