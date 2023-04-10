@@ -56,6 +56,7 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   BOOL _canPlayOrRecord;
   BOOL _isInterrupted;
   BOOL _isMicrophoneEnabled;
+  BOOL _isMicrophoneMuted;
 }
 
 @synthesize session = _session;
@@ -201,7 +202,7 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
     }
     _isMicrophoneEnabled = isMicrophoneEnabled;
   }
-  [self notifyDidChangeMicrophoneEnable];
+  [self notifyDidChangeMicrophoneEnabled];
 }
 
 - (BOOL)isMicrophoneEnabled {
@@ -210,11 +211,36 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   }
 }
 
-- (void)notifyDidChangeMicrophoneEnable {
+- (void)notifyDidChangeMicrophoneEnabled {
   for (auto delegate : self.delegates) {
-    SEL sel = @selector(audioSession:didChangeMicrophoneEnable:);
+    SEL sel = @selector(audioSession:didChangeMicrophoneEnabled:);
     if ([delegate respondsToSelector:sel]) {
-      [delegate audioSession:self didChangeMicrophoneEnable:self.isMicrophoneEnabled];
+      [delegate audioSession:self didChangeMicrophoneEnabled:self.isMicrophoneEnabled];
+    }
+  }
+}
+
+- (void)setIsMicrophoneMuted:(BOOL)isMicrophoneMuted {
+  @synchronized(self) {
+    if (_isMicrophoneMuted == isMicrophoneMuted) {
+      return;
+    }
+    _isMicrophoneMuted = isMicrophoneMuted;
+  }
+  [self notifyDidChangeMicrophoneMuted];
+}
+
+- (BOOL)isMicrophoneMuted {
+  @synchronized(self) {
+    return _isMicrophoneMuted;
+  }
+}
+
+- (void)notifyDidChangeMicrophoneMuted {
+  for (auto delegate : self.delegates) {
+    SEL sel = @selector(audioSession:didChangeMicrophoneMuted:);
+    if ([delegate respondsToSelector:sel]) {
+      [delegate audioSession:self didChangeMicrophoneMuted:self.isMicrophoneMuted];
     }
   }
 }

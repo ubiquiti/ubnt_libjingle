@@ -32,7 +32,9 @@ class AudioSessionObserver {
 
   virtual void OnChangedOutputVolume() = 0;
 
-  virtual void OnMicrophoneEnableChange(bool is_microphone_enabled) = 0;
+  virtual void OnMicrophoneEnabledChange(bool is_microphone_enabled) = 0;
+
+  virtual void OnMicrophoneMutedChange(bool is_microphone_muted) = 0;
 
  protected:
   virtual ~AudioSessionObserver() {}

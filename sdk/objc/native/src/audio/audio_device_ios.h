@@ -147,7 +147,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void OnValidRouteChange() override;
   void OnCanPlayOrRecordChange(bool can_play_or_record) override;
   void OnChangedOutputVolume() override;
-  void OnMicrophoneEnableChange(bool is_microphone_enabled) override;
+  void OnMicrophoneEnabledChange(bool is_microphone_enabled) override;
+  void OnMicrophoneMutedChange(bool is_microphone_muted) override;
 
   // VoiceProcessingAudioUnitObserver methods.
   OSStatus OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
@@ -172,7 +173,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void HandleSampleRateChange();
   void HandlePlayoutGlitchDetected();
   void HandleOutputVolumeChange();
-  void HandleMicrophoneEnableChange(bool is_microphone_enable);
+  void HandleMicrophoneEnabledChange(bool is_microphone_enabled);
+  void HandleMicrophoneMutedChange(bool is_microphone_muted);
 
   // Uses current `playout_parameters_` and `record_parameters_` to inform the
   // audio device buffer (ADB) about our internal audio parameters.
@@ -297,6 +299,8 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   // Contains the time for when the last output volume change was detected.
   int64_t last_output_volume_change_time_ RTC_GUARDED_BY(thread_);
+
+  bool is_microphone_muted_;
 
   // Avoids running pending task after `this` is Terminated.
   rtc::scoped_refptr<PendingTaskSafetyFlag> safety_ =
