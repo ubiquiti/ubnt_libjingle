@@ -227,6 +227,10 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
         rate_control_.TimeToReduceFurther(at_time, *acked_bitrate)) {
       result.updated =
           UpdateEstimate(at_time, acked_bitrate, &result.target_bitrate);
+#ifdef UI_BITRATE_RECOVERY
+      RTC_LOG(LS_INFO) << "MaybeUpdateEstimate: Bandwidth overusing,"
+                       << " target_bitrate=" << result.target_bitrate.bps();
+#endif
     } else if (!acked_bitrate && rate_control_.ValidEstimate() &&
                rate_control_.InitialTimeToReduceFurther(at_time)) {
       // Overusing before we have a measured acknowledged bitrate. Reduce send
@@ -237,6 +241,10 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
       result.updated = true;
       result.probe = false;
       result.target_bitrate = rate_control_.LatestEstimate();
+#ifdef UI_BITRATE_RECOVERY
+      RTC_LOG(LS_INFO) << "MaybeUpdateEstimate: Bandwidth overusing before we have a measured acknowledged bitrate,"
+                       << " target_bitrate=" << result.target_bitrate.bps();
+#endif
     }
   } else {
     if (probe_bitrate) {
