@@ -24,6 +24,7 @@
 #include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -36,7 +37,7 @@ std::unique_ptr<RtpPacketizer> RtpPacketizer::Create(
     bool end_of_frame) {
   
 
-  RTC_LOG(LS_ERROR) << "#-> RtpPacketizerH265::" << __func__;
+  RTC_LOG(LS_ERROR) << "#-> RtpPacketizer::" << __func__;
 
   if (!type) {
     // Use raw packetizer.

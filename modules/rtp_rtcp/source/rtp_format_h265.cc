@@ -120,6 +120,9 @@ bool RtpPacketizerH265::GeneratePackets(
     H265PacketizationMode packetization_mode) {
   // For HEVC we follow non-interleaved mode for the packetization,
   // and don't support single-nalu mode at present.
+
+  RTC_LOG(LS_ERROR) << "#-> RtpPacketizerH265::" << __func__ << " input_fragments_.size() = " << input_fragments_.size();
+
   for (size_t i = 0; i < input_fragments_.size();) {
     int fragment_len = input_fragments_[i].size();
     int single_packet_capacity = limits_.max_payload_len;
@@ -140,6 +143,8 @@ bool RtpPacketizerH265::GeneratePackets(
       ++i;
     }
   }
+
+  RTC_LOG(LS_ERROR) << "<-# RtpPacketizerH265::" << __func__;
   return true;
 }
 
@@ -210,7 +215,11 @@ bool RtpPacketizerH265::PacketizeSingleNalu(size_t fragment_index) {
     payload_size_left -= limits_.first_packet_reduction_len;
   else if (fragment_index + 1 == input_fragments_.size())
     payload_size_left -= limits_.last_packet_reduction_len;
+  
+  
   rtc::ArrayView<const uint8_t> fragment = input_fragments_[fragment_index];
+  
+  
   if (payload_size_left < fragment.size()) {
     RTC_LOG(LS_ERROR) << "Failed to fit a fragment to packet in SingleNalu "
                          "packetization mode. Payload size left "

@@ -275,7 +275,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
            || (name.startsWith(IMG_PREFIX) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT)
            || vcp.isExtraHardwareSupported(name, "video/hevc", vcp.parseWithTag(vcp.loadWithDom(extraMediaCodecFile), "Decoders"));
     
-    Logging.w(TAG, "<-# HardwareVideoEncoderFactory::isHardwareSupportedInCurrentSdkH265() = " + ret.toString());
+    Logging.w(TAG, "<-# HardwareVideoEncoderFactory::isHardwareSupportedInCurrentSdkH265() = " + ret);
     return ret;
   }
 

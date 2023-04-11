@@ -359,7 +359,12 @@ void RtpVideoStreamReceiver2::AddReceiveCodec(
     VideoCodecType video_codec,
     const std::map<std::string, std::string>& codec_params,
     bool raw_payload) {
+
+  RTC_LOG(LS_WARNING) << "    RtpVideoStreamReceiver2::" << __func__ << " ==============================================";
+
+
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  
   if (codec_params.count(cricket::kH264FmtpSpsPpsIdrInKeyframe) > 0 ||
       field_trials_.IsEnabled("WebRTC-SpsPpsIdrIsH264Keyframe")) {
     packet_buffer_.ForceSpsPpsIdrIsH264Keyframe();
@@ -722,6 +727,8 @@ void RtpVideoStreamReceiver2::OnReceivedPayloadData(
 void RtpVideoStreamReceiver2::OnRecoveredPacket(const uint8_t* rtp_packet,
                                                 size_t rtp_packet_length) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  
+  RTC_LOG(LS_WARNING) << "    RtpVideoStreamReceiver2::"<< __func__ << " ==============================================";
 
   RtpPacketReceived packet;
   if (!packet.Parse(rtp_packet, rtp_packet_length))
@@ -1104,6 +1111,8 @@ void RtpVideoStreamReceiver2::ManageFrame(
 
 void RtpVideoStreamReceiver2::ReceivePacket(const RtpPacketReceived& packet) {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  
+  RTC_LOG(LS_WARNING) << "    RtpVideoStreamReceiver2::"<< __func__ << " ==============================================";
 
   if (packet.payload_size() == 0) {
     // Padding or keep-alive packet.
