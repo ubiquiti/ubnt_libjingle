@@ -82,6 +82,8 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   if (self = [super init]) {
     _session = audioSession;
 
+    _isMicrophoneMuted = YES;
+
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self
                selector:@selector(handleInterruptionNotification:)
