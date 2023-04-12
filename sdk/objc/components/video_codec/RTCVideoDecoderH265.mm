@@ -196,7 +196,9 @@ void h265DecompressionOutputCallback(void* decoder,
   // we can pass CVPixelBuffers as native handles in decoder output.
   static size_t const attributesSize = 3;
   CFTypeRef keys[attributesSize] = {
-#if defined(WEBRTC_IOS)
+#if defined(WEBRTC_IOS) && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR)
+    kCVPixelBufferMetalCompatibilityKey,
+#elif defined(WEBRTC_IOS)
     kCVPixelBufferOpenGLESCompatibilityKey,
 #elif defined(WEBRTC_MAC)
     kCVPixelBufferOpenGLCompatibilityKey,
