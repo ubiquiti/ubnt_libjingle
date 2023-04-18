@@ -96,6 +96,8 @@ class VideoSendStream : public webrtc::VideoSendStream {
                                       RtpPayloadStateMap* payload_state_map);
   void GenerateKeyFrame(const std::vector<std::string>& rids) override;
 
+  void SuspendBelowMinBitrate(bool suspend_below_min_bitrate) override;
+
  private:
   friend class test::VideoSendStreamPeer;
 

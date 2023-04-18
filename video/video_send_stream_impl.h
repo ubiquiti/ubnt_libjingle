@@ -92,6 +92,8 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
     return configured_pacing_factor_;
   }
 
+  void SuspendBelowMinBitrate(bool suspend_below_min_bitrate);
+
  private:
   // Implements BitrateAllocatorObserver.
   uint32_t OnBitrateUpdated(BitrateAllocationUpdate update) override;
@@ -156,6 +158,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   uint32_t encoder_max_bitrate_bps_;
   uint32_t encoder_target_rate_bps_;
   double encoder_bitrate_priority_;
+  bool suspend_below_min_bitrate_;
 
   VideoStreamEncoderInterface* const video_stream_encoder_;
 

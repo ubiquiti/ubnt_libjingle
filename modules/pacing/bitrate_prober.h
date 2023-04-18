@@ -80,13 +80,13 @@ class BitrateProber {
   // the last packet in probe. `size` is the total size of all packets in probe.
   void ProbeSent(Timestamp now, DataSize size);
 
-#ifdef UI_BITRATE_RECOVERY
-  // Send probe right away, and change probing state to active.
-  void activateProbe() {
-    next_probe_time_ = Timestamp::MinusInfinity();
-    probing_state_ = ProbingState::kActive;
-  }
-#endif
+// #ifdef UI_BITRATE_RECOVERY
+//   // Send probe right away, and change probing state to active.
+//   void activateProbe() {
+//     next_probe_time_ = Timestamp::MinusInfinity();
+//     probing_state_ = ProbingState::kActive;
+//   }
+// #endif
 
  private:
   enum class ProbingState {

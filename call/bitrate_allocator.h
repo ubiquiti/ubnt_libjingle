@@ -71,6 +71,9 @@ class BitrateAllocatorInterface {
   virtual void RemoveObserver(BitrateAllocatorObserver* observer) = 0;
   virtual int GetStartBitrate(BitrateAllocatorObserver* observer) const = 0;
 
+  virtual void SuspendBelowMinBitrate(BitrateAllocatorObserver* observer, 
+                                      bool suspend_below_min_bitrate) {}
+
  protected:
   virtual ~BitrateAllocatorInterface() = default;
 };
@@ -135,6 +138,9 @@ class BitrateAllocator : public BitrateAllocatorInterface {
   // Returns initial bitrate allocated for `observer`. If `observer` is not in
   // the list of added observers, a best guess is returned.
   int GetStartBitrate(BitrateAllocatorObserver* observer) const override;
+
+  void SuspendBelowMinBitrate(BitrateAllocatorObserver* observer, 
+                              bool suspend_below_min_bitrate) override;
 
  private:
   using AllocatableTrack = bitrate_allocator_impl::AllocatableTrack;

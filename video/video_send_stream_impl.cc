@@ -234,6 +234,7 @@ VideoSendStreamImpl::VideoSendStreamImpl(
           GetInitialEncoderMaxBitrate(initial_encoder_max_bitrate)),
       encoder_target_rate_bps_(0),
       encoder_bitrate_priority_(initial_encoder_bitrate_priority),
+      suspend_below_min_bitrate_(config->suspend_below_min_bitrate),
       video_stream_encoder_(video_stream_encoder),
       bandwidth_observer_(transport->GetBandwidthObserver()),
       rtp_video_sender_(rtp_video_sender),
@@ -475,7 +476,9 @@ MediaStreamAllocationConfig VideoSendStreamImpl::GetAllocationConfig() const {
       encoder_max_bitrate_bps_,
       static_cast<uint32_t>(disable_padding_ ? 0 : max_padding_bitrate_),
       /* priority_bitrate */ 0,
-      !config_->suspend_below_min_bitrate,
+      // UI Customization - different suspending strategies are adopted for different streams
+      // !config_->suspend_below_min_bitrate,
+      !suspend_below_min_bitrate_,
       encoder_bitrate_priority_};
 }
 
@@ -521,7 +524,8 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
     // TODO(bugs.webrtc.org/10266): Query the VideoBitrateAllocator instead.
     max_padding_bitrate_ = CalculateMaxPadBitrateBps(
         streams, is_svc, content_type, min_transmit_bitrate_bps,
-        config_->suspend_below_min_bitrate, has_alr_probing_);
+        /*config_->suspend_below_min_bitrate*/
+        suspend_below_min_bitrate_, has_alr_probing_);
 
     // Clear stats for disabled layers.
     for (size_t i = streams.size(); i < config_->rtp.ssrcs.size(); ++i) {
@@ -634,6 +638,14 @@ uint32_t VideoSendStreamImpl::OnBitrateUpdated(BitrateAllocationUpdate update) {
       update.round_trip_time.ms(), update.cwnd_reduce_ratio);
   stats_proxy_->OnSetEncoderTargetRate(encoder_target_rate_bps_);
   return protection_bitrate_bps;
+}
+
+void VideoSendStreamImpl::SuspendBelowMinBitrate(bool suspend_below_min_bitrate) {
+  RTC_DCHECK_RUN_ON(rtp_transport_queue_);
+  if (suspend_below_min_bitrate_ != suspend_below_min_bitrate) {
+    suspend_below_min_bitrate_ = suspend_below_min_bitrate;
+    bitrate_allocator_->SuspendBelowMinBitrate(this, suspend_below_min_bitrate);
+  }
 }
 
 }  // namespace internal
