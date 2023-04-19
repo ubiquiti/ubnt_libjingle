@@ -58,9 +58,9 @@ constexpr TimeDelta kMinTimeBetweenAlrProbes = TimeDelta::Seconds(5);
 // estimate.
 constexpr double kProbeUncertainty = 0.05;
 
-#ifdef UI_BITRATE_RECOVERY
-constexpr TimeDelta kTimeBetweenProbes = TimeDelta::Seconds(5);
-#endif
+// #ifdef UI_BITRATE_RECOVERY
+// constexpr TimeDelta kTimeBetweenProbes = TimeDelta::Seconds(5);
+// #endif
 
 // Use probing to recover faster after large bitrate estimate drops.
 constexpr char kBweRapidRecoveryExperiment[] =
@@ -203,9 +203,9 @@ std::vector<ProbeClusterConfig> ProbeController::SetBitrates(
         RTC_HISTOGRAM_COUNTS_10000("WebRTC.BWE.MidCallProbing.Initiated",
                                    max_bitrate_.kbps());
 
-#ifdef UI_BITRATE_RECOVERY
-        last_probing_time_ = at_time;
-#endif
+// #ifdef UI_BITRATE_RECOVERY
+//         last_probing_time_ = at_time;
+// #endif
 
         return InitiateProbing(at_time, {max_bitrate_}, false);
       }
@@ -252,9 +252,9 @@ std::vector<ProbeClusterConfig> ProbeController::OnMaxTotalAllocatedBitrate(
       if (second_probe_rate > first_probe_rate)
         probes.push_back(second_probe_rate);
     }
-#ifdef UI_BITRATE_RECOVERY
-    last_probing_time_ = at_time;
-#endif
+// #ifdef UI_BITRATE_RECOVERY
+//     last_probing_time_ = at_time;
+// #endif
     return InitiateProbing(at_time, probes,
                            config_.allocation_allow_further_probing.Get());
   }
@@ -291,9 +291,9 @@ std::vector<ProbeClusterConfig> ProbeController::InitiateExponentialProbing(
     probes.push_back(config_.second_exponential_probe_scale.Value() *
                      start_bitrate_);
   }
-#ifdef UI_BITRATE_RECOVERY
-  last_probing_time_ = at_time;
-#endif
+// #ifdef UI_BITRATE_RECOVERY
+//   last_probing_time_ = at_time;
+// #endif
   return InitiateProbing(at_time, probes, true);
 }
 
@@ -329,9 +329,9 @@ std::vector<ProbeClusterConfig> ProbeController::SetEstimatedBitrate(
                      << min_bitrate_to_probe_further_;
 
     if (bitrate > min_bitrate_to_probe_further_) {
-#ifdef UI_BITRATE_RECOVERY
-      last_probing_time_ = at_time;
-#endif
+// #ifdef UI_BITRATE_RECOVERY
+//       last_probing_time_ = at_time;
+// #endif
       pending_probes = InitiateProbing(
           at_time, {config_.further_exponential_probe_scale * bitrate}, true);
     }
@@ -386,7 +386,7 @@ std::vector<ProbeClusterConfig> ProbeController::RequestProbe(
             (at_time - last_bwe_drop_probing_time_).seconds());
         last_bwe_drop_probing_time_ = at_time;
 #ifdef UI_BITRATE_RECOVERY
-        last_probing_time_ = at_time;
+        // last_probing_time_ = at_time;
         RTC_LOG(LS_INFO) << "suggested_probe:" << suggested_probe
                          << " min_expected_probe_result:" << min_expected_probe_result
                          << " estimated_bitrate:" << estimated_bitrate_
@@ -480,31 +480,31 @@ std::vector<ProbeClusterConfig> ProbeController::Process(Timestamp at_time) {
   if (estimated_bitrate_.IsZero() || state_ != State::kProbingComplete) {
     return {};
   }
-#ifdef UI_BITRATE_RECOVERY
-  // Using periodic probing to make sure the bitrate will be recovered quickly
-  uint32_t time_since_last_probing = 0;
-  if (last_probing_time_.ms() > 0)
-    time_since_last_probing = at_time.ms() - last_probing_time_.ms();
-  bool periodic_probe = time_since_last_probing > kTimeBetweenProbes.ms();
-  bool time_for_alr_probe = TimeForAlrProbe(at_time);
-  if (time_for_alr_probe || TimeForNetworkStateProbe(at_time) || periodic_probe) {
-    bool futher_probe = true;
-    // check if we are in alr state(alr checking first), if so, do futher probing.
-    if (time_for_alr_probe) {
-      RTC_LOG(LS_INFO) << "Start Alr probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
-    } else if (periodic_probe) {
-      // If we aren't in alr state, then for periodic probing, we don't do futher probing.
-      futher_probe = false;
-      RTC_LOG(LS_INFO) << "Start periodic probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
-    }
-    last_probing_time_ = at_time;
-    return InitiateProbing(
-        at_time, {estimated_bitrate_ * config_.alr_probe_scale}, futher_probe);
-#else
+// #ifdef UI_BITRATE_RECOVERY
+//   // Using periodic probing to make sure the bitrate will be recovered quickly
+//   uint32_t time_since_last_probing = 0;
+//   if (last_probing_time_.ms() > 0)
+//     time_since_last_probing = at_time.ms() - last_probing_time_.ms();
+//   bool periodic_probe = time_since_last_probing > kTimeBetweenProbes.ms();
+//   bool time_for_alr_probe = TimeForAlrProbe(at_time);
+//   if (time_for_alr_probe || TimeForNetworkStateProbe(at_time) || periodic_probe) {
+//     bool futher_probe = true;
+//     // check if we are in alr state(alr checking first), if so, do futher probing.
+//     if (time_for_alr_probe) {
+//       RTC_LOG(LS_INFO) << "Start Alr probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
+//     } else if (periodic_probe) {
+//       // If we aren't in alr state, then for periodic probing, we don't do futher probing.
+//       futher_probe = false;
+//       RTC_LOG(LS_INFO) << "Start periodic probing, suggested bitrate: " << (estimated_bitrate_ * config_.alr_probe_scale);
+//     }
+//     last_probing_time_ = at_time;
+//     return InitiateProbing(
+//         at_time, {estimated_bitrate_ * config_.alr_probe_scale}, futher_probe);
+// #else
   if (TimeForAlrProbe(at_time) || TimeForNetworkStateProbe(at_time)) {
     return InitiateProbing(
         at_time, {estimated_bitrate_ * config_.alr_probe_scale}, true);
-#endif
+// #endif
   }
   return std::vector<ProbeClusterConfig>();
 }
