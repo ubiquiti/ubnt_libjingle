@@ -1929,6 +1929,9 @@ void SdpOfferAnswerHandler::ApplyRemoteDescriptionUpdateTransceiverState(
     SdpType sdp_type) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   RTC_DCHECK(IsUnifiedPlan());
+
+  RTC_LOG(LS_INFO) << "#-> SdpOfferAnswerHandler::" << __func__ << "    ";
+
   if (!ConfiguredForMedia()) {
     return;
   }
@@ -1937,8 +1940,15 @@ void SdpOfferAnswerHandler::ApplyRemoteDescriptionUpdateTransceiverState(
   std::vector<rtc::scoped_refptr<RtpTransceiverInterface>> remove_list;
   std::vector<rtc::scoped_refptr<MediaStreamInterface>> added_streams;
   std::vector<rtc::scoped_refptr<MediaStreamInterface>> removed_streams;
+  
+  
+  
+  
   for (const auto& transceiver_ext : transceivers()->List()) {
     const auto transceiver = transceiver_ext->internal();
+
+    RTC_LOG(LS_INFO) << "   SdpOfferAnswerHandler::" << __func__ << "  next transceiver  ";
+
     const ContentInfo* content =
         FindMediaSectionForTransceiver(transceiver, remote_description());
     if (!content) {
@@ -1965,7 +1975,7 @@ void SdpOfferAnswerHandler::ApplyRemoteDescriptionUpdateTransceiverState(
         stream_ids = media_desc->streams()[0].stream_ids();
       }
 
-      RTC_LOG(LS_INFO) << "Processing the MSIDs for MID=" << content->name
+      RTC_LOG(LS_INFO) << "    Processing the MSIDs for MID=" << content->name
                        << " (" << GetStreamIdsString(stream_ids) << ").";
       SetAssociatedRemoteStreams(transceiver->receiver_internal(), stream_ids,
                                  &added_streams, &removed_streams);
@@ -2051,6 +2061,8 @@ void SdpOfferAnswerHandler::ApplyRemoteDescriptionUpdateTransceiverState(
   for (const auto& stream : removed_streams) {
     observer->OnRemoveStream(stream);
   }
+  RTC_LOG(LS_INFO) << "<-# SdpOfferAnswerHandler::" << __func__ << "  done ";
+
 }
 
 void SdpOfferAnswerHandler::PlanBUpdateSendersAndReceivers(
@@ -3496,6 +3508,8 @@ RTCError SdpOfferAnswerHandler::UpdateTransceiversAndDataChannels(
   return RTCError::OK();
 }
 
+
+//==========================================
 RTCErrorOr<rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>>
 SdpOfferAnswerHandler::AssociateTransceiver(
     cricket::ContentSource source,
@@ -3504,6 +3518,10 @@ SdpOfferAnswerHandler::AssociateTransceiver(
     const ContentInfo& content,
     const ContentInfo* old_local_content,
     const ContentInfo* old_remote_content) {
+
+  RTC_LOG(LS_INFO) << "#-> SdpOfferAnswerHandler::" << __func__ << "    ";
+
+  
   TRACE_EVENT0("webrtc", "SdpOfferAnswerHandler::AssociateTransceiver");
   RTC_DCHECK(IsUnifiedPlan());
 #if RTC_DCHECK_IS_ON
@@ -3551,7 +3569,7 @@ SdpOfferAnswerHandler::AssociateTransceiver(
     // If no RtpTransceiver was found in the previous step, create one with a
     // recvonly direction.
     if (!transceiver) {
-      RTC_LOG(LS_INFO) << "Adding "
+      RTC_LOG(LS_INFO) << "    SdpOfferAnswerHandler::" << __func__ << "    ##### Adding "
                        << cricket::MediaTypeToString(media_desc->type())
                        << " transceiver for MID=" << content.name
                        << " at i=" << mline_index
@@ -3575,6 +3593,9 @@ SdpOfferAnswerHandler::AssociateTransceiver(
       if (type == SdpType::kOffer) {
         transceivers()->StableState(transceiver)->set_newly_created();
       }
+
+      RTC_LOG(LS_INFO) << "    SdpOfferAnswerHandler::" << __func__ << " #1";
+
     }
 
     RTC_DCHECK(transceiver);
@@ -5093,6 +5114,11 @@ bool SdpOfferAnswerHandler::UpdatePayloadTypeDemuxingState(
         }
         break;
       }
+
+
+
+
+      
       case cricket::MediaType::MEDIA_TYPE_VIDEO: {
         if (!mid_header_extension_missing_video) {
           mid_header_extension_missing_video =
@@ -5100,6 +5126,7 @@ bool SdpOfferAnswerHandler::UpdatePayloadTypeDemuxingState(
         }
         const cricket::VideoContentDescription* video_desc =
             content_info.media_description()->as_video();
+
         for (const cricket::VideoCodec& video : video_desc->codecs()) {
           if (payload_types->video_payload_types.count(video.id)) {
             // Two m= sections are using the same payload type, thus demuxing

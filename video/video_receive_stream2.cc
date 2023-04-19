@@ -558,6 +558,9 @@ void VideoReceiveStream2::SetAssociatedPayloadTypes(
 
 void VideoReceiveStream2::CreateAndRegisterExternalDecoder(
     const Decoder& decoder) {
+
+  RTC_LOG(LS_INFO) << "#-> VideoReceiveStream2::" << __func__;
+  
   TRACE_EVENT0("webrtc",
                "VideoReceiveStream2::CreateAndRegisterExternalDecoder");
   std::unique_ptr<VideoDecoder> video_decoder =

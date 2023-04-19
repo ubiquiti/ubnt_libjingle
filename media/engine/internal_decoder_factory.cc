@@ -83,6 +83,9 @@ VideoDecoderFactory::CodecSupport InternalDecoderFactory::QueryCodecSupport(
 
 std::unique_ptr<VideoDecoder> InternalDecoderFactory::CreateVideoDecoder(
     const SdpVideoFormat& format) {
+
+  RTC_LOG(LS_ERROR) << "#-> InternalDecoderFactory::CreateVideoDecoder";
+
   if (!format.IsCodecInList(GetSupportedFormats())) {
     RTC_LOG(LS_WARNING) << "Trying to create decoder for unsupported format. "
                         << format.ToString();

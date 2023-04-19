@@ -360,7 +360,7 @@ void RtpVideoStreamReceiver2::AddReceiveCodec(
     const std::map<std::string, std::string>& codec_params,
     bool raw_payload) {
 
-  RTC_LOG(LS_WARNING) << "    RtpVideoStreamReceiver2::" << __func__ << " ==============================================";
+  RTC_LOG(LS_ERROR) << "#-> RtpVideoStreamReceiver2::" << __func__ << " ================== " << video_codec << " ============================";
 
 
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);

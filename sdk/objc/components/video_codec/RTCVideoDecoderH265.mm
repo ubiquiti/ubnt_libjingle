@@ -47,6 +47,7 @@ void h265DecompressionOutputCallback(void* decoder,
                                      CVImageBufferRef imageBuffer,
                                      CMTime timestamp,
                                      CMTime duration) {
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::h265DecompressionOutputCallback ";
   std::unique_ptr<RTCH265FrameDecodeParams> decodeParams(
       reinterpret_cast<RTCH265FrameDecodeParams*>(params));
   if (status != noErr) {
@@ -93,7 +94,7 @@ void h265DecompressionOutputCallback(void* decoder,
       codecSpecificInfo:(__nullable id<RTCCodecSpecificInfo>)info
            renderTimeMs:(int64_t)renderTimeMs {
   RTC_DCHECK(inputImage.buffer);
-
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::decode ";
   if (_error != noErr) {
     RTC_LOG(LS_WARNING) << "Last frame decode failed.";
     _error = noErr;
@@ -179,6 +180,7 @@ void h265DecompressionOutputCallback(void* decoder,
 #pragma mark - Private
 
 - (int)resetDecompressionSession {
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::decode ";
   [self destroyDecompressionSession];
 
   // Need to wait for the first SPS to initialize decoder.

@@ -44,6 +44,9 @@ class VideoDecoderFactoryTemplate : public VideoDecoderFactory {
 
   std::unique_ptr<VideoDecoder> CreateVideoDecoder(
       const SdpVideoFormat& format) override {
+
+    RTC_LOG(LS_ERROR) << "#-> VideoDecoderFactoryTemplate::CreateVideoDecoder";
+
     return CreateVideoDecoderInternal<Ts...>(format);
   }
 

@@ -491,13 +491,7 @@ bool RTPSenderVideo::SendVideo(
                           FrameTypeToString(video_header.frame_type));
   RTC_CHECK_RUNS_SERIALIZED(&send_checker_);
 
-  RTC_LOG(LS_ERROR) << "    RTPSenderVideo::SendVideo payload_type:" << payload_type
-                      << " timestamp:" << rtp_timestamp
-                      << " capture_time_ms:" << capture_time_ms
-                      << " seq_num:" << rtp_sender_->SequenceNumber()
-                      << " ssrc:" << rtp_sender_->SSRC()
-                      << " marker:" << video_header.markerBit
-                      << " frame_type:" << video_header.frame_type;
+  RTC_LOG(LS_ERROR) << "    RTPSenderVideo::SendVideo";
 
   if (video_header.frame_type == VideoFrameType::kEmptyFrame)
     return true;

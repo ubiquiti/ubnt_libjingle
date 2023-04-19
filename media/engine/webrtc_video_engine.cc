@@ -151,6 +151,9 @@ std::vector<VideoCodec> GetPayloadTypesAndDefaultCodecs(
     bool is_decoder_factory,
     bool include_rtx,
     const webrtc::FieldTrialsView& trials) {
+
+  RTC_LOG(LS_INFO) << "#-> " << __func__ << "   CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC ";
+
   if (!factory) {
     return {};
   }
@@ -160,6 +163,10 @@ std::vector<VideoCodec> GetPayloadTypesAndDefaultCodecs(
   if (is_decoder_factory) {
     AddH264ConstrainedBaselineProfileToSupportedFormats(&supported_formats);
   }
+
+  // Karlis
+  supported_formats.push_back(webrtc::SdpVideoFormat(kH265CodecName));
+
 
   if (supported_formats.empty())
     return std::vector<VideoCodec>();
@@ -629,12 +636,14 @@ VideoMediaChannel* WebRtcVideoEngine::CreateMediaChannel(
                                 video_bitrate_allocator_factory);
 }
 std::vector<VideoCodec> WebRtcVideoEngine::send_codecs(bool include_rtx) const {
+  RTC_LOG(LS_INFO) << "    WebRtcVideoEngine::" << __func__;
   return GetPayloadTypesAndDefaultCodecs(encoder_factory_.get(),
                                          /*is_decoder_factory=*/false,
                                          include_rtx, trials_);
 }
 
 std::vector<VideoCodec> WebRtcVideoEngine::recv_codecs(bool include_rtx) const {
+  RTC_LOG(LS_INFO) << "    WebRtcVideoEngine::" << __func__;
   return GetPayloadTypesAndDefaultCodecs(decoder_factory_.get(),
                                          /*is_decoder_factory=*/true,
                                          include_rtx, trials_);
@@ -642,6 +651,9 @@ std::vector<VideoCodec> WebRtcVideoEngine::recv_codecs(bool include_rtx) const {
 
 std::vector<webrtc::RtpHeaderExtensionCapability>
 WebRtcVideoEngine::GetRtpHeaderExtensions() const {
+
+  RTC_LOG(LS_INFO) << "    WebRtcVideoEngine::" << __func__;
+
   std::vector<webrtc::RtpHeaderExtensionCapability> result;
   int id = 1;
   for (const auto& uri :
@@ -710,6 +722,8 @@ WebRtcVideoChannel::WebRtcVideoChannel(
               : nullptr) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   network_thread_checker_.Detach();
+
+  RTC_LOG(LS_INFO) << "    WebRtcVideoChannel::" << __func__;
 
   rtcp_receiver_report_ssrc_ = kDefaultRtcpReceiverReportSsrc;
   sending_ = false;
@@ -1436,25 +1450,28 @@ bool WebRtcVideoChannel::AddRecvStream(const StreamParams& sp,
                                        bool default_stream) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
 
-  RTC_LOG(LS_INFO) << "AddRecvStream"
+  RTC_LOG(LS_INFO) << "#-> WebRtcVideoChannel::AddRecvStream"
                    << (default_stream ? " (default stream)" : "") << ": "
                    << sp.ToString();
   if (!sp.has_ssrcs()) {
     // This is a StreamParam with unsignaled SSRCs. Store it, so it can be used
     // later when we know the SSRC on the first packet arrival.
     unsignaled_stream_params_ = sp;
+    RTC_LOG(LS_INFO) << "<-# WebRtcVideoChannel::AddRecvStream #1";
     return true;
   }
 
-  if (!ValidateStreamParams(sp))
+  if (!ValidateStreamParams(sp)) {
+    RTC_LOG(LS_INFO) << "<-# WebRtcVideoChannel::AddRecvStream #2";
     return false;
+  }
 
   for (uint32_t ssrc : sp.ssrcs) {
     // Remove running stream if this was a default stream.
     const auto& prev_stream = receive_streams_.find(ssrc);
     if (prev_stream != receive_streams_.end()) {
       if (default_stream || !prev_stream->second->IsDefaultStream()) {
-        RTC_LOG(LS_ERROR) << "Receive stream for SSRC '" << ssrc
+        RTC_LOG(LS_ERROR) << "WebRtcVideoChannel:: Receive stream for SSRC '" << ssrc
                           << "' already exists.";
         return false;
       }
@@ -1463,8 +1480,10 @@ bool WebRtcVideoChannel::AddRecvStream(const StreamParams& sp,
     }
   }
 
-  if (!ValidateReceiveSsrcAvailability(sp))
+  if (!ValidateReceiveSsrcAvailability(sp)) {
+    RTC_LOG(LS_INFO) << "<-# WebRtcVideoChannel::AddRecvStream #3";
     return false;
+  }
 
   for (uint32_t used_ssrc : sp.ssrcs)
     receive_ssrcs_.insert(used_ssrc);
@@ -1487,6 +1506,7 @@ bool WebRtcVideoChannel::AddRecvStream(const StreamParams& sp,
       this, call_, sp, std::move(config), default_stream, recv_codecs_,
       flexfec_config);
 
+  RTC_LOG(LS_INFO) << "<-# WebRtcVideoChannel::AddRecvStream OK!";
   return true;
 }
 
@@ -1494,6 +1514,9 @@ void WebRtcVideoChannel::ConfigureReceiverRtp(
     webrtc::VideoReceiveStreamInterface::Config* config,
     webrtc::FlexfecReceiveStream::Config* flexfec_config,
     const StreamParams& sp) const {
+
+  RTC_LOG(LS_INFO) << "#-> WebRtcVideoChannel::" << __func__;
+
   uint32_t ssrc = sp.first_ssrc();
 
   config->rtp.remote_ssrc = ssrc;
@@ -1548,6 +1571,7 @@ void WebRtcVideoChannel::ConfigureReceiverRtp(
 }
 
 bool WebRtcVideoChannel::RemoveRecvStream(uint32_t ssrc) {
+  RTC_LOG(LS_INFO) << "#-> WebRtcVideoChannel::" << __func__;
   RTC_DCHECK_RUN_ON(&thread_checker_);
   RTC_LOG(LS_INFO) << "RemoveRecvStream: " << ssrc;
 

@@ -281,6 +281,10 @@ VideoDecoder& VideoDecoderSoftwareFallbackWrapper::active_decoder() const {
 std::unique_ptr<VideoDecoder> CreateVideoDecoderSoftwareFallbackWrapper(
     std::unique_ptr<VideoDecoder> sw_fallback_decoder,
     std::unique_ptr<VideoDecoder> hw_decoder) {
+  
+
+  RTC_LOG(LS_ERROR) << "#-> CreateVideoDecoderSoftwareFallbackWrapper";
+
   return std::make_unique<VideoDecoderSoftwareFallbackWrapper>(
       std::move(sw_fallback_decoder), std::move(hw_decoder));
 }
