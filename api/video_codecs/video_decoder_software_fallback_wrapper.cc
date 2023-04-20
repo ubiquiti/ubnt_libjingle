@@ -183,6 +183,9 @@ int32_t VideoDecoderSoftwareFallbackWrapper::Decode(
     bool missing_frames,
     int64_t render_time_ms) {
   TRACE_EVENT0("webrtc", "VideoDecoderSoftwareFallbackWrapper::Decode");
+
+  RTC_LOG(LS_ERROR) << "#-> VideoDecoderSoftwareFallbackWrapper::decode " << render_time_ms;
+  
   switch (decoder_type_) {
     case DecoderType::kNone:
       return WEBRTC_VIDEO_CODEC_UNINITIALIZED;

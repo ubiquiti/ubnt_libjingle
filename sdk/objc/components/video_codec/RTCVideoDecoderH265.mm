@@ -94,7 +94,10 @@ void h265DecompressionOutputCallback(void* decoder,
       codecSpecificInfo:(__nullable id<RTCCodecSpecificInfo>)info
            renderTimeMs:(int64_t)renderTimeMs {
   RTC_DCHECK(inputImage.buffer);
-  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::decode ";
+  
+  
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::decode length=" << inputImage.buffer.length;
+  
   if (_error != noErr) {
     RTC_LOG(LS_WARNING) << "Last frame decode failed.";
     _error = noErr;
@@ -102,13 +105,18 @@ void h265DecompressionOutputCallback(void* decoder,
   }
 
   rtc::ScopedCFTypeRef<CMVideoFormatDescriptionRef> inputFormat =
-      rtc::ScopedCF(webrtc::CreateVideoFormatDescription(
+      rtc::ScopedCF(webrtc::CreateH265VideoFormatDescription(
           (uint8_t*)inputImage.buffer.bytes, inputImage.buffer.length));
+  
+  
   if (inputFormat) {
-    CMVideoDimensions dimensions =
-        CMVideoFormatDescriptionGetDimensions(inputFormat.get());
-    RTC_LOG(LS_INFO) << "Resolution: " << dimensions.width << " x "
-                     << dimensions.height;
+
+
+    CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(inputFormat.get());
+    
+    
+    RTC_LOG(LS_INFO) << "Resolution: " << dimensions.width << " x " << dimensions.height;
+    
     // Check if the video format has changed, and reinitialize decoder if
     // needed.
     if (!CMFormatDescriptionEqual(inputFormat.get(), _videoFormat)) {
@@ -263,6 +271,9 @@ void h265DecompressionOutputCallback(void* decoder,
 }
 
 - (void)setVideoFormat:(CMVideoFormatDescriptionRef)videoFormat {
+
+  RTC_LOG(LS_ERROR) << "#-> RTCVideoDecoderH265::setVideoFormat ";
+
   if (_videoFormat == videoFormat) {
     return;
   }
@@ -273,6 +284,8 @@ void h265DecompressionOutputCallback(void* decoder,
   if (_videoFormat) {
     CFRetain(_videoFormat);
   }
+  RTC_LOG(LS_ERROR) << "<-# RTCVideoDecoderH265::setVideoFormat ";
+
 }
 
 - (NSString*)implementationName {
