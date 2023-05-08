@@ -54,9 +54,9 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
                           << " current_rate=" << *current_rate
                           << " window_size_ms_=" << window_size_ms_;
       */
-#ifndef UI_CUSTOMIZATION
+// #ifndef UI_CUSTOMIZATION
       return false;
-#endif
+// #endif
     }
   }
 
