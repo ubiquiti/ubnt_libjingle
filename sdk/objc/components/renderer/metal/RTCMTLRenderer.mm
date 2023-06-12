@@ -137,7 +137,12 @@ static const NSInteger kMaxInflightBuffers = 1;
     view.autoResizeDrawable = NO;
 
       // UI Customization Begin
-    view.layer.opaque = false;
+#if TARGET_OS_OSX
+// NSView define : @property (getter=isOpaque, readonly) BOOL opaque;
+#else
+// UIView define : @property(nonatomic,getter=isOpaque) BOOL opaque;
+    view.opaque = false;
+#endif
     view.opaque = false;
     view.clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
       // UI Customization End
