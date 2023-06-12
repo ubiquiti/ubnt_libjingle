@@ -173,10 +173,14 @@ std::string SocketAddress::ToString() const {
 }
 
 std::string SocketAddress::ToSensitiveString() const {
+#ifdef UI_CUSTOMIZED_UNSANITIZE_IP
+  return ToString();
+#else
   char buf[1024];
   rtc::SimpleStringBuilder sb(buf);
   sb << HostAsSensitiveURIString() << ":" << port();
   return sb.str();
+#endif
 }
 
 std::string SocketAddress::ToSensitiveNameAndAddressString() const {

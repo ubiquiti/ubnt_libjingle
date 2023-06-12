@@ -44,8 +44,18 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
 
     size_t bitrate_addition_bps =
         (packet_size_bytes * 8 * 1000) / window_size_ms_;
-    if (*current_rate + bitrate_addition_bps > max_rate_bps_)
+    if (*current_rate + bitrate_addition_bps > max_rate_bps_) {
+      /*
+      RTC_LOG(LS_WARNING) << " Adding bytes cause maximum bitrate target to be exceeded."
+                          << " max_rate_bps_=" << max_rate_bps_
+                          << " bitrate_addition_bps=" << bitrate_addition_bps
+                          << " current_rate=" << *current_rate
+                          << " window_size_ms_=" << window_size_ms_;
+      */
+// #ifndef UI_CUSTOMIZATION
       return false;
+// #endif
+    }
   }
 
   current_rate_.Update(packet_size_bytes, now_ms);

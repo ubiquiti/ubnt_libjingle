@@ -33,6 +33,10 @@
 ()<MTKViewDelegate> @property(nonatomic) RTCMTLI420Renderer *rendererI420;
 @property(nonatomic) RTCMTLNV12Renderer *rendererNV12;
 @property(nonatomic) RTCMTLRGBRenderer *rendererRGB;
+
+// UI customization
+@property(nonatomic) RTCMTLRenderer *currentRenderer;
+
 @property(nonatomic) MTKView *metalView;
 @property(atomic) RTC_OBJC_TYPE(RTCVideoFrame) * videoFrame;
 @property(nonatomic) CGSize videoFrameSize;
@@ -50,6 +54,9 @@
 @synthesize videoFrameSize = _videoFrameSize;
 @synthesize lastFrameTimeNs = _lastFrameTimeNs;
 @synthesize rotationOverride = _rotationOverride;
+
+// UI customization
+@synthesize currentRenderer = _currentRenderer;
 
 - (instancetype)initWithFrame:(CGRect)frameRect {
   self = [super initWithFrame:frameRect];
@@ -185,6 +192,9 @@
     renderer = self.rendererI420;
   }
 
+  // UI customization
+  self.currentRenderer = renderer;
+
   renderer.rotationOverride = self.rotationOverride;
 
   [renderer drawFrame:videoFrame];
@@ -259,7 +269,15 @@
     RTCLogInfo(@"Incoming frame is nil. Exiting render callback.");
     return;
   }
+
   self.videoFrame = frame;
 }
 
+// UI Customization Begin
+// - override clearVideoView defined in RTCVideoRenderer
+- (void)clearVideoView {
+  if (self.currentRenderer)
+    [self.currentRenderer clearView];
+}
+// UI Customization End
 @end

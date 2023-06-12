@@ -31,7 +31,11 @@ class AudioSessionObserver {
   virtual void OnCanPlayOrRecordChange(bool can_play_or_record) = 0;
 
   virtual void OnChangedOutputVolume() = 0;
+// UI Customization Begin
+  virtual void OnMicrophoneEnabledChange(bool is_microphone_enabled) = 0;
 
+  virtual void OnMicrophoneMutedChange(bool is_microphone_muted) = 0;
+// UI Customization End
  protected:
   virtual ~AudioSessionObserver() {}
 };

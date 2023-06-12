@@ -354,6 +354,14 @@ void VideoSendStream::GenerateKeyFrame(const std::vector<std::string>& rids) {
     video_stream_encoder_->SendKeyFrame(next_frames);
   }
 }
-
+// UI Customization Ebgin
+void VideoSendStream::SuspendBelowMinBitrate(bool suspend_below_min_bitrate) {
+  RTC_DCHECK_RUN_ON(&thread_checker_);
+  rtp_transport_queue_->RunOrPost(
+      SafeTask(transport_queue_safety_, [this, suspend_below_min_bitrate] {
+        send_stream_.SuspendBelowMinBitrate(suspend_below_min_bitrate);
+      }));
+}
+// UI Customization End
 }  // namespace internal
 }  // namespace webrtc

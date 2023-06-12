@@ -79,6 +79,14 @@ RTC_OBJC_EXPORT
 - (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession
     didChangeOutputVolume:(float)outputVolume;
 
+// UI Customization Begin
+- (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession
+    didChangeMicrophoneEnabled:(BOOL)isMicrophoneEnabled;
+
+- (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession
+    didChangeMicrophoneMuted:(BOOL)isMicrophoneMuted;
+// UI Customization End
+
 /** Called when the audio device detects a playout glitch. The argument is the
  *  number of glitches detected so far in the current audio playout session.
  */
@@ -161,6 +169,11 @@ RTC_OBJC_EXPORT
  *  we are able to prevent the abrupt cutoff.
  */
 @property(nonatomic, assign) BOOL isAudioEnabled;
+
+// UI customization - for runtime retrieve the microphone permission
+@property(nonatomic, assign) BOOL isMicrophoneEnabled;
+// UI customization - for runtime mute/unmute microphone
+@property(nonatomic, assign) BOOL isMicrophoneMuted;
 
 // Proxy properties.
 @property(readonly) NSString *category;
