@@ -29,6 +29,9 @@ VideoDecoderFactoryWrapper::~VideoDecoderFactoryWrapper() = default;
 
 std::unique_ptr<VideoDecoder> VideoDecoderFactoryWrapper::CreateVideoDecoder(
     const SdpVideoFormat& format) {
+  
+  RTC_LOG(LS_ERROR) << "#-> VideoDecoderFactoryWrapper::CreateVideoDecoder";
+
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
   ScopedJavaLocalRef<jobject> j_codec_info =
       SdpVideoFormatToVideoCodecInfo(jni, format);

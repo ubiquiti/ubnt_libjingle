@@ -167,6 +167,10 @@ void VideoDecoderSoftwareFallbackWrapper::UpdateFallbackDecoderHistograms() {
       RTC_HISTOGRAM_COUNTS_100000(kFallbackHistogramsUmaPrefix + "H264",
                                   hw_decoded_frames_since_last_fallback_);
       break;
+    case kVideoCodecH265:
+      RTC_HISTOGRAM_COUNTS_100000(kFallbackHistogramsUmaPrefix + "H265",
+                                  hw_decoded_frames_since_last_fallback_);
+      break;
     case kVideoCodecMultiplex:
       RTC_HISTOGRAM_COUNTS_100000(kFallbackHistogramsUmaPrefix + "Multiplex",
                                   hw_decoded_frames_since_last_fallback_);
@@ -179,6 +183,9 @@ int32_t VideoDecoderSoftwareFallbackWrapper::Decode(
     bool missing_frames,
     int64_t render_time_ms) {
   TRACE_EVENT0("webrtc", "VideoDecoderSoftwareFallbackWrapper::Decode");
+
+  RTC_LOG(LS_ERROR) << "#-> VideoDecoderSoftwareFallbackWrapper::decode " << render_time_ms;
+  
   switch (decoder_type_) {
     case DecoderType::kNone:
       return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
@@ -277,6 +284,10 @@ VideoDecoder& VideoDecoderSoftwareFallbackWrapper::active_decoder() const {
 std::unique_ptr<VideoDecoder> CreateVideoDecoderSoftwareFallbackWrapper(
     std::unique_ptr<VideoDecoder> sw_fallback_decoder,
     std::unique_ptr<VideoDecoder> hw_decoder) {
+  
+
+  RTC_LOG(LS_ERROR) << "#-> CreateVideoDecoderSoftwareFallbackWrapper";
+
   return std::make_unique<VideoDecoderSoftwareFallbackWrapper>(
       std::move(sw_fallback_decoder), std::move(hw_decoder));
 }

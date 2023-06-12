@@ -49,6 +49,9 @@ std::vector<SdpVideoFormat> InternalDecoderFactory::GetSupportedFormats()
     formats.push_back(format);
   for (const SdpVideoFormat& h264_format : SupportedH264DecoderCodecs())
     formats.push_back(h264_format);
+#ifdef WEBRTC_USE_H265
+  formats.push_back(SdpVideoFormat(cricket::kH265CodecName));
+#endif
 
   if (kDav1dIsIncluded && !field_trial::IsDisabled(kDav1dFieldTrial)) {
     formats.push_back(SdpVideoFormat(cricket::kAv1CodecName));
@@ -80,6 +83,9 @@ VideoDecoderFactory::CodecSupport InternalDecoderFactory::QueryCodecSupport(
 
 std::unique_ptr<VideoDecoder> InternalDecoderFactory::CreateVideoDecoder(
     const SdpVideoFormat& format) {
+
+  RTC_LOG(LS_ERROR) << "#-> InternalDecoderFactory::CreateVideoDecoder";
+
   if (!format.IsCodecInList(GetSupportedFormats())) {
     RTC_LOG(LS_WARNING) << "Trying to create decoder for unsupported format. "
                         << format.ToString();

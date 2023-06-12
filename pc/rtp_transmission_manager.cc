@@ -266,6 +266,9 @@ RtpTransmissionManager::CreateAndAddTransceiver(
     rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> sender,
     rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
         receiver) {
+  
+  RTC_LOG(LS_INFO) << "    RtpTransmissionManager::" << __func__ << " ";
+
   RTC_DCHECK_RUN_ON(signaling_thread());
   // Ensure that the new sender does not have an ID that is already in use by
   // another sender.
