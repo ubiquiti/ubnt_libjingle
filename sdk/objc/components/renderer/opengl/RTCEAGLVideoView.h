@@ -40,6 +40,9 @@ NS_EXTENSION_UNAVAILABLE_IOS("Rendering not available in app extensions.")
 /** @abstract Wrapped RTCVideoRotation, or nil.
  */
 @property(nonatomic, nullable) NSValue *rotationOverride;
+// UI Customization Begin
+- (void)clearVideoView;
+// UI Customization End
 @end
 
 NS_ASSUME_NONNULL_END
