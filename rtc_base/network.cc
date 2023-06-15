@@ -320,11 +320,14 @@ NetworkManagerBase::enumeration_permission() const {
 
 std::unique_ptr<Network> NetworkManagerBase::CreateNetwork(
     absl::string_view name,
+// UI Customization Begin
+    int index,
+// UI Customization End
     absl::string_view description,
     const IPAddress& prefix,
     int prefix_length,
     AdapterType type) const {
-  return std::make_unique<Network>(name, description, prefix, prefix_length,
+  return std::make_unique<Network>(name, index, description, prefix, prefix_length,
                                    type, field_trials_.get());
 }
 
@@ -333,7 +336,9 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
   if (!ipv4_any_address_network_) {
     const rtc::IPAddress ipv4_any_address(INADDR_ANY);
     ipv4_any_address_network_ =
-        CreateNetwork("any", "any", ipv4_any_address, 0, ADAPTER_TYPE_ANY);
+// UI Customization Begin
+        CreateNetwork("any", -1, "any", ipv4_any_address, 0, ADAPTER_TYPE_ANY);
+// UI Customization End
     ipv4_any_address_network_->set_default_local_address_provider(this);
     ipv4_any_address_network_->set_mdns_responder_provider(this);
     ipv4_any_address_network_->AddIP(ipv4_any_address);
@@ -343,7 +348,9 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
   if (!ipv6_any_address_network_) {
     const rtc::IPAddress ipv6_any_address(in6addr_any);
     ipv6_any_address_network_ =
-        CreateNetwork("any", "any", ipv6_any_address, 0, ADAPTER_TYPE_ANY);
+// UI Customization Begin
+        CreateNetwork("any", -1, "any", ipv6_any_address, 0, ADAPTER_TYPE_ANY);
+// UI Customization End
     ipv6_any_address_network_->set_default_local_address_provider(this);
     ipv6_any_address_network_->set_mdns_responder_provider(this);
     ipv6_any_address_network_->AddIP(ipv6_any_address);
@@ -679,9 +686,20 @@ void BasicNetworkManager::ConvertIfAddrs(
       if_info.underlying_type_for_vpn = if_info.adapter_type;
       if_info.adapter_type = ADAPTER_TYPE_VPN;
     }
-
-    auto network = CreateNetwork(cursor->ifa_name, cursor->ifa_name, prefix,
+// UI Customization Begin
+//    auto network = CreateNetwork(cursor->ifa_name, -1, cursor->ifa_name, prefix,
+//                                 prefix_length, if_info.adapter_type);
+    // TODO(phoglund): Need to recognize other types as well.
+    int index = if_nametoindex(cursor->ifa_name);
+    if(index <= 0) {
+      int err = errno;
+      RTC_LOG(LS_WARNING) << "Unable to get interface index for the interface with name `"
+                       << cursor->ifa_name << "`. Error was " << err << ". Defaulting to -1.";
+      index = -1;
+    }
+    auto network = CreateNetwork(cursor->ifa_name, index, cursor->ifa_name, prefix,
                                  prefix_length, if_info.adapter_type);
+// UI Customization End
     network->set_default_local_address_provider(this);
     network->set_scope_id(scope_id);
     network->AddIP(ip);
@@ -871,9 +889,10 @@ bool BasicNetworkManager::CreateNetworks(
             underlying_type_for_vpn = ADAPTER_TYPE_UNKNOWN;
             adapter_type = ADAPTER_TYPE_VPN;
           }
-
-          auto network = CreateNetwork(name, description, prefix, prefix_length,
+// UI Customization Begin
+          auto network = CreateNetwork(name, -1, description, prefix, prefix_length,
                                        adapter_type);
+// UI Customization End
           network->set_underlying_type_for_vpn(underlying_type_for_vpn);
           network->set_default_local_address_provider(this);
           network->set_mdns_responder_provider(this);
@@ -924,7 +943,12 @@ bool BasicNetworkManager::IsIgnoredNetwork(const Network& network) const {
     return true;
   }
 #endif
-
+// UI Customization Begin
+  if (network_monitor_ &&
+      !network_monitor_->IsAdapterAvailable(network.name())) {
+    return true;
+  }
+// UI Customization End
   // Ignore any networks with a 0.x.y.z IP
   if (network.prefix().family() == AF_INET) {
     return (network.prefix().v4AddressAsHostOrderInteger() < 0x01000000);
@@ -1091,6 +1115,9 @@ NetworkBindingResult BasicNetworkManager::BindSocketToNetwork(
 }
 
 Network::Network(absl::string_view name,
+// UI Customization Begin
+                 int index,
+// UI Customization End
                  absl::string_view desc,
                  const IPAddress& prefix,
                  int prefix_length,
@@ -1098,6 +1125,9 @@ Network::Network(absl::string_view name,
                  const webrtc::FieldTrialsView* field_trials)
     : field_trials_(field_trials),
       name_(name),
+// UI Customization Begin
+      index_(index),
+// UI Customization End
       description_(desc),
       prefix_(prefix),
       prefix_length_(prefix_length),

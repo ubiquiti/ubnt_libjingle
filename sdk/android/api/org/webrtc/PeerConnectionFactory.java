@@ -141,7 +141,9 @@ public class PeerConnectionFactory {
     static final int ADAPTER_TYPE_VPN = 1 << 3;
     static final int ADAPTER_TYPE_LOOPBACK = 1 << 4;
     static final int ADAPTER_TYPE_ANY = 1 << 5;
-
+// UI Customization Begin
+    public List<String> activeInterfaces;
+// UI Customization End
     public int networkIgnoreMask;
     public boolean disableEncryption;
     public boolean disableNetworkMonitor;
@@ -150,7 +152,12 @@ public class PeerConnectionFactory {
     int getNetworkIgnoreMask() {
       return networkIgnoreMask;
     }
-
+// UI Customization Begin
+    @CalledByNative("Options")
+    List<String> getActiveInterfaces() {
+      return activeInterfaces;
+    }
+// UI Customization End
     @CalledByNative("Options")
     boolean getDisableEncryption() {
       return disableEncryption;

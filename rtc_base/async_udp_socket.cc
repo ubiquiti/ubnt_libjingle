@@ -30,9 +30,14 @@ static bool IsScmTimeStampExperimentDisabled() {
 }
 
 AsyncUDPSocket* AsyncUDPSocket::Create(Socket* socket,
-                                       const SocketAddress& bind_address) {
+                                       const SocketAddress& bind_address
+// UI Customization Begin
+                                       ,int interfaceIndex) {
+// UI Customization End
   std::unique_ptr<Socket> owned_socket(socket);
-  if (socket->Bind(bind_address) < 0) {
+// UI Customization Begin
+  if (socket->Bind(bind_address, interfaceIndex) < 0) {
+// UI Customization End
     RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
     return nullptr;
   }
@@ -40,11 +45,16 @@ AsyncUDPSocket* AsyncUDPSocket::Create(Socket* socket,
 }
 
 AsyncUDPSocket* AsyncUDPSocket::Create(SocketFactory* factory,
-                                       const SocketAddress& bind_address) {
+                                       const SocketAddress& bind_address
+// UI Customization Begin
+                                       ,int interfaceIndex) {
+// UI Customization End
   Socket* socket = factory->CreateSocket(bind_address.family(), SOCK_DGRAM);
   if (!socket)
     return nullptr;
-  return Create(socket, bind_address);
+// UI Customization Begin
+  return Create(socket, bind_address, interfaceIndex);
+// UI Customization End
 }
 
 AsyncUDPSocket::AsyncUDPSocket(Socket* socket) : socket_(socket) {

@@ -46,7 +46,9 @@ class ObjCNetworkMonitor : public rtc::NetworkMonitorInterface,
   void Stop() override;
 
   InterfaceInfo GetInterfaceInfo(absl::string_view interface_name) override;
-
+// UI Customization Begin
+  bool IsAdapterAvailable(absl::string_view interface_name) override;
+// UI Customization End
   // NetworkMonitorObserver override.
   // Fans out updates to observers on the correct thread.
   void OnPathUpdate(

@@ -45,6 +45,7 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
     size_t bitrate_addition_bps =
         (packet_size_bytes * 8 * 1000) / window_size_ms_;
     if (*current_rate + bitrate_addition_bps > max_rate_bps_) {
+// UI Customization Begin
       /*
       RTC_LOG(LS_WARNING) << " Adding bytes cause maximum bitrate target to be exceeded."
                           << " max_rate_bps_=" << max_rate_bps_
@@ -55,6 +56,7 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
 // #ifndef UI_CUSTOMIZATION
       return false;
 // #endif
+// UI Customization End
     }
   }
 

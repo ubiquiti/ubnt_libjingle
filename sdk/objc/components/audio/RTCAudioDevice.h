@@ -171,7 +171,9 @@ RTC_OBJC_EXPORT @protocol RTC_OBJC_TYPE
      * must be notified back to native ADM via `-[RTCAudioDeviceDelegate
      * notifyAudioParametersChange]`.
      */
-    @property(readonly) double deviceInputSampleRate;
+// UI Customization Begin
+    @property(readonly) double inputSampleRate;
+// UI Customization End
 
 /**
  * Indicates current size of record buffer. Changes to this property
@@ -194,8 +196,9 @@ RTC_OBJC_EXPORT @protocol RTC_OBJC_TYPE
  * Indicates current sample rate of audio playback. Changes to this property
  * must be notified back to native ADM via `-[RTCAudioDeviceDelegate notifyAudioParametersChange]`.
  */
-@property(readonly) double deviceOutputSampleRate;
-
+// UI Customization Begin
+@property(readonly) double outputSampleRate;
+// UI Customization End
 /**
  * Indicates current size of playback buffer. Changes to this property
  * must be notified back to native ADM via `-[RTCAudioDeviceDelegate notifyAudioParametersChange]`.
@@ -230,7 +233,9 @@ RTC_OBJC_EXPORT @protocol RTC_OBJC_TYPE
  * De-initializes RTCAudioDevice. Implementation should forget about `delegate` provided in
  * `initializeWithDelegate`.
  */
-- (BOOL)terminateDevice;
+// UI Customization Begin
+- (BOOL)terminateAudioDevice;
+// UI Customization End
 
 /**
  * Property to indicate if `initializePlayout` call required before invocation of `startPlayout`.
