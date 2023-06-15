@@ -22,7 +22,9 @@
 namespace {
 
 webrtc::AudioParameters RecordParameters(id<RTC_OBJC_TYPE(RTCAudioDevice)> audio_device) {
-  const double sample_rate = static_cast<int>([audio_device deviceInputSampleRate]);
+// UI Customization Begin
+  const double sample_rate = static_cast<int>([audio_device inputSampleRate]);
+// UI Customization End
   const size_t channels = static_cast<size_t>([audio_device inputNumberOfChannels]);
   const size_t frames_per_buffer =
       static_cast<size_t>(sample_rate * [audio_device inputIOBufferDuration] + .5);
@@ -30,7 +32,9 @@ webrtc::AudioParameters RecordParameters(id<RTC_OBJC_TYPE(RTCAudioDevice)> audio
 }
 
 webrtc::AudioParameters PlayoutParameters(id<RTC_OBJC_TYPE(RTCAudioDevice)> audio_device) {
-  const double sample_rate = static_cast<int>([audio_device deviceOutputSampleRate]);
+// UI Customization Begin
+  const double sample_rate = static_cast<int>([audio_device outputSampleRate]);
+// UI Customization End
   const size_t channels = static_cast<size_t>([audio_device outputNumberOfChannels]);
   const size_t frames_per_buffer =
       static_cast<size_t>(sample_rate * [audio_device outputIOBufferDuration] + .5);
@@ -112,7 +116,9 @@ int32_t ObjCAudioDeviceModule::Terminate() {
   }
 
   if ([audio_device_ isInitialized]) {
-    if (![audio_device_ terminateDevice]) {
+// UI Customization Begin
+    if (![audio_device_ terminateAudioDevice]) {
+// UI Customization End
       RTC_LOG_F(LS_ERROR) << "Failed to terminate audio device";
       return -1;
     }

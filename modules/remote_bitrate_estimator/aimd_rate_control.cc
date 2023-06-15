@@ -225,10 +225,12 @@ double AimdRateControl::GetNearMaxIncreaseRateBpsPerSecond() const {
 
   // Approximate the over-use estimator delay to 100 ms.
   TimeDelta response_time = rtt_ + TimeDelta::Millis(100);
+// UI Customization Begin
 // #ifndef UI_BITRATE_RECOVERY
 //   // Not quite sure about this part, but looks like it's in experiment
 //   // although it's enabled by default. Currently, remove it to make the 
 //   // BWE recovered a little faster.
+// UI Customization End
     response_time = response_time * 2;
 // #endif
   double increase_rate_bps_per_second =
