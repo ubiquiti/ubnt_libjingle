@@ -143,7 +143,7 @@ static const NSInteger kMaxInflightBuffers = 1;
 // UIView define : @property(nonatomic,getter=isOpaque) BOOL opaque;
     view.opaque = false;
 #endif
-    view.opaque = false;
+
     view.clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
       // UI Customization End
     [self loadAssets];

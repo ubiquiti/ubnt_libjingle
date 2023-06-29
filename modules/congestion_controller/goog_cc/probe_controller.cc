@@ -229,8 +229,11 @@ std::vector<ProbeClusterConfig> ProbeController::OnMaxTotalAllocatedBitrate(
       state_ == State::kProbingComplete &&
       max_total_allocated_bitrate != max_total_allocated_bitrate_ &&
       estimated_bitrate_ < max_bitrate_ &&
-      estimated_bitrate_ < max_total_allocated_bitrate &&
-      allow_allocation_probe) {
+      estimated_bitrate_ < max_total_allocated_bitrate
+#ifndef UI_BITRATE_RECOVERY
+      && allow_allocation_probe
+#endif
+      ) {
     max_total_allocated_bitrate_ = max_total_allocated_bitrate;
 
     if (!config_.first_allocation_probe_scale)
