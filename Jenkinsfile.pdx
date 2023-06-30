@@ -38,10 +38,10 @@ pipeline {
         stage('Prepare') {
             steps {
                 script {
-                      BUILD_DATE = sh(returnStdout: true, script: 'date -u +\'%Y-%m-%dT%H:%M:%SZ\'').trim()
-                      BRANCH = env.BRANCH_NAME
-                      TAG_NAME = env.TAG_NAME
-                      if (BRANCH.startsWith('origin/')) BRANCH = BRANCH.substring('origin/'.length())
+                    BUILD_DATE = sh(returnStdout: true, script: 'date -u +\'%Y-%m-%dT%H:%M:%SZ\'').trim()
+                    BRANCH = env.BRANCH_NAME
+                    TAG_NAME = env.TAG_NAME
+                    if (BRANCH.startsWith('origin/')) BRANCH = BRANCH.substring('origin/'.length())
                 }
             }
         }
@@ -53,8 +53,8 @@ pipeline {
                         stage('Checkout') {
                             steps {
                                 node(label: 'rix-macos-amd64') {
-					deleteDir()
-					checkout([$class : 'GitSCM', branches: [[name: '*/feature/jenkins-build']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: scm.userRemoteConfigs[0].credentialsId, url: 'https://github.com/ubiquiti/libjingle-build']]])
+                    deleteDir()
+                    checkout([$class : 'GitSCM', branches: [[name: '*/master']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: scm.userRemoteConfigs[0].credentialsId, url: 'https://github.com/ubiquiti/libjingle-build']]])
                                 }
                             }
                         }
@@ -62,7 +62,19 @@ pipeline {
                         stage('MacOS build') {
                             steps {
                                 node(label: 'rix-macos-amd64') {
-                                    sh label: 'build', script: "sh BRANCH=${BRANCH} TAG_NAME=${TAG_NAME} generic_xcframework.sh"
+                                    sh label: 'build', script: "export BranchName=${BRANCH} && \
+                                    export TAG_NAME=${TAG_NAME} && \
+                                    ./generic_xcframework_macOS.sh"
+                                }
+                            }
+                        }
+                        
+                       stage('iOS build') {
+                            steps {
+                                node(label: 'rix-macos-amd64') {
+                                    sh label: 'build', script: "export BranchName=${BRANCH} && \
+                                    export TAG_NAME=${TAG_NAME} && \
+                                    ./generic_xcframework.sh"
                                 }
                             }
                         }
