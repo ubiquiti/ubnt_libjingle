@@ -1,0 +1,245 @@
+def APP = 'googlewebrtc'
+
+def doAndroidAll='''
+env
+git clean -dxff
+git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
+cd libjingle-build
+make WEBRTC_BRANCH=$TAG_NAME artifactory
+'''
+
+def doUbuntuAmd64='''
+env
+git clean -dxff
+git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
+cd libjingle-build
+make WEBRTC_PLATFORM=Ubuntu WEBRTC_BRANCH=$TAG_NAME artifactory
+'''
+
+def doDebianAmd64='''
+env
+git clean -dxff
+git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
+cd libjingle-build
+make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=x86_64 WEBRTC_BRANCH=$TAG_NAME artifactory
+'''
+
+def doDebianArm64='''
+env
+git clean -dxff
+git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
+cd libjingle-build
+make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=aarch64 WEBRTC_BRANCH=$TAG_NAME artifactory
+'''
+
+def doiOSBuild='''
+env
+git clean -dxff
+git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
+cd libjingle-build
+export BranchName=${BRANCH}
+export TAG_NAME=${TAG_NAME}
+./generic_xcframework.sh $TAG_NAME
+'''
+
+def doMacOSBuild='''
+env
+git clean -dxff
+git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
+cd libjingle-build
+export BranchName=${BRANCH}
+export TAG_NAME=${TAG_NAME}
+./generic_xcframework_macOS.sh $TAG_NAME
+'''
+
+def HASH
+def BRANCH
+def TAG_NAME
+def VERSION
+def BUILD_DATE
+
+def DOCKER_ARM64
+def DOCKER_AMD64
+def DOCKER_UBUNTU_20_04_AMD64
+
+properties([
+    [$class: 'CopyArtifactPermissionProperty', projectNames: '*'],
+])
+
+
+pipeline {
+
+    agent {
+        node ('docker')
+    }
+
+    environment {
+        ARTIFACTORY_URL='https://pdx-artifacts.rad.ubnt.com'
+        ARTIFACTORY_CREDS=credentials('ARTIFACTORY_CREDS')
+        ARTIFACTORY_CENTRALIZED_UPLOAD='yes'
+        GITHUB_READ_FILE_TOKEN=credentials('GITHUB_READ_FILE_TOKEN')
+        CREDS_ID='karlis.ogsts'
+        GITTOKEN=credentials("${env.CREDS_ID}")
+    }
+
+    options {
+        skipDefaultCheckout true
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+
+                deleteDir()
+
+                checkout scm
+
+                script {
+                      BUILD_DATE = sh(returnStdout: true, script: 'date -u +\'%Y-%m-%dT%H:%M:%SZ\'').trim()
+                      BRANCH = env.BRANCH_NAME
+                      TAG_NAME = env.TAG_NAME
+                      HASH = sh(returnStdout: true, script: 'git rev-parse HEAD').trim().take(8)
+                      if (BRANCH.startsWith('origin/')) BRANCH = BRANCH.substring('origin/'.length())
+                }
+
+                stash(includes: '**/*', name: 'workspace', useDefaultExcludes: false)
+            }
+        }
+    
+        stage('Prepare Docker') {
+            steps {
+                parallel(
+                    'docker:arm64': {
+                        script {
+                            DOCKER_ARM64 = docker.build("${APP}_arm64:${HASH}", "--pull -f ./docker/Dockerfile.debian.11.arm64 ./docker")
+                        }
+                    },
+                    'docker:amd64': {
+                        script {
+                            DOCKER_AMD64 = docker.build("${APP}_amd64:${HASH}", "--pull -f ./docker/Dockerfile.debian.11.amd64 ./docker")
+                        }
+                    },
+                    'docker:ubuntu_22_04_amd64': {
+                        script {
+                            DOCKER_UBUNTU_22_04_AMD64 = docker.build("${APP}_ubuntu_22_04_amd64:${HASH}", "--pull -f ./docker/Dockerfile.ubuntu.22.04.amd64 ./docker")
+                        }
+                    }
+                )
+            }
+        }
+
+        stage('Build') {
+            parallel {
+                stage('AndroidBuild') {
+                    stages {
+                       stage('Android All Library') {
+                            steps {
+                                node('docker') {
+                                    deleteDir()
+                                    unstash 'workspace'
+                                    script {
+                                        DOCKER_UBUNTU_22_04_AMD64.inside() {
+                                            sh label: 'build', script: "${doAndroidAll}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('UbuntuBuild') {
+                    stages {
+                       stage('Ubuntu Amd64 Library') {
+                            steps {
+                                node('docker') {
+                                    deleteDir()
+                                    unstash 'workspace'
+                                    script {
+                                        DOCKER_UBUNTU_22_04_AMD64.inside() {
+                                            sh label: 'build', script: "${doUbuntuAmd64}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Debian 11 Arm64') {
+                    stages {
+                        stage('Debian Aarm64 Library') {
+                            steps {
+                                node('docker') {
+                                    deleteDir()
+                                    unstash 'workspace'
+                                    script {
+                                        DOCKER_ARM64.inside() {
+                                            sh label: 'build', script: "${doDebianArm64}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Debian 11 Amd64') {
+                    stages {
+                        stage('Debian Amd64 Library') {
+                            steps {
+                                node('docker') {
+                                    deleteDir()
+                                    unstash 'workspace'
+                                    script {
+                                        DOCKER_AMD64.inside() {
+                                            sh label: 'build', script: "${doDebianAmd64}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('iOS Build') {
+                    stages {
+                        stage('iOS Library') {
+                            steps {
+                                node(label: 'rix-macos-arm64') {
+                                    deleteDir()
+                                    unstash 'workspace'
+                                    script {
+                                        sh label: 'build', script: "${doiOSBuild}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                                    
+                stage('MacOS Build') {
+                    stages {
+                        stage('MacOS Library') {
+                            steps {
+                                node(label: 'rix-macos-amd64') {
+                                    deleteDir()
+                                    unstash 'workspace'
+                                    script {
+                                        sh label: 'build', script: "${doMacOSBuild}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs deleteDirs: true, notFailBuild: true
+        }
+    }
+}
