@@ -2377,8 +2377,10 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
     RTC_LOG(LS_INFO) << "Video suspend state changed to: "
                      << (video_is_suspended ? "suspended" : "not suspended");
     encoder_stats_observer_->OnSuspendChange(video_is_suspended);
+#ifdef UI_CUSTOMIZATION
     if (encoder_)
       encoder_->OnSuspendChange(video_is_suspended);
+#endif
 
     if (!video_is_suspended && pending_frame_ &&
         !DropDueToSize(pending_frame_->size())) {

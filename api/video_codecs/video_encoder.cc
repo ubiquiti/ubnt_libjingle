@@ -329,6 +329,8 @@ void VideoEncoder::OnRttUpdate(int64_t rtt_ms) {}
 void VideoEncoder::OnLossNotification(
     const LossNotification& loss_notification) {}
 
+#ifdef UI_CUSTOMIZATION
 void VideoEncoder::OnSuspendChange(const bool& suspended) {}
+#endif
 
 }  // namespace webrtc
