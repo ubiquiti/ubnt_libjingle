@@ -424,6 +424,8 @@ class RTC_EXPORT VideoEncoder {
   // hardware encoder fails, it may fall back to doing software encoding using
   // an implementation with different characteristics.
   virtual EncoderInfo GetEncoderInfo() const = 0;
+
+  virtual void OnSuspendChange(const bool& suspended);
 };
 }  // namespace webrtc
 #endif  // API_VIDEO_CODECS_VIDEO_ENCODER_H_
