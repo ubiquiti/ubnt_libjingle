@@ -425,7 +425,9 @@ class RTC_EXPORT VideoEncoder {
   // an implementation with different characteristics.
   virtual EncoderInfo GetEncoderInfo() const = 0;
 
+// UI Customization Begin
   virtual void OnSuspendChange(const bool& suspended);
+// UI Customization End
 };
 }  // namespace webrtc
 #endif  // API_VIDEO_CODECS_VIDEO_ENCODER_H_
