@@ -25,7 +25,7 @@ RUN \
 
 RUN dpkg --configure -a
 
-RUN apt-get update && apt-get install -qy apt-utils gnupg2
+RUN apt-get update --allow-releaseinfo-change && apt-get install -qy apt-utils gnupg2
 
 RUN printf "installing packages...\n" && \
     apt-get update && \
