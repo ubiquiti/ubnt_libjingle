@@ -268,7 +268,15 @@ int BasicPortAllocator::GetNetworkIgnoreMask() const {
   }
   return mask;
 }
-
+// UI Customization Begin
+void BasicPortAllocator::SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) {
+  // TODO(phoglund): implement support for other types than loopback.
+  // See https://code.google.com/p/webrtc/issues/detail?id=4288.
+  // Then remove set_network_ignore_list from NetworkManager.
+  CheckRunOnValidThreadIfInitialized();
+  activeInterfaces_ = activeInterfaces;
+}
+// UI Customization End
 PortAllocatorSession* BasicPortAllocator::CreateSessionInternal(
     absl::string_view content_name,
     int component,
@@ -812,6 +820,32 @@ std::vector<const rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
   ipv6_networks =
       SelectIPv6Networks(ipv6_networks, allocator_->max_ipv6_networks());
   networks.insert(networks.end(), ipv6_networks.begin(), ipv6_networks.end());
+// UI Customization Begin
+  //if we don't have the network in the list of active interfaces, remove it
+  const std::map<std::string, bool> &active=allocator_->GetActiveInterfaces();
+  if(active.size()!=0){
+    fprintf(stderr,"----- Allowed interfaces! ------\n");
+    for(const auto &allowed:active){
+      fprintf(stderr,"%s\n",allowed.first.c_str());
+    }
+
+    fprintf(stderr,"----- Available interfaces ------\n");
+    for(const auto &network:networks){
+      fprintf(stderr,"%s\n",network->name().c_str());
+    }
+    for (auto it = networks.begin(); it != networks.end();) {
+      if(active.find((*it)->name())==active.end())
+        it=networks.erase(it);
+      else
+        ++it;
+    }
+
+    fprintf(stderr,"----- Remaining interfaces ------\n");
+    for(const auto &network:networks){
+      fprintf(stderr,"%s\n",network->name().c_str());
+    }
+  }
+// UI Customization End
   return networks;
 }
 
@@ -1338,7 +1372,9 @@ AllocationSequence::AllocationSequence(
 void AllocationSequence::Init() {
   if (IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET)) {
     udp_socket_.reset(session_->socket_factory()->CreateUdpSocket(
-        rtc::SocketAddress(network_->GetBestIP(), 0),
+// UI Customization Begin
+        rtc::SocketAddress(network_->GetBestIP(), 0), network_->index(),
+// UI Customization End
         session_->allocator()->min_port(), session_->allocator()->max_port()));
     if (udp_socket_) {
       udp_socket_->SignalReadPacket.connect(this,

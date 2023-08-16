@@ -1963,6 +1963,12 @@ WebRtcVideoSendChannel::WebRtcVideoSendStream::SetRtpParameters(
       stream_->SetSource(source_, GetDegradationPreference());
     }
   }
+  // UI Customization
+  parameters_.config.suspend_below_min_bitrate =
+      rtp_parameters_.suspend_below_min_bitrate;
+  if (stream_)
+    stream_->SuspendBelowMinBitrate(rtp_parameters_.suspend_below_min_bitrate);
+
   return webrtc::InvokeSetParametersCallback(callback, webrtc::RTCError::OK());
 }
 

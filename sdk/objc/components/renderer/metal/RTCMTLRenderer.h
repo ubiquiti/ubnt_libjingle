@@ -30,6 +30,9 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (void)drawFrame:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame;
 
+// UI Customization Begin
+- (void)clearView;
+// UI Customization End
 /**
  * Sets the provided view as rendering destination if possible.
  *
@@ -37,7 +40,7 @@ NS_ASSUME_NONNULL_BEGIN
  * cleanups.
  */
 
-#if TARGET_OS_IOS
+#if TARGET_OS_IOS || TARGET_OS_TV
 - (BOOL)addRenderingDestination:(__kindof UIView *)view;
 #else
 - (BOOL)addRenderingDestination:(__kindof NSView *)view;
