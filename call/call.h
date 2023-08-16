@@ -153,7 +153,7 @@ class Call {
   virtual TaskQueueBase* worker_thread() const = 0;
 
 #ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
-    virtual RtpStreamReceiverController* receiver_controller() { return nullptr; }
+  virtual RtpStreamReceiverController* receiver_controller() = 0;
 #endif
 
   virtual ~Call() {}
