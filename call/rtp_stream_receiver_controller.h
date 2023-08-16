@@ -58,8 +58,14 @@ class RtpStreamReceiverController : public RtpStreamReceiverControllerInterface,
   };
 
   // Thread-safe wrappers for the corresponding RtpDemuxer methods.
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+ public:
+#endif
   bool AddSink(uint32_t ssrc, RtpPacketSinkInterface* sink);
   bool RemoveSink(const RtpPacketSinkInterface* sink);
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+ private:
+#endif
 
   // TODO(bugs.webrtc.org/11993): We expect construction and all methods to be
   // called on the same thread/tq. Currently this is the worker thread
