@@ -384,6 +384,14 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
           video_rtcp_report_interval_ms;
     }
 
+    // UI-CUSTOMIZATION
+    bool periodic_alr_bandwidth_probing() const {
+      return media_config.video.periodic_alr_bandwidth_probing;
+    }
+    void set_periodic_alr_bandwidth_probing(bool enable) {
+      media_config.video.periodic_alr_bandwidth_probing = enable;
+    }
+
     // Settings for the port allcoator. Applied only if the port allocator is
     // created by PeerConnectionFactory, not if it is injected with
     // PeerConnectionDependencies
@@ -1483,7 +1491,10 @@ class RTC_EXPORT PeerConnectionFactoryInterface
     // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
     // loopback interfaces.
     int network_ignore_mask = rtc::kDefaultNetworkIgnoreMask;
-
+// UI Customization Begin
+    // when not empty, it will only select the interfaces from it
+    std::map<std::string, bool> activeInterfaces;
+// UI Customization End
     // Sets the maximum supported protocol version. The highest version
     // supported by both ends will be used for the connection, i.e. if one
     // party supports DTLS 1.0 and the other DTLS 1.2, DTLS 1.0 will be used.
