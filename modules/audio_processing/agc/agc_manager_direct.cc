@@ -16,7 +16,8 @@
 #include "api/array_view.h"
 #include "common_audio/include/audio_util.h"
 #include "modules/audio_processing/agc/gain_control.h"
-#include "modules/audio_processing/agc/gain_map_internal.h"
+#include "modules/audio_processing/agc2/gain_map_internal.h"
+#include "modules/audio_processing/agc2/input_volume_stats_reporter.h"
 #include "modules/audio_processing/include/audio_frame_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -49,18 +50,19 @@ constexpr int kMaxResidualGainChange = 15;
 // restrictions from clipping events.
 constexpr int kSurplusCompressionGain = 6;
 
-// History size for the clipping predictor evaluator (unit: number of 10 ms
-// frames).
-constexpr int kClippingPredictorEvaluatorHistorySize = 500;
+// Target speech level (dBFs) and speech probability threshold used to compute
+// the RMS error override in `GetSpeechLevelErrorDb()`. These are only used for
+// computing the error override and they are not passed to `agc_`.
+// TODO(webrtc:7494): Move these to a config and pass in the ctor.
+constexpr float kOverrideTargetSpeechLevelDbfs = -18.0f;
+constexpr float kOverrideSpeechProbabilitySilenceThreshold = 0.5f;
+// The minimum number of frames between `UpdateGain()` calls.
+// TODO(webrtc:7494): Move this to a config and pass in the ctor with
+// kOverrideWaitFrames = 100. Default value zero needed for the unit tests.
+constexpr int kOverrideWaitFrames = 0;
 
 using AnalogAgcConfig =
     AudioProcessing::Config::GainController1::AnalogGainController;
-
-// Returns whether a fall-back solution to choose the maximum level should be
-// chosen.
-bool UseMaxAnalogChannelLevel() {
-  return field_trial::IsEnabled("WebRTC-UseMaxAnalogAgcChannelLevel");
-}
 
 // If the "WebRTC-Audio-2ndAgcMinMicLevelExperiment" field trial is specified,
 // parses it and returns a value between 0 and 255 depending on the field-trial
@@ -84,10 +86,6 @@ absl::optional<int> GetMinMicLevelOverride() {
                         << kMinMicLevelFieldTrial << ", ignored.";
     return absl::nullopt;
   }
-}
-
-int ClampLevel(int mic_level, int min_mic_level) {
-  return rtc::SafeClamp(mic_level, min_mic_level, kMaxMicLevel);
 }
 
 int LevelFromGainError(int gain_error, int level, int min_mic_level) {
@@ -132,40 +130,6 @@ float ComputeClippedRatio(const float* const* audio,
   return static_cast<float>(num_clipped) / (samples_per_channel);
 }
 
-void LogClippingPredictorMetrics(const ClippingPredictorEvaluator& evaluator) {
-  absl::optional<ClippingPredictionMetrics> metrics =
-      ComputeClippingPredictionMetrics(evaluator.counters());
-  if (metrics.has_value()) {
-    RTC_LOG(LS_INFO) << "Clipping predictor metrics: P " << metrics->precision
-                     << " R " << metrics->recall << " F1 score "
-                     << metrics->f1_score;
-    RTC_DCHECK_GE(metrics->f1_score, 0.0f);
-    RTC_DCHECK_LE(metrics->f1_score, 1.0f);
-    RTC_DCHECK_GE(metrics->precision, 0.0f);
-    RTC_DCHECK_LE(metrics->precision, 1.0f);
-    RTC_DCHECK_GE(metrics->recall, 0.0f);
-    RTC_DCHECK_LE(metrics->recall, 1.0f);
-    RTC_HISTOGRAM_COUNTS_LINEAR(
-        /*name=*/"WebRTC.Audio.Agc.ClippingPredictor.F1Score",
-        /*sample=*/std::round(metrics->f1_score * 100.0f),
-        /*min=*/0,
-        /*max=*/100,
-        /*bucket_count=*/50);
-    RTC_HISTOGRAM_COUNTS_LINEAR(
-        /*name=*/"WebRTC.Audio.Agc.ClippingPredictor.Precision",
-        /*sample=*/std::round(metrics->precision * 100.0f),
-        /*min=*/0,
-        /*max=*/100,
-        /*bucket_count=*/50);
-    RTC_HISTOGRAM_COUNTS_LINEAR(
-        /*name=*/"WebRTC.Audio.Agc.ClippingPredictor.Recall",
-        /*sample=*/std::round(metrics->recall * 100.0f),
-        /*min=*/0,
-        /*max=*/100,
-        /*bucket_count=*/50);
-  }
-}
-
 void LogClippingMetrics(int clipping_rate) {
   RTC_LOG(LS_INFO) << "Input clipping rate: " << clipping_rate << "%";
   RTC_HISTOGRAM_COUNTS_LINEAR(/*name=*/"WebRTC.Audio.Agc.InputClippingRate",
@@ -173,10 +137,30 @@ void LogClippingMetrics(int clipping_rate) {
                               /*bucket_count=*/50);
 }
 
+// Computes the speech level error in dB. `speech_level_dbfs` is required to be
+// in the range [-90.0f, 30.0f] and `speech_probability` in the range
+// [0.0f, 1.0f].
+int GetSpeechLevelErrorDb(float speech_level_dbfs, float speech_probability) {
+  constexpr float kMinSpeechLevelDbfs = -90.0f;
+  constexpr float kMaxSpeechLevelDbfs = 30.0f;
+  RTC_DCHECK_GE(speech_level_dbfs, kMinSpeechLevelDbfs);
+  RTC_DCHECK_LE(speech_level_dbfs, kMaxSpeechLevelDbfs);
+  RTC_DCHECK_GE(speech_probability, 0.0f);
+  RTC_DCHECK_LE(speech_probability, 1.0f);
+
+  if (speech_probability < kOverrideSpeechProbabilitySilenceThreshold) {
+    return 0;
+  }
+
+  const float speech_level = rtc::SafeClamp<float>(
+      speech_level_dbfs, kMinSpeechLevelDbfs, kMaxSpeechLevelDbfs);
+
+  return std::round(kOverrideTargetSpeechLevelDbfs - speech_level);
+}
+
 }  // namespace
 
 MonoAgc::MonoAgc(ApmDataDumper* data_dumper,
-                 int startup_min_level,
                  int clipped_level_min,
                  bool disable_digital_adaptive,
                  int min_mic_level)
@@ -188,7 +172,6 @@ MonoAgc::MonoAgc(ApmDataDumper* data_dumper,
       target_compression_(kDefaultCompressionGain),
       compression_(target_compression_),
       compression_accumulator_(compression_),
-      startup_min_level_(ClampLevel(startup_min_level, min_mic_level_)),
       clipped_level_min_(clipped_level_min) {}
 
 MonoAgc::~MonoAgc() = default;
@@ -201,9 +184,12 @@ void MonoAgc::Initialize() {
   compression_accumulator_ = compression_;
   capture_output_used_ = true;
   check_volume_on_next_process_ = true;
+  frames_since_update_gain_ = 0;
+  is_first_frame_ = true;
 }
 
-void MonoAgc::Process(rtc::ArrayView<const int16_t> audio) {
+void MonoAgc::Process(rtc::ArrayView<const int16_t> audio,
+                      absl::optional<int> rms_error_override) {
   new_compression_to_set_ = absl::nullopt;
 
   if (check_volume_on_next_process_) {
@@ -215,9 +201,32 @@ void MonoAgc::Process(rtc::ArrayView<const int16_t> audio) {
 
   agc_->Process(audio);
 
-  UpdateGain();
+  // Always check if `agc_` has a new error available. If yes, `agc_` gets
+  // reset.
+  // TODO(webrtc:7494) Replace the `agc_` call `GetRmsErrorDb()` with `Reset()`
+  // if an error override is used.
+  int rms_error = 0;
+  bool update_gain = agc_->GetRmsErrorDb(&rms_error);
+  if (rms_error_override.has_value()) {
+    if (is_first_frame_ || frames_since_update_gain_ < kOverrideWaitFrames) {
+      update_gain = false;
+    } else {
+      rms_error = *rms_error_override;
+      update_gain = true;
+    }
+  }
+
+  if (update_gain) {
+    UpdateGain(rms_error);
+  }
+
   if (!disable_digital_adaptive_) {
     UpdateCompressor();
+  }
+
+  is_first_frame_ = false;
+  if (frames_since_update_gain_ < kOverrideWaitFrames) {
+    ++frames_since_update_gain_;
   }
 }
 
@@ -237,6 +246,8 @@ void MonoAgc::HandleClipping(int clipped_level_step) {
     SetLevel(std::max(clipped_level_min_, level_ - clipped_level_step));
     // Reset the AGCs for all channels since the level has changed.
     agc_->Reset();
+    frames_since_update_gain_ = 0;
+    is_first_frame_ = false;
   }
 }
 
@@ -271,7 +282,8 @@ void MonoAgc::SetLevel(int new_level) {
     // was manually adjusted. The compressor will still provide some of the
     // desired gain change.
     agc_->Reset();
-
+    frames_since_update_gain_ = 0;
+    is_first_frame_ = false;
     return;
   }
 
@@ -330,31 +342,33 @@ int MonoAgc::CheckVolumeAndReset() {
   }
   RTC_DLOG(LS_INFO) << "[agc] Initial GetMicVolume()=" << level;
 
-  int minLevel = startup_ ? startup_min_level_ : min_mic_level_;
-  if (level < minLevel) {
-    level = minLevel;
+  if (level < min_mic_level_) {
+    level = min_mic_level_;
     RTC_DLOG(LS_INFO) << "[agc] Initial volume too low, raising to " << level;
     recommended_input_volume_ = level;
   }
   agc_->Reset();
   level_ = level;
   startup_ = false;
+  frames_since_update_gain_ = 0;
+  is_first_frame_ = true;
   return 0;
 }
 
-// Requests the RMS error from AGC and distributes the required gain change
-// between the digital compression stage and volume slider. We use the
-// compressor first, providing a slack region around the current slider
-// position to reduce movement.
+// Distributes the required gain change between the digital compression stage
+// and volume slider. We use the compressor first, providing a slack region
+// around the current slider position to reduce movement.
 //
 // If the slider needs to be moved, we check first if the user has adjusted
 // it, in which case we take no action and cache the updated level.
-void MonoAgc::UpdateGain() {
-  int rms_error = 0;
-  if (!agc_->GetRmsErrorDb(&rms_error)) {
-    // No error update ready.
-    return;
-  }
+void MonoAgc::UpdateGain(int rms_error_db) {
+  int rms_error = rms_error_db;
+
+  // Always reset the counter regardless of whether the gain is changed
+  // or not. This matches with the bahvior of `agc_` where the histogram is
+  // reset every time an RMS error is successfully read.
+  frames_since_update_gain_ = 0;
+
   // The compressor will always add at least kMinCompressionGain. In effect,
   // this adjusts our target gain upward by the same amount and rms_error
   // needs to reflect that.
@@ -394,22 +408,12 @@ void MonoAgc::UpdateGain() {
   int old_level = level_;
   SetLevel(LevelFromGainError(residual_gain, level_, min_mic_level_));
   if (old_level != level_) {
-    // level_ was updated by SetLevel; log the new value.
-    RTC_HISTOGRAM_COUNTS_LINEAR("WebRTC.Audio.AgcSetLevel", level_, 1,
-                                kMaxMicLevel, 50);
     // Reset the AGC since the level has changed.
     agc_->Reset();
   }
 }
 
 void MonoAgc::UpdateCompressor() {
-  calls_since_last_gain_log_++;
-  if (calls_since_last_gain_log_ == 100) {
-    calls_since_last_gain_log_ = 0;
-    RTC_HISTOGRAM_COUNTS_LINEAR("WebRTC.Audio.Agc.DigitalGainApplied",
-                                compression_, 0, kMaxCompressionGain,
-                                kMaxCompressionGain + 1);
-  }
   if (compression_ == target_compression_) {
     return;
   }
@@ -434,9 +438,6 @@ void MonoAgc::UpdateCompressor() {
 
   // Set the new compression gain.
   if (new_compression != compression_) {
-    RTC_HISTOGRAM_COUNTS_LINEAR("WebRTC.Audio.Agc.DigitalGainUpdated",
-                                new_compression, 0, kMaxCompressionGain,
-                                kMaxCompressionGain + 1);
     compression_ = new_compression;
     compression_accumulator_ = new_compression;
     new_compression_to_set_ = compression_;
@@ -460,7 +461,6 @@ AgcManagerDirect::AgcManagerDirect(int num_capture_channels,
     : analog_controller_enabled_(analog_config.enabled),
       min_mic_level_override_(GetMinMicLevelOverride()),
       data_dumper_(new ApmDataDumper(instance_counter_.fetch_add(1) + 1)),
-      use_min_channel_level_(!UseMaxAnalogChannelLevel()),
       num_capture_channels_(num_capture_channels),
       disable_digital_adaptive_(!analog_config.enable_digital_adaptive),
       frames_since_clipped_(analog_config.clipped_wait_frames),
@@ -476,8 +476,6 @@ AgcManagerDirect::AgcManagerDirect(int num_capture_channels,
       use_clipping_predictor_step_(
           !!clipping_predictor_ &&
           analog_config.clipping_predictor.use_predicted_step),
-      clipping_predictor_evaluator_(kClippingPredictorEvaluatorHistorySize),
-      clipping_predictor_log_counter_(0),
       clipping_rate_log_(0.0f),
       clipping_rate_log_counter_(0) {
   RTC_LOG(LS_INFO) << "[agc] analog controller enabled: "
@@ -487,15 +485,12 @@ AgcManagerDirect::AgcManagerDirect(int num_capture_channels,
                    << " (overridden: "
                    << (min_mic_level_override_.has_value() ? "yes" : "no")
                    << ")";
-  RTC_LOG(LS_INFO) << "[agc] Startup min volume: "
-                   << analog_config.startup_min_volume;
   for (size_t ch = 0; ch < channel_agcs_.size(); ++ch) {
     ApmDataDumper* data_dumper_ch = ch == 0 ? data_dumper_.get() : nullptr;
 
     channel_agcs_[ch] = std::make_unique<MonoAgc>(
-        data_dumper_ch, analog_config.startup_min_volume,
-        analog_config.clipped_level_min, disable_digital_adaptive_,
-        min_mic_level);
+        data_dumper_ch, analog_config.clipped_level_min,
+        disable_digital_adaptive_, min_mic_level);
   }
   RTC_DCHECK(!channel_agcs_.empty());
   RTC_DCHECK_GT(clipped_level_step_, 0);
@@ -517,8 +512,6 @@ void AgcManagerDirect::Initialize() {
   capture_output_used_ = true;
 
   AggregateChannelLevels();
-  clipping_predictor_evaluator_.Reset();
-  clipping_predictor_log_counter_ = 0;
   clipping_rate_log_ = 0.0f;
   clipping_rate_log_counter_ = 0;
 }
@@ -597,26 +590,6 @@ void AgcManagerDirect::AnalyzePreProcess(const AudioBuffer& audio_buffer) {
         clipping_predicted = true;
       }
     }
-    // Clipping prediction evaluation.
-    // `clipping_detected` is not used to evaluate the clipping predictor
-    // since for this purpose a single clipping sample counts as clipping.
-    const bool one_or_more_clipped_samples =
-        clipped_ratio >= (1.0f / samples_per_channel);
-    absl::optional<int> prediction_interval =
-        clipping_predictor_evaluator_.Observe(
-            /*clipping_detected=*/one_or_more_clipped_samples,
-            clipping_predicted);
-    if (prediction_interval.has_value()) {
-      RTC_HISTOGRAM_COUNTS_LINEAR(
-          "WebRTC.Audio.Agc.ClippingPredictor.PredictionInterval",
-          prediction_interval.value(), /*min=*/0,
-          /*max=*/49, /*bucket_count=*/50);
-    }
-    clipping_predictor_log_counter_++;
-    if (clipping_predictor_log_counter_ == kNumFramesIn30Seconds) {
-      LogClippingPredictorMetrics(clipping_predictor_evaluator_);
-      clipping_predictor_log_counter_ = 0;
-    }
   }
   if (clipping_detected) {
     RTC_DLOG(LS_INFO) << "[agc] Clipping detected. clipped_ratio="
@@ -638,30 +611,49 @@ void AgcManagerDirect::AnalyzePreProcess(const AudioBuffer& audio_buffer) {
     frames_since_clipped_ = 0;
     if (!!clipping_predictor_) {
       clipping_predictor_->Reset();
-      clipping_predictor_evaluator_.RemoveExpectations();
     }
   }
   AggregateChannelLevels();
 }
 
 void AgcManagerDirect::Process(const AudioBuffer& audio_buffer) {
+  Process(audio_buffer, /*speech_probability=*/absl::nullopt,
+          /*speech_level_dbfs=*/absl::nullopt);
+}
+
+void AgcManagerDirect::Process(const AudioBuffer& audio_buffer,
+                               absl::optional<float> speech_probability,
+                               absl::optional<float> speech_level_dbfs) {
   AggregateChannelLevels();
+  const int volume_after_clipping_handling = recommended_input_volume_;
 
   if (!capture_output_used_) {
     return;
   }
 
   const size_t num_frames_per_band = audio_buffer.num_frames_per_band();
+  absl::optional<int> rms_error_override = absl::nullopt;
+  if (speech_probability.has_value() && speech_level_dbfs.has_value()) {
+    rms_error_override =
+        GetSpeechLevelErrorDb(*speech_level_dbfs, *speech_probability);
+  }
   for (size_t ch = 0; ch < channel_agcs_.size(); ++ch) {
     std::array<int16_t, AudioBuffer::kMaxSampleRate / 100> audio_data;
     int16_t* audio_use = audio_data.data();
     FloatS16ToS16(audio_buffer.split_bands_const_f(ch)[0], num_frames_per_band,
                   audio_use);
-    channel_agcs_[ch]->Process({audio_use, num_frames_per_band});
+    channel_agcs_[ch]->Process({audio_use, num_frames_per_band},
+                               rms_error_override);
     new_compressions_to_set_[ch] = channel_agcs_[ch]->new_compression();
   }
 
   AggregateChannelLevels();
+  if (volume_after_clipping_handling != recommended_input_volume_) {
+    // The recommended input volume was adjusted in order to match the target
+    // level.
+    UpdateHistogramOnRecommendedInputVolumeChangeToMatchTarget(
+        recommended_input_volume_);
+  }
 }
 
 absl::optional<int> AgcManagerDirect::GetDigitalComressionGain() {
@@ -700,21 +692,11 @@ void AgcManagerDirect::AggregateChannelLevels() {
   int new_recommended_input_volume =
       channel_agcs_[0]->recommended_analog_level();
   channel_controlling_gain_ = 0;
-  if (use_min_channel_level_) {
-    for (size_t ch = 1; ch < channel_agcs_.size(); ++ch) {
-      int level = channel_agcs_[ch]->recommended_analog_level();
-      if (level < new_recommended_input_volume) {
-        new_recommended_input_volume = level;
-        channel_controlling_gain_ = static_cast<int>(ch);
-      }
-    }
-  } else {
-    for (size_t ch = 1; ch < channel_agcs_.size(); ++ch) {
-      int level = channel_agcs_[ch]->recommended_analog_level();
-      if (level > new_recommended_input_volume) {
-        new_recommended_input_volume = level;
-        channel_controlling_gain_ = static_cast<int>(ch);
-      }
+  for (size_t ch = 1; ch < channel_agcs_.size(); ++ch) {
+    int level = channel_agcs_[ch]->recommended_analog_level();
+    if (level < new_recommended_input_volume) {
+      new_recommended_input_volume = level;
+      channel_controlling_gain_ = static_cast<int>(ch);
     }
   }
 

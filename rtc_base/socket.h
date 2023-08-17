@@ -92,8 +92,9 @@ class Socket {
   // Returns the address to which the socket is connected.  If the socket is
   // not connected, then the any-address is returned.
   virtual SocketAddress GetRemoteAddress() const = 0;
-
+// UI Customization Begin
   virtual int Bind(const SocketAddress& addr, int interfaceIndex) = 0;
+// UI Customization End
   virtual int Connect(const SocketAddress& addr) = 0;
   virtual int Send(const void* pv, size_t cb) = 0;
   virtual int SendTo(const void* pv, size_t cb, const SocketAddress& addr) = 0;
@@ -123,8 +124,10 @@ class Socket {
     OPT_RTP_SENDTIME_EXTN_ID,  // This is a non-traditional socket option param.
                                // This is specific to libjingle and will be used
                                // if SendTime option is needed at socket level.
+// UI Customization Begin
     OPT_TTL,                   // socket time to live
     OPT_IFACE_BIND             // what interface to bind on
+// UI Customization End
   };
   virtual int GetOption(Option opt, int* value) = 0;
   virtual int SetOption(Option opt, int value) = 0;

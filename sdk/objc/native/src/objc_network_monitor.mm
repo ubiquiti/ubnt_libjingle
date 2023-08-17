@@ -81,7 +81,7 @@ rtc::NetworkMonitorInterface::InterfaceInfo ObjCNetworkMonitor::GetInterfaceInfo
       .available = true,
   };
 }
-
+// UI Customization Begin
 bool ObjCNetworkMonitor::IsAdapterAvailable(absl::string_view interface_name) {
   RTC_DCHECK_RUN_ON(thread_);
   if (adapter_type_by_name_.empty()) {
@@ -91,7 +91,7 @@ bool ObjCNetworkMonitor::IsAdapterAvailable(absl::string_view interface_name) {
   }
   return adapter_type_by_name_.find(interface_name) != adapter_type_by_name_.end();
 }
-
+// UI Customization End
 void ObjCNetworkMonitor::OnPathUpdate(
     std::map<std::string, rtc::AdapterType, rtc::AbslStringViewCmp> adapter_type_by_name) {
   RTC_DCHECK(network_monitor_ != nil);

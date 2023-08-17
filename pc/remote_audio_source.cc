@@ -23,6 +23,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_format.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -69,8 +70,9 @@ RemoteAudioSource::~RemoteAudioSource() {
   }
 }
 
-void RemoteAudioSource::Start(cricket::VoiceMediaChannel* media_channel,
-                              absl::optional<uint32_t> ssrc) {
+void RemoteAudioSource::Start(
+    cricket::VoiceMediaReceiveChannelInterface* media_channel,
+    absl::optional<uint32_t> ssrc) {
   RTC_DCHECK_RUN_ON(worker_thread_);
 
   // Register for callbacks immediately before AddSink so that we always get
@@ -83,8 +85,9 @@ void RemoteAudioSource::Start(cricket::VoiceMediaChannel* media_channel,
              std::make_unique<AudioDataProxy>(this));
 }
 
-void RemoteAudioSource::Stop(cricket::VoiceMediaChannel* media_channel,
-                             absl::optional<uint32_t> ssrc) {
+void RemoteAudioSource::Stop(
+    cricket::VoiceMediaReceiveChannelInterface* media_channel,
+    absl::optional<uint32_t> ssrc) {
   RTC_DCHECK_RUN_ON(worker_thread_);
   RTC_DCHECK(media_channel);
   ssrc ? media_channel->SetRawAudioSink(*ssrc, nullptr)
@@ -149,6 +152,7 @@ void RemoteAudioSource::RemoveSink(AudioTrackSinkInterface* sink) {
 
 void RemoteAudioSource::OnData(const AudioSinkInterface::Data& audio) {
   // Called on the externally-owned audio callback thread, via/from webrtc.
+  TRACE_EVENT0("webrtc", "RemoteAudioSource::OnData");
   MutexLock lock(&sink_lock_);
   for (auto* sink : sinks_) {
     // When peerconnection acts as an audio source, it should not provide

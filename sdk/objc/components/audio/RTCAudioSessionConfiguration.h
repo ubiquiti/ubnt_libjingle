@@ -17,9 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 RTC_EXTERN const int kRTCAudioSessionPreferredNumberOfChannels;
 RTC_EXTERN const double kRTCAudioSessionHighPerformanceSampleRate;
-RTC_EXTERN const double kRTCAudioSessionLowComplexitySampleRate;
 RTC_EXTERN const double kRTCAudioSessionHighPerformanceIOBufferDuration;
-RTC_EXTERN const double kRTCAudioSessionLowComplexityIOBufferDuration;
 
 // Struct to hold configuration values.
 RTC_OBJC_EXPORT
@@ -32,7 +30,10 @@ RTC_OBJC_EXPORT
 @property(nonatomic, assign) NSTimeInterval ioBufferDuration;
 @property(nonatomic, assign) NSInteger inputNumberOfChannels;
 @property(nonatomic, assign) NSInteger outputNumberOfChannels;
-
+// UI Customization Begin
+@property(nonatomic, assign) bool isMicrophoneEnabled;
+@property(nonatomic, assign) bool isMicrophoneMuted;
+// UI Customization End
 /** Initializes configuration to defaults. */
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
 

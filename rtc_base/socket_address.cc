@@ -173,19 +173,35 @@ std::string SocketAddress::ToString() const {
 }
 
 std::string SocketAddress::ToSensitiveString() const {
+// UI Customization Begin
+#ifdef UI_CUSTOMIZED_UNSANITIZE_IP
+  return ToString();
+#else
+// UI Customization End
   char buf[1024];
   rtc::SimpleStringBuilder sb(buf);
   sb << HostAsSensitiveURIString() << ":" << port();
   return sb.str();
+// UI Customization Begin
+#endif
+// UI Customization End
 }
 
-std::string SocketAddress::ToResolvedSensitiveString() const {
-  if (IsUnresolvedIP()) {
-    return "";
+std::string SocketAddress::ToSensitiveNameAndAddressString() const {
+  if (IsUnresolvedIP() || literal_ || hostname_.empty()) {
+    return ToSensitiveString();
   }
   char buf[1024];
   rtc::SimpleStringBuilder sb(buf);
-  sb << ipaddr().ToSensitiveString() << ":" << port();
+  sb << HostAsSensitiveURIString() << ":" << port();
+  sb << " (";
+  if (ip_.family() == AF_INET6) {
+    sb << "[" << ipaddr().ToSensitiveString() << "]";
+  } else {
+    sb << ipaddr().ToSensitiveString();
+  }
+  sb << ":" << port() << ")";
+
   return sb.str();
 }
 

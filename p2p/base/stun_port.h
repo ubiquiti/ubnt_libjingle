@@ -22,6 +22,7 @@
 #include "p2p/base/port.h"
 #include "p2p/base/stun_request.h"
 #include "rtc_base/async_packet_socket.h"
+#include "rtc_base/system/rtc_export.h"
 
 namespace cricket {
 
@@ -31,7 +32,7 @@ static const int INFINITE_LIFETIME = -1;
 static const int HIGH_COST_PORT_KEEPALIVE_LIFETIME = 2 * 60 * 1000;
 
 // Communicates using the address on the outside of a NAT.
-class UDPPort : public Port {
+class RTC_EXPORT UDPPort : public Port {
  public:
   static std::unique_ptr<UDPPort> Create(
       rtc::Thread* thread,
@@ -234,7 +235,7 @@ class UDPPort : public Port {
   // changed to SignalPortReady.
   void MaybeSetPortCompleteOrError();
 
-  bool HasCandidateWithAddress(const rtc::SocketAddress& addr) const;
+  bool HasStunCandidateWithAddress(const rtc::SocketAddress& addr) const;
 
   // If this is a low-cost network, it will keep on sending STUN binding
   // requests indefinitely to keep the NAT binding alive. Otherwise, stop

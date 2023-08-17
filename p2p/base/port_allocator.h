@@ -171,14 +171,12 @@ struct RTC_EXPORT RelayServerConfig {
   ~RelayServerConfig();
 
   bool operator==(const RelayServerConfig& o) const {
-    return ports == o.ports && credentials == o.credentials &&
-           priority == o.priority;
+    return ports == o.ports && credentials == o.credentials;
   }
   bool operator!=(const RelayServerConfig& o) const { return !(*this == o); }
 
   PortList ports;
   RelayCredentials credentials;
-  int priority = 0;
   TlsCertPolicy tls_cert_policy = TlsCertPolicy::TLS_CERT_POLICY_SECURE;
   std::vector<std::string> tls_alpn_protocols;
   std::vector<std::string> tls_elliptic_curves;
@@ -410,8 +408,9 @@ class RTC_EXPORT PortAllocator : public sigslot::has_slots<> {
   // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
   // loopback interfaces.
   virtual void SetNetworkIgnoreMask(int network_ignore_mask) = 0;
+// UI Customization Begin
   virtual void SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) = 0;
-
+// UI Customization End
   // Set whether VPN connections should be preferred, avoided, mandated or
   // blocked.
   virtual void SetVpnPreference(webrtc::VpnPreference preference) {

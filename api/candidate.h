@@ -25,6 +25,10 @@
 
 namespace cricket {
 
+// TURN servers are limited to 32 in accordance with
+// https://w3c.github.io/webrtc-pc/#dom-rtcconfiguration-iceservers
+static constexpr size_t kMaxTurnServers = 32;
+
 // Candidate for ICE based connection discovery.
 // TODO(phoglund): remove things in here that are not needed in the public API.
 
@@ -165,11 +169,20 @@ class RTC_EXPORT Candidate {
 
   std::string ToString() const { return ToStringInternal(false); }
 
-  std::string ToSensitiveString() const { return ToStringInternal(true); }
+  std::string ToSensitiveString() const {
+// UI Customization Begin
+#ifdef UI_CUSTOMIZED_UNSANITIZE_IP
+    return ToString();
+#else
+    return ToStringInternal(true);
+#endif
+// UI Customization End
+  }
 
   uint32_t GetPriority(uint32_t type_preference,
                        int network_adapter_preference,
-                       int relay_preference) const;
+                       int relay_preference,
+                       bool adjust_local_preference) const;
 
   bool operator==(const Candidate& o) const;
   bool operator!=(const Candidate& o) const;

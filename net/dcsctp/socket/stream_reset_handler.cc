@@ -134,7 +134,7 @@ bool StreamResetHandler::ValidateReqSeqNbr(
     ReconfigRequestSN req_seq_nbr,
     std::vector<ReconfigurationResponseParameter>& responses) {
   if (req_seq_nbr == last_processed_req_seq_nbr_) {
-    // UI customization - check if req_seq_nbr is less than the last completed reset 
+// UI Customization Begin - check if req_seq_nbr is less than the last completed reset
     // req_seq_nbr, i.e. it has left from deferred mode or not.
 #ifdef UI_CUSTOMIZATION
     if (req_seq_nbr <= reassembly_queue_->lcr_request_sequence_number()) {
@@ -144,6 +144,7 @@ bool StreamResetHandler::ValidateReqSeqNbr(
       return true;
     }
 #endif
+// UI Customization End
     // https://www.rfc-editor.org/rfc/rfc6525.html#section-5.2.1 "If the
     // received RE-CONFIG chunk contains at least one request and based on the
     // analysis of the Re-configuration Request Sequence Numbers this is the
@@ -253,7 +254,7 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
                        [](rtc::StringBuilder& sb, StreamID stream_id) {
                          sb << *stream_id;
                        });
-        // UI customization - the new req_seq_nbr is unnecessary, as it will cause client 
+// UI Customization Begin - the new req_seq_nbr is unnecessary, as it will cause client
         // side thought that current stream should be closed at the moment. In other words, 
         // if there is a retransmission(an outgoing request with new req_seq_nbr) sent from 
         // console side before it receiving the 2nd response, client will thought there 
@@ -264,6 +265,7 @@ void StreamResetHandler::HandleResponse(const ParameterDescriptor& descriptor) {
         // Force this request to be sent again, but with new req_seq_nbr.
         current_request_->PrepareRetransmission();
 #endif
+// UI Customization End
         reconfig_timer_->set_duration(ctx_->current_rto());
         reconfig_timer_->Start();
         break;

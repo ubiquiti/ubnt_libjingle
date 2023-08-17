@@ -25,7 +25,9 @@
         [CADisplayLink displayLinkWithTarget:self
                                     selector:@selector(displayLinkDidFire:)];
     _displayLink.paused = YES;
+// UI Customization Begin
 #if __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_10_0 || TARGET_OS_TV
+// UI Customization End
     _displayLink.preferredFramesPerSecond = 30;
 #else
     [_displayLink setFrameInterval:2];

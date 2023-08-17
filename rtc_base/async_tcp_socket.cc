@@ -50,7 +50,9 @@ Socket* AsyncTCPSocketBase::ConnectSocket(
     const rtc::SocketAddress& bind_address,
     const rtc::SocketAddress& remote_address) {
   std::unique_ptr<rtc::Socket> owned_socket(socket);
+// UI Customization Begin
   if (socket->Bind(bind_address, -1) < 0) {
+// UI Customization End
     RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
     return nullptr;
   }
@@ -61,8 +63,7 @@ Socket* AsyncTCPSocketBase::ConnectSocket(
   return owned_socket.release();
 }
 
-AsyncTCPSocketBase::AsyncTCPSocketBase(Socket* socket,
-                                       size_t max_packet_size)
+AsyncTCPSocketBase::AsyncTCPSocketBase(Socket* socket, size_t max_packet_size)
     : socket_(socket),
       max_insize_(max_packet_size),
       max_outsize_(max_packet_size) {

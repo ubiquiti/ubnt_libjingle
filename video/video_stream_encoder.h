@@ -17,8 +17,10 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/inlined_vector.h"
 #include "api/adaptation/resource.h"
 #include "api/field_trials_view.h"
+#include "api/rtp_sender_interface.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/data_rate.h"
@@ -26,8 +28,6 @@
 #include "api/video/video_bitrate_allocator.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_sink_interface.h"
-#include "api/video/video_stream_encoder_interface.h"
-#include "api/video/video_stream_encoder_observer.h"
 #include "api/video/video_stream_encoder_settings.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
@@ -50,6 +50,8 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_encode_metadata_writer.h"
 #include "video/video_source_sink_controller.h"
+#include "video/video_stream_encoder_interface.h"
+#include "video/video_stream_encoder_observer.h"
 
 namespace webrtc {
 
@@ -106,12 +108,15 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
 
   void ConfigureEncoder(VideoEncoderConfig config,
                         size_t max_data_payload_length) override;
+  void ConfigureEncoder(VideoEncoderConfig config,
+                        size_t max_data_payload_length,
+                        SetParametersCallback callback) override;
 
   // Permanently stop encoding. After this method has returned, it is
   // guaranteed that no encoded frames will be delivered to the sink.
   void Stop() override;
 
-  void SendKeyFrame() override;
+  void SendKeyFrame(const std::vector<VideoFrameType>& layers = {}) override;
 
   void OnLossNotification(
       const VideoEncoder::LossNotification& loss_notification) override;
@@ -302,6 +307,8 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // Set when configuration must create a new encoder object, e.g.,
   // because of a codec change.
   bool pending_encoder_creation_ RTC_GUARDED_BY(&encoder_queue_);
+  absl::InlinedVector<SetParametersCallback, 2> encoder_configuration_callbacks_
+      RTC_GUARDED_BY(&encoder_queue_);
 
   absl::optional<VideoFrameInfo> last_frame_info_
       RTC_GUARDED_BY(&encoder_queue_);
@@ -456,6 +463,21 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   bool switch_encoder_on_init_failures_;
 
   const absl::optional<int> vp9_low_tier_core_threshold_;
+  const absl::optional<int> experimental_encoder_thread_limit_;
+
+  // These are copies of restrictions (glorified max_pixel_count) set by
+  // a) OnVideoSourceRestrictionsUpdated
+  // b) CheckForAnimatedContent
+  // They are used to scale down encoding resolution if needed when using
+  // requested_resolution.
+  //
+  // TODO(webrtc:14451) Split video_source_sink_controller_
+  // so that ownership on restrictions/wants is kept on &encoder_queue_, that
+  // these extra copies would not be needed.
+  absl::optional<VideoSourceRestrictions> latest_restrictions_
+      RTC_GUARDED_BY(&encoder_queue_);
+  absl::optional<VideoSourceRestrictions> animate_restrictions_
+      RTC_GUARDED_BY(&encoder_queue_);
 
   // Used to cancel any potentially pending tasks to the worker thread.
   // Refrenced by tasks running on `encoder_queue_` so need to be destroyed
@@ -466,13 +488,6 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // Public methods are proxied to the task queues. The queues must be destroyed
   // first to make sure no tasks run that use other members.
   rtc::TaskQueue encoder_queue_;
-
-  // UI customization
-#ifdef UI_CUSTOMIZATION
-  uint32_t prev_encoder_bitrate_bps_;
-  uint64_t last_bitrate_adjusted_time_ms_;
-  bool init_encoder_bitrate_;
-#endif
 };
 
 }  // namespace webrtc

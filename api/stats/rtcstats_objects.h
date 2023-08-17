@@ -23,105 +23,12 @@
 
 namespace webrtc {
 
-// https://w3c.github.io/webrtc-pc/#idl-def-rtcdatachannelstate
-struct RTCDataChannelState {
-  static const char* const kConnecting;
-  static const char* const kOpen;
-  static const char* const kClosing;
-  static const char* const kClosed;
-};
-
-// https://w3c.github.io/webrtc-stats/#dom-rtcstatsicecandidatepairstate
-struct RTCStatsIceCandidatePairState {
-  static const char* const kFrozen;
-  static const char* const kWaiting;
-  static const char* const kInProgress;
-  static const char* const kFailed;
-  static const char* const kSucceeded;
-};
-
-// https://w3c.github.io/webrtc-pc/#rtcicecandidatetype-enum
-struct RTCIceCandidateType {
-  static const char* const kHost;
-  static const char* const kSrflx;
-  static const char* const kPrflx;
-  static const char* const kRelay;
-};
-
-// https://w3c.github.io/webrtc-pc/#idl-def-rtcdtlstransportstate
-struct RTCDtlsTransportState {
-  static const char* const kNew;
-  static const char* const kConnecting;
-  static const char* const kConnected;
-  static const char* const kClosed;
-  static const char* const kFailed;
-};
-
-// `RTCMediaStreamTrackStats::kind` is not an enum in the spec but the only
-// valid values are "audio" and "video".
-// https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-kind
-struct RTCMediaStreamTrackKind {
-  static const char* const kAudio;
-  static const char* const kVideo;
-};
-
-// https://w3c.github.io/webrtc-stats/#dom-rtcnetworktype
-struct RTCNetworkType {
-  static const char* const kBluetooth;
-  static const char* const kCellular;
-  static const char* const kEthernet;
-  static const char* const kWifi;
-  static const char* const kWimax;
-  static const char* const kVpn;
-  static const char* const kUnknown;
-};
-
-// https://w3c.github.io/webrtc-stats/#dom-rtcqualitylimitationreason
-struct RTCQualityLimitationReason {
-  static const char* const kNone;
-  static const char* const kCpu;
-  static const char* const kBandwidth;
-  static const char* const kOther;
-};
-
-// https://webrtc.org/experiments/rtp-hdrext/video-content-type/
-struct RTCContentType {
-  static const char* const kUnspecified;
-  static const char* const kScreenshare;
-};
-
-// https://w3c.github.io/webrtc-stats/#dom-rtcdtlsrole
-struct RTCDtlsRole {
-  static const char* const kUnknown;
-  static const char* const kClient;
-  static const char* const kServer;
-};
-
-// https://www.w3.org/TR/webrtc/#rtcicerole
-struct RTCIceRole {
-  static const char* const kUnknown;
-  static const char* const kControlled;
-  static const char* const kControlling;
-};
-
-// https://www.w3.org/TR/webrtc/#dom-rtcicetransportstate
-struct RTCIceTransportState {
-  static const char* const kNew;
-  static const char* const kChecking;
-  static const char* const kConnected;
-  static const char* const kCompleted;
-  static const char* const kDisconnected;
-  static const char* const kFailed;
-  static const char* const kClosed;
-};
-
 // https://w3c.github.io/webrtc-stats/#certificatestats-dict*
 class RTC_EXPORT RTCCertificateStats final : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCCertificateStats(const std::string& id, int64_t timestamp_us);
-  RTCCertificateStats(std::string&& id, int64_t timestamp_us);
+  RTCCertificateStats(std::string id, Timestamp timestamp);
   RTCCertificateStats(const RTCCertificateStats& other);
   ~RTCCertificateStats() override;
 
@@ -131,27 +38,12 @@ class RTC_EXPORT RTCCertificateStats final : public RTCStats {
   RTCStatsMember<std::string> issuer_certificate_id;
 };
 
-// Non standard extension mapping to rtc::AdapterType
-struct RTCNetworkAdapterType {
-  static constexpr char kUnknown[] = "unknown";
-  static constexpr char kEthernet[] = "ethernet";
-  static constexpr char kWifi[] = "wifi";
-  static constexpr char kCellular[] = "cellular";
-  static constexpr char kLoopback[] = "loopback";
-  static constexpr char kAny[] = "any";
-  static constexpr char kCellular2g[] = "cellular2g";
-  static constexpr char kCellular3g[] = "cellular3g";
-  static constexpr char kCellular4g[] = "cellular4g";
-  static constexpr char kCellular5g[] = "cellular5g";
-};
-
 // https://w3c.github.io/webrtc-stats/#codec-dict*
 class RTC_EXPORT RTCCodecStats final : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCCodecStats(const std::string& id, int64_t timestamp_us);
-  RTCCodecStats(std::string&& id, int64_t timestamp_us);
+  RTCCodecStats(std::string id, Timestamp timestamp);
   RTCCodecStats(const RTCCodecStats& other);
   ~RTCCodecStats() override;
 
@@ -168,15 +60,13 @@ class RTC_EXPORT RTCDataChannelStats final : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCDataChannelStats(const std::string& id, int64_t timestamp_us);
-  RTCDataChannelStats(std::string&& id, int64_t timestamp_us);
+  RTCDataChannelStats(std::string id, Timestamp timestamp);
   RTCDataChannelStats(const RTCDataChannelStats& other);
   ~RTCDataChannelStats() override;
 
   RTCStatsMember<std::string> label;
   RTCStatsMember<std::string> protocol;
   RTCStatsMember<int32_t> data_channel_identifier;
-  // Enum type RTCDataChannelState.
   RTCStatsMember<std::string> state;
   RTCStatsMember<uint32_t> messages_sent;
   RTCStatsMember<uint64_t> bytes_sent;
@@ -189,15 +79,13 @@ class RTC_EXPORT RTCIceCandidatePairStats final : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCIceCandidatePairStats(const std::string& id, int64_t timestamp_us);
-  RTCIceCandidatePairStats(std::string&& id, int64_t timestamp_us);
+  RTCIceCandidatePairStats(std::string id, Timestamp timestamp);
   RTCIceCandidatePairStats(const RTCIceCandidatePairStats& other);
   ~RTCIceCandidatePairStats() override;
 
   RTCStatsMember<std::string> transport_id;
   RTCStatsMember<std::string> local_candidate_id;
   RTCStatsMember<std::string> remote_candidate_id;
-  // Enum type RTCStatsIceCandidatePairState.
   RTCStatsMember<std::string> state;
   // Obsolete: priority
   RTCStatsMember<uint64_t> priority;
@@ -222,6 +110,8 @@ class RTC_EXPORT RTCIceCandidatePairStats final : public RTCStats {
   RTCStatsMember<uint64_t> consent_requests_sent;
   RTCStatsMember<uint64_t> packets_discarded_on_send;
   RTCStatsMember<uint64_t> bytes_discarded_on_send;
+  RTCStatsMember<double> last_packet_received_timestamp;
+  RTCStatsMember<double> last_packet_sent_timestamp;
 };
 
 // https://w3c.github.io/webrtc-stats/#icecandidate-dict*
@@ -241,19 +131,22 @@ class RTC_EXPORT RTCIceCandidateStats : public RTCStats {
   RTCStatsMember<int32_t> port;
   RTCStatsMember<std::string> protocol;
   RTCStatsMember<std::string> relay_protocol;
-  // Enum type RTCIceCandidateType.
   RTCStatsMember<std::string> candidate_type;
   RTCStatsMember<int32_t> priority;
   RTCStatsMember<std::string> url;
+  RTCStatsMember<std::string> foundation;
+  RTCStatsMember<std::string> related_address;
+  RTCStatsMember<int32_t> related_port;
+  RTCStatsMember<std::string> username_fragment;
+  RTCStatsMember<std::string> tcp_type;
 
-  RTCNonStandardStatsMember<bool> vpn;
-  RTCNonStandardStatsMember<std::string> network_adapter_type;
+  // The following metrics are NOT exposed to JavaScript. We should consider
+  // standardizing or removing them.
+  RTCStatsMember<bool> vpn;
+  RTCStatsMember<std::string> network_adapter_type;
 
  protected:
-  RTCIceCandidateStats(const std::string& id,
-                       int64_t timestamp_us,
-                       bool is_remote);
-  RTCIceCandidateStats(std::string&& id, int64_t timestamp_us, bool is_remote);
+  RTCIceCandidateStats(std::string id, Timestamp timestamp, bool is_remote);
 };
 
 // In the spec both local and remote varieties are of type RTCIceCandidateStats.
@@ -264,8 +157,7 @@ class RTC_EXPORT RTCIceCandidateStats : public RTCStats {
 class RTC_EXPORT RTCLocalIceCandidateStats final : public RTCIceCandidateStats {
  public:
   static const char kType[];
-  RTCLocalIceCandidateStats(const std::string& id, int64_t timestamp_us);
-  RTCLocalIceCandidateStats(std::string&& id, int64_t timestamp_us);
+  RTCLocalIceCandidateStats(std::string id, Timestamp timestamp);
   std::unique_ptr<RTCStats> copy() const override;
   const char* type() const override;
 };
@@ -274,89 +166,9 @@ class RTC_EXPORT RTCRemoteIceCandidateStats final
     : public RTCIceCandidateStats {
  public:
   static const char kType[];
-  RTCRemoteIceCandidateStats(const std::string& id, int64_t timestamp_us);
-  RTCRemoteIceCandidateStats(std::string&& id, int64_t timestamp_us);
+  RTCRemoteIceCandidateStats(std::string id, Timestamp timestamp);
   std::unique_ptr<RTCStats> copy() const override;
   const char* type() const override;
-};
-
-// https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamstats
-// TODO(https://crbug.com/webrtc/14172): Deprecate and remove.
-class RTC_EXPORT RTCMediaStreamStats final : public RTCStats {
- public:
-  WEBRTC_RTCSTATS_DECL();
-
-  RTCMediaStreamStats(const std::string& id, int64_t timestamp_us);
-  RTCMediaStreamStats(std::string&& id, int64_t timestamp_us);
-  RTCMediaStreamStats(const RTCMediaStreamStats& other);
-  ~RTCMediaStreamStats() override;
-
-  RTCStatsMember<std::string> stream_identifier;
-  RTCStatsMember<std::vector<std::string>> track_ids;
-};
-
-// TODO(https://crbug.com/webrtc/14175): Deprecate and remove in favor of
-// RTCMediaSourceStats/RTCOutboundRtpStreamStats and RTCInboundRtpStreamStats.
-class RTC_EXPORT RTCMediaStreamTrackStats final : public RTCStats {
- public:
-  WEBRTC_RTCSTATS_DECL();
-
-  RTCMediaStreamTrackStats(const std::string& id,
-                           int64_t timestamp_us,
-                           const char* kind);
-  RTCMediaStreamTrackStats(std::string&& id,
-                           int64_t timestamp_us,
-                           const char* kind);
-  RTCMediaStreamTrackStats(const RTCMediaStreamTrackStats& other);
-  ~RTCMediaStreamTrackStats() override;
-
-  RTCStatsMember<std::string> track_identifier;
-  RTCStatsMember<std::string> media_source_id;
-  RTCStatsMember<bool> remote_source;
-  RTCStatsMember<bool> ended;
-  // TODO(https://crbug.com/webrtc/14173): Remove this obsolete metric.
-  RTCStatsMember<bool> detached;
-  // Enum type RTCMediaStreamTrackKind.
-  RTCStatsMember<std::string> kind;
-  RTCStatsMember<double> jitter_buffer_delay;
-  RTCStatsMember<uint64_t> jitter_buffer_emitted_count;
-  // Video-only members
-  RTCStatsMember<uint32_t> frame_width;
-  RTCStatsMember<uint32_t> frame_height;
-  RTCStatsMember<uint32_t> frames_sent;
-  RTCStatsMember<uint32_t> huge_frames_sent;
-  RTCStatsMember<uint32_t> frames_received;
-  RTCStatsMember<uint32_t> frames_decoded;
-  RTCStatsMember<uint32_t> frames_dropped;
-  // Audio-only members
-  RTCStatsMember<double> audio_level;         // Receive-only
-  RTCStatsMember<double> total_audio_energy;  // Receive-only
-  RTCStatsMember<double> echo_return_loss;
-  RTCStatsMember<double> echo_return_loss_enhancement;
-  RTCStatsMember<uint64_t> total_samples_received;
-  RTCStatsMember<double> total_samples_duration;  // Receive-only
-  RTCStatsMember<uint64_t> concealed_samples;
-  RTCStatsMember<uint64_t> silent_concealed_samples;
-  RTCStatsMember<uint64_t> concealment_events;
-  RTCStatsMember<uint64_t> inserted_samples_for_deceleration;
-  RTCStatsMember<uint64_t> removed_samples_for_acceleration;
-  // Non-standard audio-only member
-  // https://w3c.github.io/webrtc-provisional-stats/#dom-rtcaudioreceiverstats-jitterbufferflushes
-  RTCNonStandardStatsMember<uint64_t> jitter_buffer_flushes;
-  RTCNonStandardStatsMember<uint64_t> delayed_packet_outage_samples;
-  RTCNonStandardStatsMember<double> relative_packet_arrival_delay;
-  // TODO(henrik.lundin): Add description of the interruption metrics at
-  // https://github.com/w3c/webrtc-provisional-stats/issues/17
-  RTCNonStandardStatsMember<uint32_t> interruption_count;
-  RTCNonStandardStatsMember<double> total_interruption_duration;
-  // Non-standard video-only members.
-  // https://w3c.github.io/webrtc-provisional-stats/#dom-rtcvideoreceiverstats
-  RTCNonStandardStatsMember<uint32_t> freeze_count;
-  RTCNonStandardStatsMember<uint32_t> pause_count;
-  RTCNonStandardStatsMember<double> total_freezes_duration;
-  RTCNonStandardStatsMember<double> total_pauses_duration;
-  RTCNonStandardStatsMember<double> total_frames_duration;
-  RTCNonStandardStatsMember<double> sum_squared_frame_durations;
 };
 
 // https://w3c.github.io/webrtc-stats/#pcstats-dict*
@@ -364,8 +176,7 @@ class RTC_EXPORT RTCPeerConnectionStats final : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCPeerConnectionStats(const std::string& id, int64_t timestamp_us);
-  RTCPeerConnectionStats(std::string&& id, int64_t timestamp_us);
+  RTCPeerConnectionStats(std::string id, Timestamp timestamp);
   RTCPeerConnectionStats(const RTCPeerConnectionStats& other);
   ~RTCPeerConnectionStats() override;
 
@@ -374,30 +185,24 @@ class RTC_EXPORT RTCPeerConnectionStats final : public RTCStats {
 };
 
 // https://w3c.github.io/webrtc-stats/#streamstats-dict*
-class RTC_EXPORT RTCRTPStreamStats : public RTCStats {
+class RTC_EXPORT RTCRtpStreamStats : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCRTPStreamStats(const RTCRTPStreamStats& other);
-  ~RTCRTPStreamStats() override;
+  RTCRtpStreamStats(const RTCRtpStreamStats& other);
+  ~RTCRtpStreamStats() override;
 
   RTCStatsMember<uint32_t> ssrc;
   RTCStatsMember<std::string> kind;
-  // Obsolete: track_id
-  RTCStatsMember<std::string> track_id;
   RTCStatsMember<std::string> transport_id;
   RTCStatsMember<std::string> codec_id;
 
-  // Obsolete
-  RTCStatsMember<std::string> media_type;  // renamed to kind.
-
  protected:
-  RTCRTPStreamStats(const std::string& id, int64_t timestamp_us);
-  RTCRTPStreamStats(std::string&& id, int64_t timestamp_us);
+  RTCRtpStreamStats(std::string id, Timestamp timestamp);
 };
 
 // https://www.w3.org/TR/webrtc-stats/#receivedrtpstats-dict*
-class RTC_EXPORT RTCReceivedRtpStreamStats : public RTCRTPStreamStats {
+class RTC_EXPORT RTCReceivedRtpStreamStats : public RTCRtpStreamStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
@@ -406,50 +211,50 @@ class RTC_EXPORT RTCReceivedRtpStreamStats : public RTCRTPStreamStats {
 
   RTCStatsMember<double> jitter;
   RTCStatsMember<int32_t> packets_lost;  // Signed per RFC 3550
-  RTCStatsMember<uint64_t> packets_discarded;
 
  protected:
-  RTCReceivedRtpStreamStats(const std::string&& id, int64_t timestamp_us);
-  RTCReceivedRtpStreamStats(std::string&& id, int64_t timestamp_us);
+  RTCReceivedRtpStreamStats(std::string id, Timestamp timestamp);
 };
 
 // https://www.w3.org/TR/webrtc-stats/#sentrtpstats-dict*
-class RTC_EXPORT RTCSentRtpStreamStats : public RTCRTPStreamStats {
+class RTC_EXPORT RTCSentRtpStreamStats : public RTCRtpStreamStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
   RTCSentRtpStreamStats(const RTCSentRtpStreamStats& other);
   ~RTCSentRtpStreamStats() override;
 
-  RTCStatsMember<uint32_t> packets_sent;
+  RTCStatsMember<uint64_t> packets_sent;
   RTCStatsMember<uint64_t> bytes_sent;
 
  protected:
-  RTCSentRtpStreamStats(const std::string&& id, int64_t timestamp_us);
-  RTCSentRtpStreamStats(std::string&& id, int64_t timestamp_us);
+  RTCSentRtpStreamStats(std::string id, Timestamp timestamp);
 };
 
 // https://w3c.github.io/webrtc-stats/#inboundrtpstats-dict*
-class RTC_EXPORT RTCInboundRTPStreamStats final
+class RTC_EXPORT RTCInboundRtpStreamStats final
     : public RTCReceivedRtpStreamStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCInboundRTPStreamStats(const std::string& id, int64_t timestamp_us);
-  RTCInboundRTPStreamStats(std::string&& id, int64_t timestamp_us);
-  RTCInboundRTPStreamStats(const RTCInboundRTPStreamStats& other);
-  ~RTCInboundRTPStreamStats() override;
+  RTCInboundRtpStreamStats(std::string id, Timestamp timestamp);
+  RTCInboundRtpStreamStats(const RTCInboundRtpStreamStats& other);
+  ~RTCInboundRtpStreamStats() override;
 
-  // TODO(https://crbug.com/webrtc/14174): Implement trackIdentifier and kind.
-
+  RTCStatsMember<std::string> playout_id;
   RTCStatsMember<std::string> track_identifier;
   RTCStatsMember<std::string> mid;
   RTCStatsMember<std::string> remote_id;
   RTCStatsMember<uint32_t> packets_received;
+  RTCStatsMember<uint64_t> packets_discarded;
   RTCStatsMember<uint64_t> fec_packets_received;
   RTCStatsMember<uint64_t> fec_packets_discarded;
   RTCStatsMember<uint64_t> bytes_received;
   RTCStatsMember<uint64_t> header_bytes_received;
+  // Inbound RTX stats. Only defined when RTX is used and it is therefore
+  // possible to distinguish retransmissions.
+  RTCStatsMember<uint64_t> retransmitted_packets_received;
+  RTCStatsMember<uint64_t> retransmitted_bytes_received;
   RTCStatsMember<double> last_packet_received_timestamp;
   RTCStatsMember<double> jitter_buffer_delay;
   RTCStatsMember<double> jitter_buffer_target_delay;
@@ -465,7 +270,7 @@ class RTC_EXPORT RTCInboundRTPStreamStats final
   RTCStatsMember<double> total_audio_energy;
   RTCStatsMember<double> total_samples_duration;
   // Stats below are only implemented or defined for video.
-  RTCStatsMember<int32_t> frames_received;
+  RTCStatsMember<uint32_t> frames_received;
   RTCStatsMember<uint32_t> frame_width;
   RTCStatsMember<uint32_t> frame_height;
   RTCStatsMember<double> frames_per_second;
@@ -474,49 +279,64 @@ class RTC_EXPORT RTCInboundRTPStreamStats final
   RTCStatsMember<uint32_t> frames_dropped;
   RTCStatsMember<double> total_decode_time;
   RTCStatsMember<double> total_processing_delay;
-  // TODO(https://crbug.com/webrtc/13986): standardize
-  RTCNonStandardStatsMember<double> total_assembly_time;
-  RTCNonStandardStatsMember<uint32_t> frames_assembled_from_multiple_packets;
+  RTCStatsMember<double> total_assembly_time;
+  RTCStatsMember<uint32_t> frames_assembled_from_multiple_packets;
   RTCStatsMember<double> total_inter_frame_delay;
   RTCStatsMember<double> total_squared_inter_frame_delay;
+  RTCStatsMember<uint32_t> pause_count;
+  RTCStatsMember<double> total_pauses_duration;
+  RTCStatsMember<uint32_t> freeze_count;
+  RTCStatsMember<double> total_freezes_duration;
   // https://w3c.github.io/webrtc-provisional-stats/#dom-rtcinboundrtpstreamstats-contenttype
   RTCStatsMember<std::string> content_type;
   // Only populated if audio/video sync is enabled.
   // TODO(https://crbug.com/webrtc/14177): Expose even if A/V sync is off?
   RTCStatsMember<double> estimated_playout_timestamp;
-  // Only implemented for video.
-  // TODO(https://crbug.com/webrtc/14178): Also implement for audio.
+  // Only defined for video.
+  // In JavaScript, this is only exposed if HW exposure is allowed.
   RTCStatsMember<std::string> decoder_implementation;
   // FIR and PLI counts are only defined for |kind == "video"|.
   RTCStatsMember<uint32_t> fir_count;
   RTCStatsMember<uint32_t> pli_count;
   RTCStatsMember<uint32_t> nack_count;
   RTCStatsMember<uint64_t> qp_sum;
+  // This is a remnant of the legacy getStats() API. When the "video-timing"
+  // header extension is used,
+  // https://webrtc.github.io/webrtc-org/experiments/rtp-hdrext/video-timing/,
+  // `googTimingFrameInfo` is exposed with the value of
+  // TimingFrameInfo::ToString().
+  // TODO(https://crbug.com/webrtc/14586): Unship or standardize this metric.
+  RTCStatsMember<std::string> goog_timing_frame_info;
+  // In JavaScript, this is only exposed if HW exposure is allowed.
+  RTCStatsMember<bool> power_efficient_decoder;
 
-  // The former googMinPlayoutDelayMs (in seconds).
-  RTCNonStandardStatsMember<double> min_playout_delay;
+  // The following metrics are NOT exposed to JavaScript. We should consider
+  // standardizing or removing them.
+  RTCStatsMember<uint64_t> jitter_buffer_flushes;
+  RTCStatsMember<uint64_t> delayed_packet_outage_samples;
+  RTCStatsMember<double> relative_packet_arrival_delay;
+  RTCStatsMember<uint32_t> interruption_count;
+  RTCStatsMember<double> total_interruption_duration;
+  RTCStatsMember<double> min_playout_delay;
 };
 
 // https://w3c.github.io/webrtc-stats/#outboundrtpstats-dict*
-class RTC_EXPORT RTCOutboundRTPStreamStats final : public RTCRTPStreamStats {
+class RTC_EXPORT RTCOutboundRtpStreamStats final
+    : public RTCSentRtpStreamStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCOutboundRTPStreamStats(const std::string& id, int64_t timestamp_us);
-  RTCOutboundRTPStreamStats(std::string&& id, int64_t timestamp_us);
-  RTCOutboundRTPStreamStats(const RTCOutboundRTPStreamStats& other);
-  ~RTCOutboundRTPStreamStats() override;
+  RTCOutboundRtpStreamStats(std::string id, Timestamp timestamp);
+  RTCOutboundRtpStreamStats(const RTCOutboundRtpStreamStats& other);
+  ~RTCOutboundRtpStreamStats() override;
 
   RTCStatsMember<std::string> media_source_id;
   RTCStatsMember<std::string> remote_id;
   RTCStatsMember<std::string> mid;
   RTCStatsMember<std::string> rid;
-  RTCStatsMember<uint32_t> packets_sent;
   RTCStatsMember<uint64_t> retransmitted_packets_sent;
-  RTCStatsMember<uint64_t> bytes_sent;
   RTCStatsMember<uint64_t> header_bytes_sent;
   RTCStatsMember<uint64_t> retransmitted_bytes_sent;
-  // TODO(https://crbug.com/webrtc/13394): Also collect this metric for video.
   RTCStatsMember<double> target_bitrate;
   RTCStatsMember<uint32_t> frames_encoded;
   RTCStatsMember<uint32_t> key_frames_encoded;
@@ -527,16 +347,14 @@ class RTC_EXPORT RTCOutboundRTPStreamStats final : public RTCRTPStreamStats {
   RTCStatsMember<double> frames_per_second;
   RTCStatsMember<uint32_t> frames_sent;
   RTCStatsMember<uint32_t> huge_frames_sent;
-  // TODO(https://crbug.com/webrtc/10635): This is only implemented for video;
-  // implement it for audio as well.
   RTCStatsMember<double> total_packet_send_delay;
-  // Enum type RTCQualityLimitationReason
   RTCStatsMember<std::string> quality_limitation_reason;
   RTCStatsMember<std::map<std::string, double>> quality_limitation_durations;
   // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-qualitylimitationresolutionchanges
   RTCStatsMember<uint32_t> quality_limitation_resolution_changes;
   // https://w3c.github.io/webrtc-provisional-stats/#dom-rtcoutboundrtpstreamstats-contenttype
   RTCStatsMember<std::string> content_type;
+  // In JavaScript, this is only exposed if HW exposure is allowed.
   // Only implemented for video.
   // TODO(https://crbug.com/webrtc/14178): Implement for audio as well.
   RTCStatsMember<std::string> encoder_implementation;
@@ -546,6 +364,9 @@ class RTC_EXPORT RTCOutboundRTPStreamStats final : public RTCRTPStreamStats {
   RTCStatsMember<uint32_t> nack_count;
   RTCStatsMember<uint64_t> qp_sum;
   RTCStatsMember<bool> active;
+  // In JavaScript, this is only exposed if HW exposure is allowed.
+  RTCStatsMember<bool> power_efficient_encoder;
+  RTCStatsMember<std::string> scalability_mode;
 };
 
 // https://w3c.github.io/webrtc-stats/#remoteinboundrtpstats-dict*
@@ -554,8 +375,7 @@ class RTC_EXPORT RTCRemoteInboundRtpStreamStats final
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCRemoteInboundRtpStreamStats(const std::string& id, int64_t timestamp_us);
-  RTCRemoteInboundRtpStreamStats(std::string&& id, int64_t timestamp_us);
+  RTCRemoteInboundRtpStreamStats(std::string id, Timestamp timestamp);
   RTCRemoteInboundRtpStreamStats(const RTCRemoteInboundRtpStreamStats& other);
   ~RTCRemoteInboundRtpStreamStats() override;
 
@@ -572,8 +392,7 @@ class RTC_EXPORT RTCRemoteOutboundRtpStreamStats final
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCRemoteOutboundRtpStreamStats(const std::string& id, int64_t timestamp_us);
-  RTCRemoteOutboundRtpStreamStats(std::string&& id, int64_t timestamp_us);
+  RTCRemoteOutboundRtpStreamStats(std::string id, Timestamp timestamp);
   RTCRemoteOutboundRtpStreamStats(const RTCRemoteOutboundRtpStreamStats& other);
   ~RTCRemoteOutboundRtpStreamStats() override;
 
@@ -597,8 +416,7 @@ class RTC_EXPORT RTCMediaSourceStats : public RTCStats {
   RTCStatsMember<std::string> kind;
 
  protected:
-  RTCMediaSourceStats(const std::string& id, int64_t timestamp_us);
-  RTCMediaSourceStats(std::string&& id, int64_t timestamp_us);
+  RTCMediaSourceStats(std::string id, Timestamp timestamp);
 };
 
 // https://w3c.github.io/webrtc-stats/#dom-rtcaudiosourcestats
@@ -606,8 +424,7 @@ class RTC_EXPORT RTCAudioSourceStats final : public RTCMediaSourceStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCAudioSourceStats(const std::string& id, int64_t timestamp_us);
-  RTCAudioSourceStats(std::string&& id, int64_t timestamp_us);
+  RTCAudioSourceStats(std::string id, Timestamp timestamp);
   RTCAudioSourceStats(const RTCAudioSourceStats& other);
   ~RTCAudioSourceStats() override;
 
@@ -623,8 +440,7 @@ class RTC_EXPORT RTCVideoSourceStats final : public RTCMediaSourceStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCVideoSourceStats(const std::string& id, int64_t timestamp_us);
-  RTCVideoSourceStats(std::string&& id, int64_t timestamp_us);
+  RTCVideoSourceStats(std::string id, Timestamp timestamp);
   RTCVideoSourceStats(const RTCVideoSourceStats& other);
   ~RTCVideoSourceStats() override;
 
@@ -639,8 +455,7 @@ class RTC_EXPORT RTCTransportStats final : public RTCStats {
  public:
   WEBRTC_RTCSTATS_DECL();
 
-  RTCTransportStats(const std::string& id, int64_t timestamp_us);
-  RTCTransportStats(std::string&& id, int64_t timestamp_us);
+  RTCTransportStats(std::string id, Timestamp timestamp);
   RTCTransportStats(const RTCTransportStats& other);
   ~RTCTransportStats() override;
 
@@ -649,7 +464,6 @@ class RTC_EXPORT RTCTransportStats final : public RTCStats {
   RTCStatsMember<uint64_t> bytes_received;
   RTCStatsMember<uint64_t> packets_received;
   RTCStatsMember<std::string> rtcp_transport_stats_id;
-  // Enum type RTCDtlsTransportState.
   RTCStatsMember<std::string> dtls_state;
   RTCStatsMember<std::string> selected_candidate_pair_id;
   RTCStatsMember<std::string> local_certificate_id;
@@ -662,6 +476,23 @@ class RTC_EXPORT RTCTransportStats final : public RTCStats {
   RTCStatsMember<std::string> ice_role;
   RTCStatsMember<std::string> ice_local_username_fragment;
   RTCStatsMember<std::string> ice_state;
+};
+
+// https://w3c.github.io/webrtc-stats/#playoutstats-dict*
+class RTC_EXPORT RTCAudioPlayoutStats final : public RTCStats {
+ public:
+  WEBRTC_RTCSTATS_DECL();
+
+  RTCAudioPlayoutStats(const std::string& id, Timestamp timestamp);
+  RTCAudioPlayoutStats(const RTCAudioPlayoutStats& other);
+  ~RTCAudioPlayoutStats() override;
+
+  RTCStatsMember<std::string> kind;
+  RTCStatsMember<double> synthesized_samples_duration;
+  RTCStatsMember<uint64_t> synthesized_samples_events;
+  RTCStatsMember<double> total_samples_duration;
+  RTCStatsMember<double> total_playout_delay;
+  RTCStatsMember<uint64_t> total_samples_count;
 };
 
 }  // namespace webrtc

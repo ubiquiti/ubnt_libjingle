@@ -33,6 +33,11 @@ struct BitrateProberConfig {
   FieldTrialParameter<TimeDelta> min_probe_delta;
   // Maximum amount of time each probe can be delayed.
   FieldTrialParameter<TimeDelta> max_probe_delay;
+  // This is used to start sending a probe after a large enough packet.
+  // The min packet size is scaled with the bitrate we're probing at.
+  // This defines the max min packet size, meaning that on high bitrates
+  // a packet of at least this size is needed to trigger sending a probe.
+  FieldTrialParameter<DataSize> min_packet_size;
 };
 
 // Note that this class isn't thread-safe by itself and therefore relies
@@ -40,7 +45,7 @@ struct BitrateProberConfig {
 class BitrateProber {
  public:
   explicit BitrateProber(const FieldTrialsView& field_trials);
-  ~BitrateProber();
+  ~BitrateProber() = default;
 
   void SetEnabled(bool enable);
 
@@ -75,18 +80,24 @@ class BitrateProber {
   // the last packet in probe. `size` is the total size of all packets in probe.
   void ProbeSent(Timestamp now, DataSize size);
 
+// #ifdef UI_BITRATE_RECOVERY
+//   // Send probe right away, and change probing state to active.
+//   void activateProbe() {
+//     next_probe_time_ = Timestamp::MinusInfinity();
+//     probing_state_ = ProbingState::kActive;
+//   }
+// #endif
+
  private:
   enum class ProbingState {
     // Probing will not be triggered in this state at all times.
     kDisabled,
-    // Probing is enabled and ready to trigger on the first packet arrival.
+    // Probing is enabled and ready to trigger on the first packet arrival if
+    // there is a probe cluster.
     kInactive,
     // Probe cluster is filled with the set of data rates to be probed and
     // probes are being sent.
     kActive,
-    // Probing is enabled, but currently suspended until an explicit trigger
-    // to start probing again.
-    kSuspended,
   };
 
   // A probe cluster consists of a set of probes. Each probe in turn can be
@@ -102,6 +113,7 @@ class BitrateProber {
   };
 
   Timestamp CalculateNextProbeTime(const ProbeCluster& cluster) const;
+  bool ReadyToSetActiveState(DataSize packet_size) const;
 
   ProbingState probing_state_;
 
@@ -112,9 +124,6 @@ class BitrateProber {
 
   // Time the next probe should be sent when in kActive state.
   Timestamp next_probe_time_;
-
-  int total_probe_count_;
-  int total_failed_probe_count_;
 
   BitrateProberConfig config_;
 };

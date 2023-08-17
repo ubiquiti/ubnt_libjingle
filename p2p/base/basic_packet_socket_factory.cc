@@ -36,7 +36,9 @@ BasicPacketSocketFactory::~BasicPacketSocketFactory() {}
 
 AsyncPacketSocket* BasicPacketSocketFactory::CreateUdpSocket(
     const SocketAddress& address,
+// UI Customization Begin
     int interfaceIndex,
+// UI Customization End
     uint16_t min_port,
     uint16_t max_port) {
   // UDP sockets are simple.
@@ -44,7 +46,9 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateUdpSocket(
   if (!socket) {
     return NULL;
   }
+// UI Customization Begin
   if (BindSocket(socket, address, interfaceIndex, min_port, max_port) < 0) {
+// UI Customization End
     RTC_LOG(LS_ERROR) << "UDP bind failed with error " << socket->GetError();
     delete socket;
     return NULL;
@@ -72,8 +76,9 @@ AsyncListenSocket* BasicPacketSocketFactory::CreateServerTcpSocket(
   if (!socket) {
     return NULL;
   }
-
+// UI Customization Begin
   if (BindSocket(socket, local_address, -1, min_port, max_port) < 0) {
+// UI Customization End
     RTC_LOG(LS_ERROR) << "TCP bind failed with error " << socket->GetError();
     delete socket;
     return NULL;
@@ -95,8 +100,9 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateClientTcpSocket(
   if (!socket) {
     return NULL;
   }
-
+// UI Customization Begin
   if (BindSocket(socket, local_address, -1, 0, 0) < 0) {
+// UI Customization End
     // Allow BindSocket to fail if we're binding to the ANY address, since this
     // is mostly redundant in the first place. The socket will be bound when we
     // call Connect() instead.
@@ -193,17 +199,23 @@ BasicPacketSocketFactory::CreateAsyncDnsResolver() {
 
 int BasicPacketSocketFactory::BindSocket(Socket* socket,
                                          const SocketAddress& local_address,
+// UI Customization Begin
                                          int interfaceIndex,
+// UI Customization End
                                          uint16_t min_port,
                                          uint16_t max_port) {
   int ret = -1;
   if (min_port == 0 && max_port == 0) {
     // If there's no port range, let the OS pick a port for us.
+// UI Customization Begin
     ret = socket->Bind(local_address, interfaceIndex);
+// UI Customization End
   } else {
     // Otherwise, try to find a port in the provided range.
     for (int port = min_port; ret < 0 && port <= max_port; ++port) {
+// UI Customization Begin
       ret = socket->Bind(SocketAddress(local_address.ipaddr(), port), interfaceIndex);
+// UI Customization End
     }
   }
   return ret;

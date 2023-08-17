@@ -31,17 +31,15 @@
 #include "absl/base/attributes.h"
 #include "absl/functional/any_invocable.h"
 #include "api/function_view.h"
+#include "api/location.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/deprecated/recursive_critical_section.h"
-#include "rtc_base/location.h"
-#include "rtc_base/message_handler.h"
 #include "rtc_base/platform_thread_types.h"
 #include "rtc_base/socket_server.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/thread_annotations.h"
-#include "rtc_base/thread_message.h"
 
 #if defined(WEBRTC_WIN)
 #include "rtc_base/win32.h"
@@ -89,7 +87,6 @@ class RTC_EXPORT ThreadManager {
 
   static void Add(Thread* message_queue);
   static void Remove(Thread* message_queue);
-  static void Clear(MessageHandler* handler);
 
   // For testing purposes, for use with a simulated clock.
   // Ensures that all message queues have processed delayed messages
@@ -135,7 +132,6 @@ class RTC_EXPORT ThreadManager {
   void SetCurrentThreadInternal(Thread* thread);
   void AddInternal(Thread* message_queue);
   void RemoveInternal(Thread* message_queue);
-  void ClearInternal(MessageHandler* handler);
   void ProcessAllMessageQueuesInternal();
 #if RTC_DCHECK_IS_ON
   void RemoveFromSendGraph(Thread* thread) RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_);
@@ -144,11 +140,8 @@ class RTC_EXPORT ThreadManager {
   // This list contains all live Threads.
   std::vector<Thread*> message_queues_ RTC_GUARDED_BY(crit_);
 
-  // Methods that don't modify the list of message queues may be called in a
-  // re-entrant fashion. "processing_" keeps track of the depth of re-entrant
-  // calls.
-  RecursiveCriticalSection crit_;
-  size_t processing_ RTC_GUARDED_BY(crit_) = 0;
+  webrtc::Mutex crit_;
+
 #if RTC_DCHECK_IS_ON
   // Represents all thread seand actions by storing all send targets per thread.
   // This is used by RegisterSendAndCheckForCycles. This graph has no cycles
@@ -269,32 +262,12 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // Processed.  Normally, this would be true until IsQuitting() is true.
   virtual bool IsProcessingMessagesForTesting();
 
-  // `time_sensitive` is deprecated and should always be false.
-  virtual void Post(const Location& posted_from,
-                    MessageHandler* phandler,
-                    uint32_t id = 0,
-                    MessageData* pdata = nullptr,
-                    bool time_sensitive = false);
-  virtual void PostDelayed(const Location& posted_from,
-                           int delay_ms,
-                           MessageHandler* phandler,
-                           uint32_t id = 0,
-                           MessageData* pdata = nullptr);
-  virtual void PostAt(const Location& posted_from,
-                      int64_t run_at_ms,
-                      MessageHandler* phandler,
-                      uint32_t id = 0,
-                      MessageData* pdata = nullptr);
-  virtual void Clear(MessageHandler* phandler,
-                     uint32_t id = MQID_ANY,
-                     MessageList* removed = nullptr);
-
   // Amount of time until the next message can be retrieved
   virtual int GetDelay();
 
   bool empty() const { return size() == 0u; }
   size_t size() const {
-    CritScope cs(&crit_);
+    webrtc::MutexLock lock(&mutex_);
     return messages_.size() + delayed_messages_.size();
   }
 
@@ -336,22 +309,21 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // See ScopedDisallowBlockingCalls for details.
   // NOTE: Blocking calls are DISCOURAGED, consider if what you're doing can
   // be achieved with PostTask() and callbacks instead.
-  virtual void BlockingCall(FunctionView<void()> functor);
+  void BlockingCall(
+      FunctionView<void()> functor,
+      const webrtc::Location& location = webrtc::Location::Current()) {
+    BlockingCallImpl(std::move(functor), location);
+  }
 
   template <typename Functor,
             typename ReturnT = std::invoke_result_t<Functor>,
             typename = typename std::enable_if_t<!std::is_void_v<ReturnT>>>
-  ReturnT BlockingCall(Functor&& functor) {
+  ReturnT BlockingCall(
+      Functor&& functor,
+      const webrtc::Location& location = webrtc::Location::Current()) {
     ReturnT result;
-    BlockingCall([&] { result = std::forward<Functor>(functor)(); });
+    BlockingCall([&] { result = std::forward<Functor>(functor)(); }, location);
     return result;
-  }
-
-  // Deprecated, use `BlockingCall` instead.
-  template <typename ReturnT>
-  [[deprecated]] ReturnT Invoke(const Location& /*posted_from*/,
-                                FunctionView<ReturnT()> functor) {
-    return BlockingCall(functor);
   }
 
   // Allows BlockingCall to specified `thread`. Thread never will be
@@ -371,11 +343,6 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 
   // From TaskQueueBase
   void Delete() override;
-  void PostTask(absl::AnyInvocable<void() &&> task) override;
-  void PostDelayedTask(absl::AnyInvocable<void() &&> task,
-                       webrtc::TimeDelta delay) override;
-  void PostDelayedHighPrecisionTask(absl::AnyInvocable<void() &&> task,
-                                    webrtc::TimeDelta delay) override;
 
   // ProcessMessages will process I/O and dispatch messages until:
   //  1) cms milliseconds have elapsed (returns true)
@@ -429,57 +396,43 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 
   // DelayedMessage goes into a priority queue, sorted by trigger time. Messages
   // with the same trigger time are processed in num_ (FIFO) order.
-  class DelayedMessage {
-   public:
-    DelayedMessage(int64_t delay,
-                   int64_t run_time_ms,
-                   uint32_t num,
-                   const Message& msg)
-        : delay_ms_(delay),
-          run_time_ms_(run_time_ms),
-          message_number_(num),
-          msg_(msg) {}
-
+  struct DelayedMessage {
     bool operator<(const DelayedMessage& dmsg) const {
-      return (dmsg.run_time_ms_ < run_time_ms_) ||
-             ((dmsg.run_time_ms_ == run_time_ms_) &&
-              (dmsg.message_number_ < message_number_));
+      return (dmsg.run_time_ms < run_time_ms) ||
+             ((dmsg.run_time_ms == run_time_ms) &&
+              (dmsg.message_number < message_number));
     }
 
-    int64_t delay_ms_;  // for debugging
-    int64_t run_time_ms_;
+    int64_t delay_ms;  // for debugging
+    int64_t run_time_ms;
     // Monotonicaly incrementing number used for ordering of messages
     // targeted to execute at the same time.
-    uint32_t message_number_;
-    Message msg_;
+    uint32_t message_number;
+    // std::priority_queue doesn't allow to extract elements, but functor
+    // is move-only and thus need to be changed when pulled out of the
+    // priority queue. That is ok because `functor` doesn't affect operator<
+    mutable absl::AnyInvocable<void() &&> functor;
   };
 
-  class PriorityQueue : public std::priority_queue<DelayedMessage> {
-   public:
-    container_type& container() { return c; }
-    void reheap() { make_heap(c.begin(), c.end(), comp); }
-  };
+  // TaskQueueBase implementation.
+  void PostTaskImpl(absl::AnyInvocable<void() &&> task,
+                    const PostTaskTraits& traits,
+                    const webrtc::Location& location) override;
+  void PostDelayedTaskImpl(absl::AnyInvocable<void() &&> task,
+                           webrtc::TimeDelta delay,
+                           const PostDelayedTaskTraits& traits,
+                           const webrtc::Location& location) override;
 
-  void DoDelayPost(const Location& posted_from,
-                   int64_t cmsDelay,
-                   int64_t tstamp,
-                   MessageHandler* phandler,
-                   uint32_t id,
-                   MessageData* pdata);
+  virtual void BlockingCallImpl(FunctionView<void()> functor,
+                                const webrtc::Location& location);
 
   // Perform initialization, subclasses must call this from their constructor
   // if false was passed as init_queue to the Thread constructor.
   void DoInit();
 
-  // Does not take any lock. Must be called either while holding crit_, or by
-  // the destructor (by definition, the latter has exclusive access).
-  void ClearInternal(MessageHandler* phandler,
-                     uint32_t id,
-                     MessageList* removed) RTC_EXCLUSIVE_LOCKS_REQUIRED(&crit_);
-
   // Perform cleanup; subclasses must call this from the destructor,
   // and are not expected to actually hold the lock.
-  void DoDestroy() RTC_EXCLUSIVE_LOCKS_REQUIRED(&crit_);
+  void DoDestroy() RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   void WakeUpSocketServer();
 
@@ -499,13 +452,11 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   static const int kSlowDispatchLoggingThreshold = 50;  // 50 ms
 
   // Get() will process I/O until:
-  //  1) A message is available (returns true)
-  //  2) cmsWait seconds have elapsed (returns false)
-  //  3) Stop() is called (returns false)
-  virtual bool Get(Message* pmsg,
-                   int cmsWait = kForever,
-                   bool process_io = true);
-  virtual void Dispatch(Message* pmsg);
+  //  1) A task is available (returns it)
+  //  2) cmsWait seconds have elapsed (returns empty task)
+  //  3) Stop() is called (returns empty task)
+  absl::AnyInvocable<void() &&> Get(int cmsWait);
+  void Dispatch(absl::AnyInvocable<void() &&> task);
 
   // Sets the per-thread allow-blocking-calls flag and returns the previous
   // value. Must be called on this thread.
@@ -534,16 +485,16 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   // Called by the ThreadManager when being unset as the current thread.
   void ClearCurrentTaskQueue();
 
-  MessageList messages_ RTC_GUARDED_BY(crit_);
-  PriorityQueue delayed_messages_ RTC_GUARDED_BY(crit_);
-  uint32_t delayed_next_num_ RTC_GUARDED_BY(crit_);
+  std::queue<absl::AnyInvocable<void() &&>> messages_ RTC_GUARDED_BY(mutex_);
+  std::priority_queue<DelayedMessage> delayed_messages_ RTC_GUARDED_BY(mutex_);
+  uint32_t delayed_next_num_ RTC_GUARDED_BY(mutex_);
 #if RTC_DCHECK_IS_ON
   uint32_t blocking_call_count_ RTC_GUARDED_BY(this) = 0;
   uint32_t could_be_blocking_call_count_ RTC_GUARDED_BY(this) = 0;
   std::vector<Thread*> allowed_threads_ RTC_GUARDED_BY(this);
   bool invoke_policy_enabled_ RTC_GUARDED_BY(this) = false;
 #endif
-  RecursiveCriticalSection crit_;
+  mutable webrtc::Mutex mutex_;
   bool fInitialized_;
   bool fDestroyed_;
 

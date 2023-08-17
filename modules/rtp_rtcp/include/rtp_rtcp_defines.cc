@@ -17,6 +17,7 @@
 #include "absl/algorithm/container.h"
 #include "api/array_view.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 
 namespace webrtc {
 
@@ -44,7 +45,7 @@ bool IsLegalRsidName(absl::string_view name) {
           absl::c_all_of(name, isalnum));
 }
 
-StreamDataCounters::StreamDataCounters() : first_packet_time_ms(-1) {}
+StreamDataCounters::StreamDataCounters() = default;
 
 RtpPacketCounter::RtpPacketCounter(const RtpPacket& packet)
     : header_bytes(packet.headers_size()),
@@ -52,11 +53,23 @@ RtpPacketCounter::RtpPacketCounter(const RtpPacket& packet)
       padding_bytes(packet.padding_size()),
       packets(1) {}
 
+RtpPacketCounter::RtpPacketCounter(const RtpPacketToSend& packet_to_send)
+    : RtpPacketCounter(static_cast<const RtpPacket&>(packet_to_send)) {
+  total_packet_delay =
+      packet_to_send.time_in_send_queue().value_or(TimeDelta::Zero());
+}
+
 void RtpPacketCounter::AddPacket(const RtpPacket& packet) {
   ++packets;
   header_bytes += packet.headers_size();
   padding_bytes += packet.padding_size();
   payload_bytes += packet.payload_size();
+}
+
+void RtpPacketCounter::AddPacket(const RtpPacketToSend& packet_to_send) {
+  AddPacket(static_cast<const RtpPacket&>(packet_to_send));
+  total_packet_delay +=
+      packet_to_send.time_in_send_queue().value_or(TimeDelta::Zero());
 }
 
 }  // namespace webrtc

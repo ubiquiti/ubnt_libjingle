@@ -14,6 +14,7 @@
 
 #include "absl/types/optional.h"
 #include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
@@ -34,7 +35,8 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
   MutexLock lock(&lock_);
   int64_t now_ms = clock_->TimeInMilliseconds();
   absl::optional<uint32_t> current_rate = current_rate_.Rate(now_ms);
-  if (current_rate) {
+  if (!webrtc::field_trial::IsEnabled("WebRTC-DisableRtxRateLimiter") &&
+      current_rate) {
     // If there is a current rate, check if adding bytes would cause maximum
     // bitrate target to be exceeded. If there is NOT a valid current rate,
     // allow allocating rate even if target is exceeded. This prevents
@@ -45,14 +47,18 @@ bool RateLimiter::TryUseRate(size_t packet_size_bytes) {
     size_t bitrate_addition_bps =
         (packet_size_bytes * 8 * 1000) / window_size_ms_;
     if (*current_rate + bitrate_addition_bps > max_rate_bps_) {
+// UI Customization Begin
+      /*
       RTC_LOG(LS_WARNING) << " Adding bytes cause maximum bitrate target to be exceeded."
                           << " max_rate_bps_=" << max_rate_bps_
                           << " bitrate_addition_bps=" << bitrate_addition_bps
                           << " current_rate=" << *current_rate
                           << " window_size_ms_=" << window_size_ms_;
-#ifndef UI_CUSTOMIZATION
+      */
+// #ifndef UI_CUSTOMIZATION
       return false;
-#endif
+// #endif
+// UI Customization End
     }
   }
 

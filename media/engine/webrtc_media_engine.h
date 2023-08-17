@@ -12,18 +12,19 @@
 #define MEDIA_ENGINE_WEBRTC_MEDIA_ENGINE_H_
 
 #include <memory>
-#include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
+#include "api/array_view.h"
 #include "api/audio/audio_frame_processor.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/field_trials_view.h"
 #include "api/rtp_parameters.h"
+#include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/transport/bitrate_settings.h"
-#include "api/transport/field_trial_based_config.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "media/base/codec.h"
@@ -48,7 +49,10 @@ struct MediaEngineDependencies {
   rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory;
   rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer;
   rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing;
+  // TODO(bugs.webrtc.org/15111):
+  //   Remove the raw AudioFrameProcessor pointer in the follow-up.
   webrtc::AudioFrameProcessor* audio_frame_processor = nullptr;
+  std::unique_ptr<webrtc::AudioFrameProcessor> owned_audio_frame_processor;
 
   std::unique_ptr<webrtc::VideoEncoderFactory> video_encoder_factory;
   std::unique_ptr<webrtc::VideoDecoderFactory> video_decoder_factory;

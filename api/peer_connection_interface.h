@@ -94,6 +94,7 @@
 #include "api/field_trials_view.h"
 #include "api/ice_transport_interface.h"
 #include "api/jsep.h"
+#include "api/legacy_stats_types.h"
 #include "api/media_stream_interface.h"
 #include "api/media_types.h"
 #include "api/metronome/metronome.h"
@@ -112,7 +113,6 @@
 #include "api/set_local_description_observer_interface.h"
 #include "api/set_remote_description_observer_interface.h"
 #include "api/stats/rtc_stats_collector_callback.h"
-#include "api/stats_types.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/transport/bitrate_settings.h"
 #include "api/transport/enums.h"
@@ -384,6 +384,14 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
           video_rtcp_report_interval_ms;
     }
 
+    // UI-CUSTOMIZATION
+    bool periodic_alr_bandwidth_probing() const {
+      return media_config.video.periodic_alr_bandwidth_probing;
+    }
+    void set_periodic_alr_bandwidth_probing(bool enable) {
+      media_config.video.periodic_alr_bandwidth_probing = enable;
+    }
+
     // Settings for the port allcoator. Applied only if the port allocator is
     // created by PeerConnectionFactory, not if it is injected with
     // PeerConnectionDependencies
@@ -426,11 +434,6 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
     // default will be used.
     //////////////////////////////////////////////////////////////////////////
 
-    // If set to true, don't gather IPv6 ICE candidates.
-    // TODO(https://crbug.com/1315576): Remove the ability to set it in Chromium
-    // and delete this flag.
-    bool disable_ipv6 = false;
-
     // If set to true, don't gather IPv6 ICE candidates on Wi-Fi.
     // Only intended to be used on specific devices. Certain phones disable IPv6
     // when the screen is turned off and it would be better to just disable the
@@ -452,9 +455,6 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
     // This means adding padding bits up to this bitrate, which can help
     // when switching from a static scene to one with motion.
     absl::optional<int> screencast_min_bitrate;
-
-    // Use new combined audio/video bandwidth estimation?
-    absl::optional<bool> combined_audio_video_bwe;
 
 #if defined(WEBRTC_FUCHSIA)
     // TODO(bugs.webrtc.org/11066): Remove entirely once Fuchsia does not use.
@@ -693,6 +693,9 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
 
     PortAllocatorConfig port_allocator_config;
 
+    // The burst interval of the pacer, see TaskQueuePacedSender constructor.
+    absl::optional<TimeDelta> pacer_burst_interval;
+
     //
     // Don't forget to update operator== if adding something.
     //
@@ -803,6 +806,16 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
   virtual RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids) = 0;
+
+  // Add a new MediaStreamTrack as above, but with an additional parameter,
+  // `init_send_encodings` : initial RtpEncodingParameters for RtpSender,
+  // similar to init_send_encodings in RtpTransceiverInit.
+  // Note that a new transceiver will always be created.
+  //
+  virtual RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_ids,
+      const std::vector<RtpEncodingParameters>& init_send_encodings) = 0;
 
   // Removes the connection between a MediaStreamTrack and the PeerConnection.
   // Stops sending on the RtpSender and marks the
@@ -1478,10 +1491,10 @@ class RTC_EXPORT PeerConnectionFactoryInterface
     // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
     // loopback interfaces.
     int network_ignore_mask = rtc::kDefaultNetworkIgnoreMask;
-
+// UI Customization Begin
     // when not empty, it will only select the interfaces from it
     std::map<std::string, bool> activeInterfaces;
-
+// UI Customization End
     // Sets the maximum supported protocol version. The highest version
     // supported by both ends will be used for the connection, i.e. if one
     // party supports DTLS 1.0 and the other DTLS 1.2, DTLS 1.0 will be used.
@@ -1548,8 +1561,15 @@ class RTC_EXPORT PeerConnectionFactoryInterface
   // Creates a new local VideoTrack. The same `source` can be used in several
   // tracks.
   virtual rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(
+      rtc::scoped_refptr<VideoTrackSourceInterface> source,
+      absl::string_view label) = 0;
+  ABSL_DEPRECATED("Use version with scoped_refptr")
+  virtual rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(
       const std::string& label,
-      VideoTrackSourceInterface* source) = 0;
+      VideoTrackSourceInterface* source) {
+    return CreateVideoTrack(
+        rtc::scoped_refptr<VideoTrackSourceInterface>(source), label);
+  }
 
   // Creates an new AudioTrack. At the moment `source` can be null.
   virtual rtc::scoped_refptr<AudioTrackInterface> CreateAudioTrack(

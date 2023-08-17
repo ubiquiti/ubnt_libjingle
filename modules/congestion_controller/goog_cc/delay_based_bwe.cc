@@ -59,7 +59,8 @@ DelayBasedBwe::Result::Result()
     : updated(false),
       probe(false),
       target_bitrate(DataRate::Zero()),
-      recovered_from_overuse(false) {}
+      recovered_from_overuse(false),
+      delay_detector_state(BandwidthUsage::kBwNormal) {}
 
 DelayBasedBwe::DelayBasedBwe(const FieldTrialsView* key_value_config,
                              RtcEventLog* event_log,
@@ -77,7 +78,7 @@ DelayBasedBwe::DelayBasedBwe(const FieldTrialsView* key_value_config,
       active_delay_detector_(video_delay_detector_.get()),
       last_seen_packet_(Timestamp::MinusInfinity()),
       uma_recorded_(false),
-      rate_control_(key_value_config, /*send_side=*/true),
+      rate_control_(*key_value_config, /*send_side=*/true),
       prev_bitrate_(DataRate::Zero()),
       prev_state_(BandwidthUsage::kBwNormal) {
   RTC_LOG(LS_INFO)
@@ -116,9 +117,21 @@ DelayBasedBwe::Result DelayBasedBwe::IncomingPacketFeedbackVector(
   for (const auto& packet_feedback : packet_feedback_vector) {
     delayed_feedback = false;
     IncomingPacketFeedback(packet_feedback, msg.feedback_time);
+#ifdef UI_BITRATE_RECOVERY
+    // Just observe sometimes the estimated bitrate will start dropping rapidly when 
+    // the state changes from normal to overuse (0->2), then make a big drop until 
+    // it back to normal, however, the bitrate is becoming too low and becase of no 
+    // probing request, it won't be recovered.
+    if ((prev_detector_state == BandwidthUsage::kBwUnderusing || prev_detector_state == BandwidthUsage::kBwOverusing) &&
+#else
     if (prev_detector_state == BandwidthUsage::kBwUnderusing &&
+#endif
         active_delay_detector_->State() == BandwidthUsage::kBwNormal) {
       recovered_from_overuse = true;
+#ifdef UI_BITRATE_RECOVERY
+      RTC_LOG(LS_INFO) << "Recovered from overuse. BandwidthUsage state change:(" 
+                       << prev_detector_state << "->" << active_delay_detector_->State() << ")";
+#endif
     }
     prev_detector_state = active_delay_detector_->State();
   }
@@ -197,7 +210,7 @@ void DelayBasedBwe::IncomingPacketFeedback(const PacketResult& packet_feedback,
 DataRate DelayBasedBwe::TriggerOveruse(Timestamp at_time,
                                        absl::optional<DataRate> link_capacity) {
   RateControlInput input(BandwidthUsage::kBwOverusing, link_capacity);
-  return rate_control_.Update(&input, at_time);
+  return rate_control_.Update(input, at_time);
 }
 
 DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
@@ -215,6 +228,10 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
         rate_control_.TimeToReduceFurther(at_time, *acked_bitrate)) {
       result.updated =
           UpdateEstimate(at_time, acked_bitrate, &result.target_bitrate);
+#ifdef UI_BITRATE_RECOVERY
+      RTC_LOG(LS_INFO) << "MaybeUpdateEstimate: Bandwidth overusing,"
+                       << " target_bitrate=" << result.target_bitrate.bps();
+#endif
     } else if (!acked_bitrate && rate_control_.ValidEstimate() &&
                rate_control_.InitialTimeToReduceFurther(at_time)) {
       // Overusing before we have a measured acknowledged bitrate. Reduce send
@@ -225,6 +242,10 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
       result.updated = true;
       result.probe = false;
       result.target_bitrate = rate_control_.LatestEstimate();
+#ifdef UI_BITRATE_RECOVERY
+      RTC_LOG(LS_INFO) << "MaybeUpdateEstimate: Bandwidth overusing before we have a measured acknowledged bitrate,"
+                       << " target_bitrate=" << result.target_bitrate.bps();
+#endif
     }
   } else {
     if (probe_bitrate) {
@@ -262,7 +283,7 @@ bool DelayBasedBwe::UpdateEstimate(Timestamp at_time,
                                    absl::optional<DataRate> acked_bitrate,
                                    DataRate* target_rate) {
   const RateControlInput input(active_delay_detector_->State(), acked_bitrate);
-  *target_rate = rate_control_.Update(&input, at_time);
+  *target_rate = rate_control_.Update(input, at_time);
   return rate_control_.ValidEstimate();
 }
 

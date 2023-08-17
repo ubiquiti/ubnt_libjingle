@@ -154,21 +154,6 @@ std::string NetworksToString(const std::vector<const rtc::Network*>& networks) {
   return ost.Release();
 }
 
-bool IsDiversifyIpv6InterfacesEnabled(
-    const webrtc::FieldTrialsView* field_trials) {
-  // webrtc:14334: Improve IPv6 network resolution and candidate creation
-  if (field_trials &&
-      field_trials->IsEnabled("WebRTC-IPv6NetworkResolutionFixes")) {
-    webrtc::FieldTrialParameter<bool> diversify_ipv6_interfaces(
-        "DiversifyIpv6Interfaces", false);
-    webrtc::ParseFieldTrial(
-        {&diversify_ipv6_interfaces},
-        field_trials->Lookup("WebRTC-IPv6NetworkResolutionFixes"));
-    return diversify_ipv6_interfaces;
-  }
-  return false;
-}
-
 }  // namespace
 
 const uint32_t DISABLE_ALL_PHASES =
@@ -283,7 +268,7 @@ int BasicPortAllocator::GetNetworkIgnoreMask() const {
   }
   return mask;
 }
-
+// UI Customization Begin
 void BasicPortAllocator::SetActiveInterfaces(const std::map<std::string, bool> &activeInterfaces) {
   // TODO(phoglund): implement support for other types than loopback.
   // See https://code.google.com/p/webrtc/issues/detail?id=4288.
@@ -291,7 +276,7 @@ void BasicPortAllocator::SetActiveInterfaces(const std::map<std::string, bool> &
   CheckRunOnValidThreadIfInitialized();
   activeInterfaces_ = activeInterfaces;
 }
-
+// UI Customization End
 PortAllocatorSession* BasicPortAllocator::CreateSessionInternal(
     absl::string_view content_name,
     int component,
@@ -306,7 +291,8 @@ PortAllocatorSession* BasicPortAllocator::CreateSessionInternal(
   return session;
 }
 
-void BasicPortAllocator::AddTurnServer(const RelayServerConfig& turn_server) {
+void BasicPortAllocator::AddTurnServerForTesting(
+    const RelayServerConfig& turn_server) {
   CheckRunOnValidThreadAndInitialized();
   std::vector<RelayServerConfig> new_turn_servers = turn_servers();
   new_turn_servers.push_back(turn_server);
@@ -775,6 +761,10 @@ std::vector<const rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
       networks.insert(networks.end(), any_address_networks.begin(),
                       any_address_networks.end());
     }
+    RTC_LOG(LS_INFO) << "Count of networks: " << networks.size();
+    for (const rtc::Network* network : networks) {
+      RTC_LOG(LS_INFO) << network->ToString();
+    }
   }
   // Filter out link-local networks if needed.
   if (flags() & PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS) {
@@ -816,42 +806,21 @@ std::vector<const rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
   }
 
   // Lastly, if we have a limit for the number of IPv6 network interfaces (by
-  // default, it's 5), remove networks to ensure that limit is satisfied.
-  //
-  // TODO(deadbeef): Instead of just taking the first N arbitrary IPv6
-  // networks, we could try to choose a set that's "most likely to work". It's
-  // hard to define what that means though; it's not just "lowest cost".
-  // Alternatively, we could just focus on making our ICE pinging logic smarter
-  // such that this filtering isn't necessary in the first place.
-  const webrtc::FieldTrialsView* field_trials = allocator_->field_trials();
-  if (IsDiversifyIpv6InterfacesEnabled(field_trials)) {
-    std::vector<const rtc::Network*> ipv6_networks;
-    for (auto it = networks.begin(); it != networks.end();) {
-      if ((*it)->prefix().family() == AF_INET6) {
-        ipv6_networks.push_back(*it);
-        it = networks.erase(it);
-        continue;
-      }
-      ++it;
+  // default, it's 5), pick IPv6 networks from different interfaces in a
+  // priority order and stick to the limit.
+  std::vector<const rtc::Network*> ipv6_networks;
+  for (auto it = networks.begin(); it != networks.end();) {
+    if ((*it)->prefix().family() == AF_INET6) {
+      ipv6_networks.push_back(*it);
+      it = networks.erase(it);
+      continue;
     }
-    ipv6_networks =
-        SelectIPv6Networks(ipv6_networks, allocator_->max_ipv6_networks());
-    networks.insert(networks.end(), ipv6_networks.begin(), ipv6_networks.end());
-  } else {
-    int ipv6_networks = 0;
-    for (auto it = networks.begin(); it != networks.end();) {
-      if ((*it)->prefix().family() == AF_INET6) {
-        if (ipv6_networks >= allocator_->max_ipv6_networks()) {
-          it = networks.erase(it);
-          continue;
-        } else {
-          ++ipv6_networks;
-        }
-      }
-      ++it;
-    }
+    ++it;
   }
-
+  ipv6_networks =
+      SelectIPv6Networks(ipv6_networks, allocator_->max_ipv6_networks());
+  networks.insert(networks.end(), ipv6_networks.begin(), ipv6_networks.end());
+// UI Customization Begin
   //if we don't have the network in the list of active interfaces, remove it
   const std::map<std::string, bool> &active=allocator_->GetActiveInterfaces();
   if(active.size()!=0){
@@ -876,7 +845,7 @@ std::vector<const rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
       fprintf(stderr,"%s\n",network->name().c_str());
     }
   }
-  
+// UI Customization End
   return networks;
 }
 
@@ -1403,7 +1372,9 @@ AllocationSequence::AllocationSequence(
 void AllocationSequence::Init() {
   if (IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET)) {
     udp_socket_.reset(session_->socket_factory()->CreateUdpSocket(
+// UI Customization Begin
         rtc::SocketAddress(network_->GetBestIP(), 0), network_->index(),
+// UI Customization End
         session_->allocator()->min_port(), session_->allocator()->max_port()));
     if (udp_socket_) {
       udp_socket_->SignalReadPacket.connect(this,
@@ -1681,12 +1652,17 @@ void AllocationSequence::CreateRelayPorts() {
     return;
   }
 
+  // Relative priority of candidates from this TURN server in relation
+  // to the candidates from other servers. Required because ICE priorities
+  // need to be unique.
+  int relative_priority = config_->relays.size();
   for (RelayServerConfig& relay : config_->relays) {
-    CreateTurnPort(relay);
+    CreateTurnPort(relay, relative_priority--);
   }
 }
 
-void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
+void AllocationSequence::CreateTurnPort(const RelayServerConfig& config,
+                                        int relative_priority) {
   PortList::const_iterator relay_port;
   for (relay_port = config.ports.begin(); relay_port != config.ports.end();
        ++relay_port) {
@@ -1719,6 +1695,7 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
     args.config = &config;
     args.turn_customizer = session_->allocator()->turn_customizer();
     args.field_trials = session_->allocator()->field_trials();
+    args.relative_priority = relative_priority;
 
     std::unique_ptr<cricket::Port> port;
     // Shared socket mode must be enabled only for UDP based ports. Hence

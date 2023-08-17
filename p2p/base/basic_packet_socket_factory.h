@@ -23,18 +23,21 @@
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_factory.h"
+#include "rtc_base/system/rtc_export.h"
 
 namespace rtc {
 
 class SocketFactory;
 
-class BasicPacketSocketFactory : public PacketSocketFactory {
+class RTC_EXPORT BasicPacketSocketFactory : public PacketSocketFactory {
  public:
   explicit BasicPacketSocketFactory(SocketFactory* socket_factory);
   ~BasicPacketSocketFactory() override;
 
   AsyncPacketSocket* CreateUdpSocket(const SocketAddress& local_address,
+// UI Customization Begin
                                      int interfaceIndex,
+// UI Customization End
                                      uint16_t min_port,
                                      uint16_t max_port) override;
   AsyncListenSocket* CreateServerTcpSocket(const SocketAddress& local_address,
@@ -58,7 +61,9 @@ class BasicPacketSocketFactory : public PacketSocketFactory {
  private:
   int BindSocket(Socket* socket,
                  const SocketAddress& local_address,
+// UI Customization Begin
                  int interfaceIndex,
+// UI Customization End
                  uint16_t min_port,
                  uint16_t max_port);
 

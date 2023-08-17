@@ -7,8 +7,9 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+// UI Customization Begin
 #import "TargetConditionals.h"
+// UI Customization End
 #import "RTCAudioSessionConfiguration.h"
 #import "RTCAudioSession.h"
 
@@ -31,10 +32,6 @@ const int kRTCAudioSessionPreferredNumberOfChannels = 1;
 // 8000Hz as native sample rate.
 const double kRTCAudioSessionHighPerformanceSampleRate = 48000.0;
 
-// A lower sample rate will be used for devices with only one core
-// (e.g. iPhone 4). The goal is to reduce the CPU load of the application.
-const double kRTCAudioSessionLowComplexitySampleRate = 16000.0;
-
 // Use a hardware I/O buffer size (unit is in seconds) that matches the 10ms
 // size used by WebRTC. The exact actual size will differ between devices.
 // Example: using 48kHz on iPhone 6 results in a native buffer size of
@@ -44,13 +41,6 @@ const double kRTCAudioSessionLowComplexitySampleRate = 16000.0;
 // size is as an even multiple of 10ms as possible since it results in "clean"
 // callback sequence without bursts of callbacks back to back.
 const double kRTCAudioSessionHighPerformanceIOBufferDuration = 0.02;
-
-// Use a larger buffer size on devices with only one core (e.g. iPhone 4).
-// It will result in a lower CPU consumption at the cost of a larger latency.
-// The size of 60ms is based on instrumentation that shows a significant
-// reduction in CPU load compared with 10ms on low-end devices.
-// TODO(henrika): monitor this size and determine if it should be modified.
-const double kRTCAudioSessionLowComplexityIOBufferDuration = 0.06;
 
 static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
 
@@ -71,27 +61,22 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // nonmixable, hence activating the session will interrupt any other
     // audio sessions which are also nonmixable.
     _category = AVAudioSessionCategoryPlayAndRecord;
+      
+    // UI Customization Begin
 #if !TARGET_OS_TV
+    // UI Customization End
     _categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth;
+    // UI Customization Begin
 #endif /* !TARGET_OS_TV */
+    // UI Customization End
 
     // Specify mode for two-way voice communication (e.g. VoIP).
     _mode = AVAudioSessionModeVoiceChat;
 
-    // Set the session's sample rate or the hardware sample rate.
-    // It is essential that we use the same sample rate as stream format
-    // to ensure that the I/O unit does not have to do sample rate conversion.
-    // Set the preferred audio I/O buffer duration, in seconds.
-    NSUInteger processorCount = [NSProcessInfo processInfo].processorCount;
     // Use best sample rate and buffer duration if the CPU has more than one
     // core.
-    if (processorCount > 1 && [UIDevice deviceType] != RTCDeviceTypeIPhone4S) {
-      _sampleRate = kRTCAudioSessionHighPerformanceSampleRate;
-      _ioBufferDuration = kRTCAudioSessionHighPerformanceIOBufferDuration;
-    } else {
-      _sampleRate = kRTCAudioSessionLowComplexitySampleRate;
-      _ioBufferDuration = kRTCAudioSessionLowComplexityIOBufferDuration;
-    }
+    _sampleRate = kRTCAudioSessionHighPerformanceSampleRate;
+    _ioBufferDuration = kRTCAudioSessionHighPerformanceIOBufferDuration;
 
     // We try to use mono in both directions to save resources and format
     // conversions in the audio unit. Some devices does only support stereo;
@@ -99,6 +84,10 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // TODO(henrika): add support for stereo if needed.
     _inputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
     _outputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
+    // UI Customization Begin
+    _isMicrophoneEnabled = false;
+    _isMicrophoneMuted = true;
+    // UI Customization End
   }
   return self;
 }

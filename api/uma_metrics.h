@@ -85,14 +85,6 @@ enum IceCandidatePairType {
 
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
-enum KeyExchangeProtocolType {
-  kEnumCounterKeyProtocolDtls = 0,
-  kEnumCounterKeyProtocolSdes = 1,
-  kEnumCounterKeyProtocolMax
-};
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
 enum KeyExchangeProtocolMedia {
   kEnumCounterKeyProtocolMediaTypeDtlsAudio = 0,
   kEnumCounterKeyProtocolMediaTypeDtlsVideo = 1,
@@ -181,6 +173,16 @@ enum ProvisionalAnswerUsage {
   kProvisionalAnswerLocal = 1,
   kProvisionalAnswerRemote = 2,
   kProvisionalAnswerMax
+};
+
+// Metrics for RTCRtpMuxPolicy. The only defined value is
+// https://w3c.github.io/webrtc-pc/#rtcrtcpmuxpolicy-enum
+// "require" but there is a legacy option "negotiate" which
+// was removed from the spec.
+enum RtcpMuxPolicyUsage {
+  kRtcpMuxPolicyUsageRequire = 0,
+  kRtcpMuxPolicyUsageNegotiate = 1,
+  kRtcpMuxPolicyUsageMax
 };
 
 // When adding new metrics please consider using the style described in

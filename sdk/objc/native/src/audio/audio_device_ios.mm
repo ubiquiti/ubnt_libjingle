@@ -7,8 +7,9 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+// UI Customization Begin
 #import "TargetConditionals.h"
+// UI Customization End
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
@@ -104,7 +105,10 @@ AudioDeviceIOS::AudioDeviceIOS(bool bypass_voice_processing)
       num_detected_playout_glitches_(0),
       last_playout_time_(0),
       num_playout_callbacks_(0),
-      last_output_volume_change_time_(0) {
+      last_output_volume_change_time_(0),
+// UI Customization Begin
+      is_microphone_muted_(true) {
+// UI Customization End
   LOGI() << "ctor" << ios::GetCurrentThreadDescription()
          << ",bypass_voice_processing=" << bypass_voice_processing_;
   io_thread_checker_.Detach();
@@ -139,10 +143,12 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
 #if !defined(NDEBUG)
   LogDeviceInfo();
 #endif
+// UI Customization Begin
 #if TARGET_OS_TV || TARGET_OS_MACCATALYST
   initialized_ = true;
   return InitStatus::OK;
 #else /* TARGET_OS_TV || TARGET_OS_MACCATALYST*/
+// UI Customization End
   // Store the preferred sample rate and preferred number of channels already
   // here. They have not been set and confirmed yet since configureForWebRTC
   // is not called until audio is about to start. However, it makes sense to
@@ -158,7 +164,9 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
   UpdateAudioDeviceBuffer();
   initialized_ = true;
   return InitStatus::OK;
+// UI Customization Begin
 #endif /* TARGET_OS_TV */
+// UI Customization End
 }
 
 int32_t AudioDeviceIOS::Terminate() {
@@ -234,7 +242,9 @@ int32_t AudioDeviceIOS::StartPlayout() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
+// UI Customization Begin
       RTCLogError(@"StartPlayout failed to start audio unit, reason %d", (int)result);
+// UI Customization End
       return -1;
     }
     RTC_LOG(LS_INFO) << "Voice-Processing I/O audio unit is now started";
@@ -290,7 +300,9 @@ int32_t AudioDeviceIOS::StartRecording() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
+// UI Customization Begin
       RTCLogError(@"StartRecording failed to start audio unit, reason %d", (int)result);
+// UI Customization End
       return -1;
     }
     RTC_LOG(LS_INFO) << "Voice-Processing I/O audio unit is now started";
@@ -365,7 +377,17 @@ void AudioDeviceIOS::OnChangedOutputVolume() {
   RTC_DCHECK(thread_);
   thread_->PostTask(SafeTask(safety_, [this] { HandleOutputVolumeChange(); }));
 }
+// UI Customization Begin
+void AudioDeviceIOS::OnMicrophoneEnabledChange(bool is_microphone_enabled) {
+  RTC_DCHECK(thread_);
+  thread_->PostTask(SafeTask(safety_, [this, is_microphone_enabled] { HandleMicrophoneEnabledChange(is_microphone_enabled); }));
+}
 
+void AudioDeviceIOS::OnMicrophoneMutedChange(bool is_microphone_muted) {
+  RTC_DCHECK(thread_);
+  thread_->PostTask(SafeTask(safety_, [this, is_microphone_muted] { HandleMicrophoneMutedChange(is_microphone_muted); }));
+}
+// UI Customization End
 OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
                                                const AudioTimeStamp* time_stamp,
                                                UInt32 bus_number,
@@ -373,6 +395,9 @@ OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags
                                                AudioBufferList* /* io_data */) {
   RTC_DCHECK_RUN_ON(&io_thread_checker_);
   OSStatus result = noErr;
+// UI Customization Begin
+  if (is_microphone_muted_) return result;
+// UI Customization End
   // Simply return if recording is not enabled.
   if (!recording_.load(std::memory_order_acquire)) return result;
 
@@ -597,9 +622,11 @@ void AudioDeviceIOS::HandleSampleRateChange() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
+// UI Customization Begin
       RTCLogError(@"Failed to start audio unit with sample rate: %d, reason %d",
                   playout_parameters_.sample_rate(),
                   (int)result);
+// UI Customization End
       return;
     }
   }
@@ -638,7 +665,31 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
   // glitches too close in time to this event.
   last_output_volume_change_time_ = rtc::TimeMillis();
 }
+// UI Customization Begin
+void AudioDeviceIOS::HandleMicrophoneEnabledChange(bool is_microphone_enabled) {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTCLog(@"Handling MicrophoneEnabled change to %d", is_microphone_enabled);
+  // Recording won't be initialized if playback has already been initialized, and vice versa. 
+  // So we must stop both recording and playback before enabling and disabling microphone.
+  if (is_microphone_enabled) {
+    StopPlayout();
+    InitRecording();
+    StartRecording();
+    StartPlayout();
+  } else {
+    StopRecording();
+    StopPlayout();
+    InitPlayout();
+    StartPlayout();
+  }
+}
 
+void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);
+  is_microphone_muted_ = is_microphone_muted;
+}
+// UI Customization End
 void AudioDeviceIOS::UpdateAudioDeviceBuffer() {
   LOGI() << "UpdateAudioDevicebuffer";
   // AttachAudioBuffer() is called at construction by the main class but check
@@ -784,7 +835,9 @@ void AudioDeviceIOS::UpdateAudioUnit(bool can_play_or_record) {
     OSStatus result = audio_unit_->Start();
     if (result != noErr) {
       [session notifyAudioUnitStartFailedWithError:result];
+// UI Customization Begin
       RTCLogError(@"Failed to start audio unit, reason %d", (int)result);
+// UI Customization End
       return;
     }
   }

@@ -125,13 +125,13 @@ class ReassemblyQueue {
   void AddHandoverState(DcSctpSocketHandoverState& state);
   void RestoreFromState(const DcSctpSocketHandoverState& state);
 
-  // UI customization - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+// UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
 #ifdef UI_CUSTOMIZATION
   ReconfigRequestSN lcr_request_sequence_number() const {
     return last_completed_reset_req_seq_nbr_;
   }
 #endif
-
+// UI Customization End
  private:
   bool IsConsistent() const;
   void AddReassembledMessage(rtc::ArrayView<const UnwrappedTSN> tsns,
@@ -145,7 +145,7 @@ class ReassemblyQueue {
     std::vector<std::pair<TSN, Data>> deferred_chunks;
   };
 
-  const std::string log_prefix_;
+  const absl::string_view log_prefix_;
   const size_t max_size_bytes_;
   const size_t watermark_bytes_;
   UnwrappedTSN::Unwrapper tsn_unwrapper_;

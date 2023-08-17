@@ -30,9 +30,9 @@ RTC_OBJC_EXPORT
 @property(nonatomic, assign) BOOL ignoreWiFiNetworkAdapter;
 
 @property(nonatomic, assign) BOOL ignoreEthernetNetworkAdapter;
-
+// UI Customization Begin
 @property (nonatomic, strong, nullable) NSArray *activeInterfaces;
-
+// UI Customization End
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
 
 @end

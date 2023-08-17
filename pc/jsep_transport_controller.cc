@@ -53,7 +53,7 @@ JsepTransportController::JsepTransportController(
             RTC_DCHECK_RUN_ON(network_thread_);
             UpdateAggregateStates_n();
           }),
-      config_(config),
+      config_(std::move(config)),
       active_reset_srtp_params_(config.active_reset_srtp_params),
       bundles_(config.bundle_policy) {
   // The `transport_observer` is assumed to be non-null.
@@ -399,8 +399,13 @@ JsepTransportController::CreateIceTransport(const std::string& transport_name,
   init.set_async_dns_resolver_factory(async_dns_resolver_factory_);
   init.set_event_log(config_.event_log);
   init.set_field_trials(config_.field_trials);
-  return config_.ice_transport_factory->CreateIceTransport(
+  auto transport = config_.ice_transport_factory->CreateIceTransport(
       transport_name, component, std::move(init));
+  RTC_DCHECK(transport);
+  transport->internal()->SetIceRole(ice_role_);
+  transport->internal()->SetIceTiebreaker(ice_tiebreaker_);
+  transport->internal()->SetIceConfig(ice_config_);
+  return transport;
 }
 
 std::unique_ptr<cricket::DtlsTransportInternal>
@@ -421,9 +426,8 @@ JsepTransportController::CreateDtlsTransport(
   }
 
   RTC_DCHECK(dtls);
-  dtls->ice_transport()->SetIceRole(ice_role_);
-  dtls->ice_transport()->SetIceTiebreaker(ice_tiebreaker_);
-  dtls->ice_transport()->SetIceConfig(ice_config_);
+  RTC_DCHECK_EQ(ice, dtls->ice_transport());
+
   if (certificate_) {
     bool set_cert_success = dtls->SetLocalCertificate(certificate_);
     RTC_DCHECK(set_cert_success);
@@ -809,7 +813,8 @@ RTCError JsepTransportController::ValidateAndMaybeUpdateBundleGroups(
 
   if (config_.bundle_policy ==
           PeerConnectionInterface::kBundlePolicyMaxBundle &&
-      !description->HasGroup(cricket::GROUP_TYPE_BUNDLE)) {
+      !description->HasGroup(cricket::GROUP_TYPE_BUNDLE) &&
+      description->contents().size() > 1) {
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "max-bundle is used but no bundle group found.");
   }
@@ -850,6 +855,7 @@ RTCError JsepTransportController::ValidateContent(
   if (config_.rtcp_mux_policy ==
           PeerConnectionInterface::kRtcpMuxPolicyRequire &&
       content_info.type == cricket::MediaProtocolType::kRtp &&
+      !content_info.bundle_only &&
       !content_info.media_description()->rtcp_mux()) {
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "The m= section with mid='" + content_info.name +
@@ -1035,7 +1041,6 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
 
   rtc::scoped_refptr<webrtc::IceTransportInterface> ice =
       CreateIceTransport(content_info.name, /*rtcp=*/false);
-  RTC_DCHECK(ice);
 
   std::unique_ptr<cricket::DtlsTransportInternal> rtp_dtls_transport =
       CreateDtlsTransport(content_info, ice->internal());
@@ -1087,6 +1092,8 @@ RTCError JsepTransportController::MaybeCreateJsepTransport(
 
   jsep_transport->rtp_transport()->SignalRtcpPacketReceived.connect(
       this, &JsepTransportController::OnRtcpPacketReceived_n);
+  jsep_transport->rtp_transport()->SignalUnDemuxableRtpPacketReceived.connect(
+      this, &JsepTransportController::OnUnDemuxableRtpPacketReceived_n);
 
   transports_.RegisterTransport(content_info.name, std::move(jsep_transport));
   UpdateAggregateStates_n();
@@ -1405,6 +1412,12 @@ void JsepTransportController::OnRtcpPacketReceived_n(
     int64_t packet_time_us) {
   RTC_DCHECK(config_.rtcp_handler);
   config_.rtcp_handler(*packet, packet_time_us);
+}
+
+void JsepTransportController::OnUnDemuxableRtpPacketReceived_n(
+    const webrtc::RtpPacketReceived& packet) {
+  RTC_DCHECK(config_.un_demuxable_packet_handler);
+  config_.un_demuxable_packet_handler(packet);
 }
 
 void JsepTransportController::OnDtlsHandshakeError(

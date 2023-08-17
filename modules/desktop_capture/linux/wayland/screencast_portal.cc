@@ -13,8 +13,8 @@
 #include <gio/gunixfdlist.h>
 #include <glib-object.h>
 
-#include "modules/desktop_capture/linux/wayland/scoped_glib.h"
-#include "modules/desktop_capture/linux/wayland/xdg_desktop_portal_utils.h"
+#include "modules/portal/scoped_glib.h"
+#include "modules/portal/xdg_desktop_portal_utils.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -24,14 +24,18 @@ namespace {
 using xdg_portal::kScreenCastInterfaceName;
 using xdg_portal::PrepareSignalHandle;
 using xdg_portal::RequestResponse;
+using xdg_portal::RequestResponseFromPortalResponse;
 using xdg_portal::RequestSessionProxy;
 using xdg_portal::SetupRequestResponseSignal;
 using xdg_portal::SetupSessionRequestHandlers;
 using xdg_portal::StartSessionRequest;
 using xdg_portal::TearDownSession;
-using xdg_portal::RequestResponseFromPortalResponse;
 
-ScreenCastPortal::CaptureSourceType ToCaptureSourceType(CaptureType type) {
+}  // namespace
+
+// static
+ScreenCastPortal::CaptureSourceType ScreenCastPortal::ToCaptureSourceType(
+    CaptureType type) {
   switch (type) {
     case CaptureType::kScreen:
       return ScreenCastPortal::CaptureSourceType::kScreen;
@@ -39,22 +43,6 @@ ScreenCastPortal::CaptureSourceType ToCaptureSourceType(CaptureType type) {
       return ScreenCastPortal::CaptureSourceType::kWindow;
   }
 }
-
-// TODO(https://crbug.com/1359411): Migrate downstream consumers off of
-// CaptureSourceType and delete this.
-CaptureType ToCaptureType(ScreenCastPortal::CaptureSourceType source_type) {
-  switch (source_type) {
-    case ScreenCastPortal::CaptureSourceType::kScreen:
-      return CaptureType::kScreen;
-    case ScreenCastPortal::CaptureSourceType::kWindow:
-      return CaptureType::kWindow;
-    default:
-      RTC_DCHECK_NOTREACHED();
-      return CaptureType::kScreen;
-  }
-}
-
-}  // namespace
 
 ScreenCastPortal::ScreenCastPortal(CaptureType type, PortalNotifier* notifier)
     : ScreenCastPortal(type,
@@ -68,25 +56,16 @@ ScreenCastPortal::ScreenCastPortal(
     PortalNotifier* notifier,
     ProxyRequestResponseHandler proxy_request_response_handler,
     SourcesRequestResponseSignalHandler sources_request_response_signal_handler,
-    gpointer user_data)
+    gpointer user_data,
+    bool prefer_cursor_embedded)
     : notifier_(notifier),
       capture_source_type_(ToCaptureSourceType(type)),
+      cursor_mode_(prefer_cursor_embedded ? CursorMode::kEmbedded
+                                          : CursorMode::kMetadata),
       proxy_request_response_handler_(proxy_request_response_handler),
       sources_request_response_signal_handler_(
           sources_request_response_signal_handler),
       user_data_(user_data) {}
-
-ScreenCastPortal::ScreenCastPortal(
-    CaptureSourceType source_type,
-    PortalNotifier* notifier,
-    ProxyRequestResponseHandler proxy_request_response_handler,
-    SourcesRequestResponseSignalHandler sources_request_response_signal_handler,
-    gpointer user_data)
-    : ScreenCastPortal(ToCaptureType(source_type),
-                       notifier,
-                       proxy_request_response_handler,
-                       sources_request_response_signal_handler,
-                       user_data) {}
 
 ScreenCastPortal::~ScreenCastPortal() {
   Stop();
@@ -101,9 +80,9 @@ void ScreenCastPortal::Stop() {
   proxy_ = nullptr;
   restore_token_ = "";
 
-  if (pw_fd_ != -1) {
+  if (pw_fd_ != kInvalidPipeWireFd) {
     close(pw_fd_);
-    pw_fd_ = -1;
+    pw_fd_ = kInvalidPipeWireFd;
   }
 }
 
@@ -389,7 +368,7 @@ void ScreenCastPortal::OnStartRequestResponseSignal(GDBusConnection* connection,
   }
 
   // Array of PipeWire streams. See
-  // https://github.com/flatpak/xdg-desktop-portal/blob/master/data/org.freedesktop.portal.ScreenCast.xml
+  // https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.ScreenCast.xml
   // documentation for <method name="Start">.
   if (g_variant_lookup(response_data.get(), "streams", "a(ua{sv})",
                        iter.receive())) {
@@ -477,7 +456,7 @@ void ScreenCastPortal::OnOpenPipeWireRemoteRequested(GDBusProxy* proxy,
 
   that->pw_fd_ = g_unix_fd_list_get(outlist.get(), index, error.receive());
 
-  if (that->pw_fd_ == -1) {
+  if (that->pw_fd_ == kInvalidPipeWireFd) {
     RTC_LOG(LS_ERROR) << "Failed to get file descriptor from the list: "
                       << error->message;
     that->OnPortalDone(RequestResponse::kError);

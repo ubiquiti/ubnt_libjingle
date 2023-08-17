@@ -69,7 +69,7 @@ def RunGnCheck(root_dir=None):
 def RunNinjaCommand(args, root_dir=None):
   """Runs ninja quietly. Any failure (e.g. clang not found) is
      silently discarded, since this is unlikely an error in submitted CL."""
-  command = [os.path.join(find_depot_tools.DEPOT_TOOLS_PATH, 'ninja')] + args
+  command = [os.path.join(SRC_DIR, 'third_party', 'ninja', 'ninja')] + args
   p = subprocess.Popen(command,
                        cwd=root_dir,
                        stdout=subprocess.PIPE,
@@ -80,7 +80,7 @@ def RunNinjaCommand(args, root_dir=None):
 
 def GetClangTidyPath():
   """POC/WIP! Use the one we have, even it doesn't match clang's version."""
-  tidy = ('third_party/android_ndk/toolchains/'
+  tidy = ('third_party/android_toolchain/toolchains/'
           'llvm/prebuilt/linux-x86_64/bin/clang-tidy')
   return os.path.join(SRC_DIR, tidy)
 

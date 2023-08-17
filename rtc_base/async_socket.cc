@@ -32,9 +32,10 @@ SocketAddress AsyncSocketAdapter::GetLocalAddress() const {
 SocketAddress AsyncSocketAdapter::GetRemoteAddress() const {
   return socket_->GetRemoteAddress();
 }
-
+// UI Customization Begin
 int AsyncSocketAdapter::Bind(const SocketAddress& addr, int interfaceIndex) {
   return socket_->Bind(addr, interfaceIndex);
+// UI Customization End
 }
 
 int AsyncSocketAdapter::Connect(const SocketAddress& addr) {

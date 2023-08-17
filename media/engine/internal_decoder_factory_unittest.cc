@@ -15,8 +15,8 @@
 #include "api/video_codecs/video_decoder.h"
 #include "api/video_codecs/vp9_profile.h"
 #include "media/base/media_constants.h"
-#include "modules/video_coding/codecs/av1/libaom_av1_decoder.h"
 #include "system_wrappers/include/field_trial.h"
+#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -47,10 +47,6 @@ constexpr VideoDecoderFactory::CodecSupport kSupported = {
     /*is_supported=*/true, /*is_power_efficient=*/false};
 constexpr VideoDecoderFactory::CodecSupport kUnsupported = {
     /*is_supported=*/false, /*is_power_efficient=*/false};
-constexpr char kDav1dDecoderFieldTrialEnabled[] =
-    "WebRTC-Dav1dDecoder/Enabled/";
-constexpr char kDav1dDecoderFieldTrialDisabled[] =
-    "WebRTC-Dav1dDecoder/Disabled/";
 
 MATCHER_P(Support, expected, "") {
   return arg.is_supported == expected.is_supported &&
@@ -91,8 +87,7 @@ TEST(InternalDecoderFactoryTest, H264) {
 
 TEST(InternalDecoderFactoryTest, Av1Profile0) {
   InternalDecoderFactory factory;
-  InitFieldTrialsFromString(kDav1dDecoderFieldTrialEnabled);
-  if (kIsLibaomAv1DecoderSupported || kDav1dIsIncluded) {
+  if (kDav1dIsIncluded) {
     EXPECT_THAT(factory.GetSupportedFormats(),
                 Contains(Field(&SdpVideoFormat::name, cricket::kAv1CodecName)));
     EXPECT_TRUE(
@@ -104,24 +99,21 @@ TEST(InternalDecoderFactoryTest, Av1Profile0) {
   }
 }
 
+#if defined(RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY)
+TEST(InternalDecoderFactoryTest, Av1) {
+  InternalDecoderFactory factory;
+  EXPECT_THAT(factory.GetSupportedFormats(),
+              Contains(Field(&SdpVideoFormat::name, cricket::kAv1CodecName)));
+}
+#endif
+
 TEST(InternalDecoderFactoryTest, Av1Profile1_Dav1dDecoderTrialEnabled) {
-  InitFieldTrialsFromString(kDav1dDecoderFieldTrialEnabled);
   InternalDecoderFactory factory;
   std::unique_ptr<VideoDecoder> decoder = factory.CreateVideoDecoder(
       SdpVideoFormat(cricket::kAv1CodecName,
                      {{kAV1FmtpProfile,
                        AV1ProfileToString(AV1Profile::kProfile1).data()}}));
   EXPECT_EQ(static_cast<bool>(decoder), kDav1dIsIncluded);
-}
-
-TEST(InternalDecoderFactoryTest, Av1Profile1_Dav1dDecoderTrialDisabled) {
-  InitFieldTrialsFromString(kDav1dDecoderFieldTrialDisabled);
-  InternalDecoderFactory factory;
-  std::unique_ptr<VideoDecoder> decoder = factory.CreateVideoDecoder(
-      SdpVideoFormat(cricket::kAv1CodecName,
-                     {{kAV1FmtpProfile,
-                       AV1ProfileToString(AV1Profile::kProfile1).data()}}));
-  EXPECT_FALSE(static_cast<bool>(decoder));
 }
 
 TEST(InternalDecoderFactoryTest, QueryCodecSupportNoReferenceScaling) {
@@ -138,10 +130,12 @@ TEST(InternalDecoderFactoryTest, QueryCodecSupportNoReferenceScaling) {
                                    VP9ProfileToString(VP9Profile::kProfile1)}}),
                   /*reference_scaling=*/false),
               Support(kVp9Enabled ? kSupported : kUnsupported));
-  EXPECT_THAT(
-      factory.QueryCodecSupport(SdpVideoFormat(cricket::kAv1CodecName),
-                                /*reference_scaling=*/false),
-      Support(kIsLibaomAv1DecoderSupported ? kSupported : kUnsupported));
+
+#if defined(RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY)
+  EXPECT_THAT(factory.QueryCodecSupport(SdpVideoFormat(cricket::kAv1CodecName),
+                                        /*reference_scaling=*/false),
+              Support(kSupported));
+#endif
 }
 
 TEST(InternalDecoderFactoryTest, QueryCodecSupportReferenceScaling) {
@@ -150,10 +144,11 @@ TEST(InternalDecoderFactoryTest, QueryCodecSupportReferenceScaling) {
   EXPECT_THAT(factory.QueryCodecSupport(SdpVideoFormat(cricket::kVp9CodecName),
                                         /*reference_scaling=*/true),
               Support(kVp9Enabled ? kSupported : kUnsupported));
-  EXPECT_THAT(
-      factory.QueryCodecSupport(SdpVideoFormat(cricket::kAv1CodecName),
-                                /*reference_scaling=*/true),
-      Support(kIsLibaomAv1DecoderSupported ? kSupported : kUnsupported));
+#if defined(RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY)
+  EXPECT_THAT(factory.QueryCodecSupport(SdpVideoFormat(cricket::kAv1CodecName),
+                                        /*reference_scaling=*/true),
+              Support(kSupported));
+#endif
 
   // Invalid config even though VP8 and H264 are supported.
   EXPECT_THAT(factory.QueryCodecSupport(SdpVideoFormat(cricket::kH264CodecName),

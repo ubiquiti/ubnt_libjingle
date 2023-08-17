@@ -27,7 +27,6 @@
 #include "api/rtp_headers.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/test/simulated_network.h"
-#include "api/video_codecs/video_encoder_config.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/call.h"
@@ -42,6 +41,11 @@
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/task_queue.h"
 #include "system_wrappers/include/clock.h"
+#include "video/config/video_encoder_config.h"
+
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+#include "call/rtp_stream_receiver_controller.h"
+#endif
 
 namespace webrtc {
 class DegradedCall : public Call, private PacketReceiver {
@@ -110,19 +114,23 @@ class DegradedCall : public Call, private PacketReceiver {
   void OnUpdateSyncGroup(AudioReceiveStreamInterface& stream,
                          absl::string_view sync_group) override;
   void OnSentPacket(const rtc::SentPacket& sent_packet) override;
-
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+  RtpStreamReceiverController* receiver_controller() override {return nullptr;}
+#endif
  protected:
   // Implements PacketReceiver.
-  DeliveryStatus DeliverPacket(MediaType media_type,
-                               rtc::CopyOnWriteBuffer packet,
-                               int64_t packet_time_us) override;
+  void DeliverRtpPacket(
+      MediaType media_type,
+      RtpPacketReceived packet,
+      OnUndemuxablePacketHandler undemuxable_packet_handler) override;
+  void DeliverRtcpPacket(rtc::CopyOnWriteBuffer packet) override;
 
  private:
   class FakeNetworkPipeOnTaskQueue {
    public:
     FakeNetworkPipeOnTaskQueue(
         TaskQueueBase* task_queue,
-        const ScopedTaskSafety& task_safety,
+        rtc::scoped_refptr<PendingTaskSafetyFlag> call_alive,
         Clock* clock,
         std::unique_ptr<NetworkBehaviorInterface> network_behavior);
 
@@ -142,7 +150,7 @@ class DegradedCall : public Call, private PacketReceiver {
 
     Clock* const clock_;
     TaskQueueBase* const task_queue_;
-    const ScopedTaskSafety& task_safety_;
+    rtc::scoped_refptr<PendingTaskSafetyFlag> call_alive_;
     FakeNetworkPipe pipe_;
     absl::optional<int64_t> next_process_ms_ RTC_GUARDED_BY(&task_queue_);
   };
@@ -172,13 +180,14 @@ class DegradedCall : public Call, private PacketReceiver {
   };
 
   void SetClientBitratePreferences(
-      const webrtc::BitrateSettings& preferences) override {}
+      const webrtc::BitrateSettings& preferences) override;
   void UpdateSendNetworkConfig();
   void UpdateReceiveNetworkConfig();
 
   Clock* const clock_;
   const std::unique_ptr<Call> call_;
-  ScopedTaskSafety task_safety_;
+  // For cancelling tasks on the network thread when DegradedCall is destroyed
+  rtc::scoped_refptr<PendingTaskSafetyFlag> call_alive_;
   size_t send_config_index_;
   const std::vector<TimeScopedNetworkConfig> send_configs_;
   SimulatedNetwork* send_simulated_network_;
@@ -191,7 +200,9 @@ class DegradedCall : public Call, private PacketReceiver {
   size_t receive_config_index_;
   const std::vector<TimeScopedNetworkConfig> receive_configs_;
   SimulatedNetwork* receive_simulated_network_;
-  std::unique_ptr<FakeNetworkPipe> receive_pipe_;
+  SequenceChecker received_packet_sequence_checker_;
+  std::unique_ptr<FakeNetworkPipe> receive_pipe_
+      RTC_GUARDED_BY(received_packet_sequence_checker_);
 };
 
 }  // namespace webrtc

@@ -32,6 +32,8 @@
 
 namespace webrtc {
 
+void RTC_EXPORT LogDesktopCapturerFullscreenDetectorUsage();
+
 class DesktopCaptureOptions;
 class DesktopFrame;
 
@@ -56,6 +58,9 @@ class RTC_EXPORT DesktopCapturer {
   // Interface that must be implemented by the DesktopCapturer consumers.
   class Callback {
    public:
+    // Called before a frame capture is started.
+    virtual void OnFrameCaptureStart() {}
+
     // Called after a frame has been captured. `frame` is not nullptr if and
     // only if `result` is SUCCESS.
     virtual void OnCaptureResult(Result result,
@@ -81,6 +86,15 @@ class RTC_EXPORT DesktopCapturer {
     // Title of the window or screen in UTF-8 encoding, maybe empty. This field
     // should not be used to identify a source.
     std::string title;
+
+#if defined(CHROMEOS)
+    // TODO(https://crbug.com/1369162): Remove or refactor this value.
+    WindowId in_process_id = kNullWindowId;
+#endif
+
+    // The display's unique ID. If no ID is defined, it will hold the value
+    // kInvalidDisplayId.
+    int64_t display_id = kInvalidDisplayId;
   };
 
   typedef std::vector<Source> SourceList;
@@ -90,6 +104,12 @@ class RTC_EXPORT DesktopCapturer {
   // Called at the beginning of a capturing session. `callback` must remain
   // valid until capturer is destroyed.
   virtual void Start(Callback* callback) = 0;
+
+  // Sets max frame rate for the capturer. This is best effort and may not be
+  // supported by all capturers. This will only affect the frequency at which
+  // new frames are available, not the frequency at which you are allowed to
+  // capture the frames.
+  virtual void SetMaxFrameRate(uint32_t max_frame_rate) {}
 
   // Returns a valid pointer if the capturer requires the user to make a
   // selection from a source list provided by the capturer.

@@ -119,6 +119,10 @@ class NetworkMonitorInterface {
     return NetworkBindingResult::NOT_IMPLEMENTED;
   }
 
+  void SetNetworksChangedCallback(std::function<void()> callback) {
+    networks_changed_callback_ = std::move(callback);
+  }
+// UI Customization Begin
   // Is this interface available to use? WebRTC shouldn't attempt to use it if
   // this returns false.
   //
@@ -131,11 +135,7 @@ class NetworkMonitorInterface {
   virtual bool IsAdapterAvailable(absl::string_view interface_name) {
     return true;
   }
-
-  void SetNetworksChangedCallback(std::function<void()> callback) {
-    networks_changed_callback_ = std::move(callback);
-  }
-
+// UI Customization End
  protected:
   void InvokeNetworksChangedCallback() {
     if (networks_changed_callback_) {
