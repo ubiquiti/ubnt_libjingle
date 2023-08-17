@@ -5,7 +5,8 @@ env
 git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
-make WEBRTC_BRANCH=$TAG_NAME artifactory
+#./install_deps.sh
+make WEBRTC_BRANCH=$BRANCH_NAME artifactory
 '''
 
 def doUbuntuAmd64='''
@@ -13,7 +14,7 @@ env
 git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
-make WEBRTC_PLATFORM=Ubuntu WEBRTC_BRANCH=$TAG_NAME artifactory
+make WEBRTC_PLATFORM=Ubuntu WEBRTC_BRANCH=$BRANCH_NAME artifactory
 '''
 
 def doDebianAmd64='''
@@ -21,7 +22,7 @@ env
 git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
-make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=x86_64 WEBRTC_BRANCH=$TAG_NAME artifactory
+make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=x86_64 WEBRTC_BRANCH=$BRANCH_NAME artifactory
 '''
 
 def doDebianArm64='''
@@ -29,7 +30,7 @@ env
 git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
-make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=aarch64 WEBRTC_BRANCH=$TAG_NAME artifactory
+make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=aarch64 WEBRTC_BRANCH=$BRANCH_NAME artifactory
 '''
 
 def doiOSBuild='''
@@ -37,9 +38,8 @@ env
 git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
-export BranchName=${BRANCH}
-export TAG_NAME=${TAG_NAME}
-./generic_xcframework.sh $TAG_NAME
+export BranchName=$BRANCH_NAME
+./generic_xcframework.sh
 '''
 
 def doMacOSBuild='''
@@ -47,9 +47,8 @@ env
 git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
-export BranchName=${BRANCH}
-export TAG_NAME=${TAG_NAME}
-./generic_xcframework_macOS.sh $TAG_NAME
+export BranchName=$BRANCH_NAME
+./generic_xcframework_macOS.sh
 '''
 
 def HASH
