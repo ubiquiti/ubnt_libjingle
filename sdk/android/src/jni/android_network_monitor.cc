@@ -591,6 +591,12 @@ void AndroidNetworkMonitor::OnNetworkDisconnected_n(NetworkHandle handle) {
   }
 
   network_info_by_handle_.erase(iter);
+// UI Customization Begin
+  adapter_type_by_name_.erase(iter->second.interface_name);
+  vpn_underlying_adapter_type_by_name_.erase(iter->second.interface_name);
+
+  RTC_CHECK(adapter_type_by_name_.size() == network_info_by_handle_.size());
+// UI Customization End
 }
 
 void AndroidNetworkMonitor::OnNetworkPreference_n(
