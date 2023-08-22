@@ -122,20 +122,7 @@ class NetworkMonitorInterface {
   void SetNetworksChangedCallback(std::function<void()> callback) {
     networks_changed_callback_ = std::move(callback);
   }
-// UI Customization Begin
-  // Is this interface available to use? WebRTC shouldn't attempt to use it if
-  // this returns false.
-  //
-  // It's possible for this status to change, in which case
-  // SignalNetworksChanged will be fired.
-  //
-  // These specific use case this was added for was a phone with two SIM cards,
-  // where attempting to use all interfaces returned from getifaddrs caused the
-  // connection to be dropped.
-  virtual bool IsAdapterAvailable(absl::string_view interface_name) {
-    return true;
-  }
-// UI Customization End
+
  protected:
   void InvokeNetworksChangedCallback() {
     if (networks_changed_callback_) {
