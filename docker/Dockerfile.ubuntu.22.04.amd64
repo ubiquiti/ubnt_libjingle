@@ -1,0 +1,109 @@
+# syntax=docker/dockerfile:experimental
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG DEBCONF_NONINTERACTIVE_SEEN=true
+ENV LC_ALL=C LANGUAGE=C LANG=C
+
+ENV OS_NAME=Ubuntu
+ENV OS_VERSION=22.04
+ENV OS_ARCH=x86_64
+ENV ARTIFACTORY_URL="https://pdx-artifacts.rad.ubnt.com"
+
+ARG HOST_UID=1002
+
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    useradd -u $HOST_UID --create-home --shell /bin/bash ubnt
+
+RUN \
+    sed -i /etc/sudoers -re 's/^%sudo.*/%sudo ALL=(ALL:ALL) NOPASSWD: ALL/g' && \
+    sed -i /etc/sudoers -re 's/^root.*/root ALL=(ALL:ALL) NOPASSWD: ALL/g' && \
+    sed -i /etc/sudoers -re 's/^#includedir.*/## **Removed the include directive** ##"/g' && \
+    echo "ubnt ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    echo "ubnt user:";  su - ubnt -c id
+
+RUN dpkg --configure -a
+
+RUN apt-get update && apt-get install -qy apt-utils gnupg2
+
+RUN printf "installing packages...\n" && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    apt-utils \
+    autoconf \
+    automake \
+    binfmt-support \
+    build-essential \
+    curl \
+    fakeroot \
+    procps \
+    git \
+    gnupg2 \
+    wget
+
+RUN printf "installing dev packages...\n" && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libsystemd-dev \
+    libbluetooth-dev \
+    libudev-dev
+
+RUN printf "installing python...\n" && \
+    apt-get update && apt-get install -y --no-install-recommends python2.7 && \
+    ln -sf /usr/bin/python2.7 /usr/bin/python
+
+RUN apt-get install -y --no-install-recommends \
+	jq \
+	lsb-release \
+	sshpass \
+	pkg-config
+
+RUN apt-get install -y --no-install-recommends \
+	bc \
+	bzip2 \
+	ca-certificates \
+	cpio \
+	file \
+	git \
+	gzip \
+	libncurses5-dev \
+	make \
+	openssh-client \
+	python3 \
+	rsync \
+	unzip \
+	wget \
+	asciidoc \
+	cmake \
+	lzip \
+	tar \
+	xz-utils \
+	eatmydata \
+	uidmap \
+	xxd \
+	vim \
+	ninja-build \
+	curl \
+	autoconf \
+	autotools-dev \
+	sudo \
+	automake \
+	libtool \
+	ant \
+	openjdk-17-jdk \
+	nasm \
+	tree \
+	pip \
+	python-setuptools
+
+RUN wget https://releases.jfrog.io/artifactory/jfrog-cli/v2/[RELEASE]/jfrog-cli-linux-amd64/jfrog -O /usr/local/bin/jfrog && sudo chmod a+x /usr/local/bin/jfrog
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+WORKDIR /build
+USER ubnt
+ENV HOME=/home/ubnt
+RUN printf "installing nvm...\n" && \
+	curl https://raw.githubusercontent.com/creationix/nvm/v0.39.1/install.sh | bash
+ENV NVM_DIR="$HOME/.nvm"
+RUN \. "$NVM_DIR/nvm.sh" && \. "$NVM_DIR/bash_completion"
+ENV NVM_ENV_SH=$HOME/.nvm/nvm.sh
