@@ -89,11 +89,20 @@ JavaToNativePeerConnectionFactoryOptions(JNIEnv* jni,
     return absl::nullopt;
 
   PeerConnectionFactoryInterface::Options native_options;
-
+// UI Customization Begin
+  //grab the list of active interfaces as a vector
+  ScopedJavaLocalRef<jobject> tempJs = Java_Options_getActiveInterfaces(jni, j_options);
+  std::vector<std::string> tempNative = JavaListToNativeVector<std::string, jstring>(
+        jni, tempJs, &JavaToNativeString);
+// UI Customization End
   // This doesn't necessarily match the c++ version of this struct; feel free
   // to add more parameters as necessary.
   native_options.network_ignore_mask =
       Java_Options_getNetworkIgnoreMask(jni, j_options);
+// UI Customization Begin
+  for(const auto &i : tempNative)
+    native_options.activeInterfaces[i] = true;
+// UI Customization End
   native_options.disable_encryption =
       Java_Options_getDisableEncryption(jni, j_options);
   native_options.disable_network_monitor =

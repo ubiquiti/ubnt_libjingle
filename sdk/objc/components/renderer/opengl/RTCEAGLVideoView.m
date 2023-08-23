@@ -239,7 +239,11 @@
 - (void)renderFrame:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame {
   self.videoFrame = frame;
 }
-
+// UI Customization Begin
+- (void)clearVideoView {
+  
+}
+// UI Customization End
 #pragma mark - Private
 
 - (void)displayLinkTimerDidFire {

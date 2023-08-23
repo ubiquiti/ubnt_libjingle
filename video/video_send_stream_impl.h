@@ -89,7 +89,9 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   const absl::optional<float>& configured_pacing_factor() const {
     return configured_pacing_factor_;
   }
-
+  // UI Customization Begin
+  void SuspendBelowMinBitrate(bool suspend_below_min_bitrate);
+  // UI Customization End
  private:
   // Implements BitrateAllocatorObserver.
   uint32_t OnBitrateUpdated(BitrateAllocationUpdate update) override;
@@ -154,7 +156,9 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   uint32_t encoder_max_bitrate_bps_ RTC_GUARDED_BY(thread_checker_);
   uint32_t encoder_target_rate_bps_ RTC_GUARDED_BY(thread_checker_);
   double encoder_bitrate_priority_ RTC_GUARDED_BY(thread_checker_);
-
+  // UI Customization Begin
+  bool suspend_below_min_bitrate_ RTC_GUARDED_BY(thread_checker_);
+  // UI Customization End
   VideoStreamEncoderInterface* const video_stream_encoder_;
   RtpVideoSenderInterface* const rtp_video_sender_;
 

@@ -479,6 +479,11 @@ public class NetworkMonitorAutoDetect extends BroadcastReceiver implements Netwo
 
     @SuppressLint("NewApi")
     IPAddress[] getIPAddresses(LinkProperties linkProperties) {
+// UI Customization Begin
+      /* Add stacked interface IP addresses
+       https://bugs.chromium.org/p/webrtc/issues/detail?id=10707
+       https://bugs.chromium.org/p/webrtc/issues/detail?id=9925
+// UI Customization End
       IPAddress[] ipAddresses = new IPAddress[linkProperties.getLinkAddresses().size()];
       int i = 0;
       for (LinkAddress linkAddress : linkProperties.getLinkAddresses()) {
@@ -486,6 +491,50 @@ public class NetworkMonitorAutoDetect extends BroadcastReceiver implements Netwo
         ++i;
       }
       return ipAddresses;
+// UI Customization Begin      
+      */
+      ArrayList<IPAddress> retVal = new ArrayList<>();
+      for (LinkAddress linkAddress : linkProperties.getLinkAddresses()) {
+          retVal.add(new IPAddress(linkAddress.getAddress().getAddress()));
+      }
+      // IP address(es) from any "stacked" 464XLAT interface not yet included
+      // see: https://bugs.chromium.org/p/webrtc/issues/detail?id=9925
+      addStackedIPAddresses(linkProperties, retVal);
+      return retVal.toArray(new IPAddress[0]);
+  }
+
+  private void addStackedIPAddresses(LinkProperties linkProperties, ArrayList<IPAddress> addTo) {
+      // required info from the "stacked" interface only available via @hide methods
+      // in LinkProperties
+      // but *is* available from LinkProperties.toString(): not ideal, but only option
+      // w/o radical change
+      String str = linkProperties.toString();
+      int startSearch = str.indexOf("Stacked");
+      if (-1 != startSearch) {
+          // LinkAddresses: [192.0.0.4/32,]
+          int linkAddressesIdx;
+          do {
+              linkAddressesIdx = str.indexOf("LinkAddresses", startSearch);
+              if (-1 != linkAddressesIdx) {
+                  int start = str.indexOf('[', linkAddressesIdx);
+                  if (-1 != start) {
+                      int end = str.indexOf(']', start);
+                      if (-1 != end) {
+                          for (String ipStr : str.substring(start + 1, end).split(",")) {
+                              try {
+                                  addTo.add(new IPAddress(
+                                          InetAddress.getByName(ipStr.replaceAll("/32", "").trim()).getAddress()));
+                              } catch (Exception e) {
+                                  Logging.e(TAG, "Stacked Link InetAddress could not be parsed from " + ipStr, e);
+                              }
+                          }
+                      }
+                  }
+                  startSearch = linkAddressesIdx + 1;
+              }
+          } while (-1 != linkAddressesIdx);
+      }
+// UI Customization End
     }
 
     @SuppressLint("NewApi")

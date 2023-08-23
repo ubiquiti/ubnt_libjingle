@@ -230,6 +230,11 @@ declare_args() {
   # Includes the dav1d decoder in the internal decoder factory when set to true.
   rtc_include_dav1d_in_internal_decoder_factory = true
 
+  # UI customization
+  rtc_enable_unifi_customization = false
+  rtc_enable_unifi_unsanitize_ip = false
+  rtc_enable_unifi_bitrate_recovery = false
+  rtc_enable_unifi_audio_stream_api = false
   # When enabled, a run-time check will make sure that all field trial keys have
   # been registered in accordance with the field trial policy, see
   # g3doc/field-trials.md. The value can be set to the following:

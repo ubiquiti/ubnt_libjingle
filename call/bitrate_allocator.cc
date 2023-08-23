@@ -561,7 +561,18 @@ int BitrateAllocator::GetStartBitrate(
     return it->allocated_bitrate_bps;
   }
 }
-
+// UI Customization Begin
+void BitrateAllocator::SuspendBelowMinBitrate(BitrateAllocatorObserver* observer,
+    bool suspend_below_min_bitrate) {
+  RTC_DCHECK_RUN_ON(&sequenced_checker_);
+  auto it = absl::c_find_if(
+      allocatable_tracks_,
+      [observer](const auto& config) { return config.observer == observer; });
+  if (it != allocatable_tracks_.end()) {
+    it->config.enforce_min_bitrate = !suspend_below_min_bitrate;
+  }
+}
+// UI Customization End
 uint32_t bitrate_allocator_impl::AllocatableTrack::LastAllocatedBitrate()
     const {
   // Return the configured minimum bitrate for newly added observers, to avoid

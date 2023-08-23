@@ -47,8 +47,10 @@ deps = {
   # TODO(kjellander): Move this to be Android-only.
   'src/base':
     'https://chromium.googlesource.com/chromium/src/base@ca4474373784d15364b5d190970e5bdfa1544c2a',
+  # UI Customization Begin
   'src/build':
-    'https://chromium.googlesource.com/chromium/src/build@6c0e0e0c84aa581f9bfa042e511dc9aaffa8fd82',
+    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@v0.0.26',
+  # UI Customization End
   'src/buildtools':
     'https://chromium.googlesource.com/chromium/src/buildtools@3739a3619309af3b788379ad0936ca00b981616e',
   # Gradle 6.6.1. Used for testing Android Studio project generation for WebRTC.
@@ -304,12 +306,12 @@ deps = {
     'url': 'https://chromium.googlesource.com/external/mockito/mockito.git@04a2a289a4222f80ad20717c25144981210d2eac',
     'condition': 'checkout_android',
   },
-
+# UI Customization Begin
   # Used by boringssl.
   'src/third_party/nasm': {
-      'url': 'https://chromium.googlesource.com/chromium/deps/nasm.git@7fc833e889d1afda72c06220e5bed8fb43b2e5ce'
+      'url': 'https://github.com/ubiquiti/ubnt_libjingle_third_party_nasm@v0.0.1'
   },
-
+# UI Customization End
   'src/third_party/openh264/src':
     'https://chromium.googlesource.com/external/github.com/cisco/openh264@09a4f3ec842a8932341b195c5b01e141c8a16eb7',
   'src/third_party/r8': {
