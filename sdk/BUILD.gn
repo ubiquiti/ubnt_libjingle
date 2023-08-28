@@ -276,11 +276,20 @@ if (is_ios || is_mac) {
         deps = [
           ":base_objc",
           ":helpers_objc",
-          ":metal_objc",
+# UI Customization Begin
+          #":metal_objc",
+# UI Customization End
           ":opengl_objc",
           ":videocapture_objc",
           ":videoframebuffer_objc",
         ]
+# UI Customization Begin
+        if(ios_device_name != "appletv") {
+          deps += [
+            ":metal_objc",
+          ]
+        }
+# UI Customization End
       }
 
       rtc_library("audio_device") {
@@ -670,13 +679,11 @@ if (is_ios || is_mac) {
         "objc/components/capturer/RTCFileVideoCapturer.m",
       ]
 # UI Customization Begin
-      if (is_ios) {
-        if (ios_device_name != "appletv") {
-          sources += [
-              "objc/components/capturer/RTCCameraVideoCapturer.h",
-              "objc/components/capturer/RTCCameraVideoCapturer.m",
-          ]
-        }
+      if (ios_device_name != "appletv") {
+        sources += [
+            "objc/components/capturer/RTCCameraVideoCapturer.h",
+            "objc/components/capturer/RTCCameraVideoCapturer.m",
+        ]
       }
       
       if (is_mac) {
@@ -1300,10 +1307,14 @@ if (is_ios || is_mac) {
           "objc/components/audio/RTCAudioDevice.h",
           "objc/components/audio/RTCAudioSession.h",
           "objc/components/audio/RTCAudioSessionConfiguration.h",
-          "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCFileVideoCapturer.h",
+# UI Customization Begin
+          #"objc/components/capturer/RTCCameraVideoCapturer.h",
+# UI Customization End
           "objc/components/network/RTCNetworkMonitor.h",
-          "objc/components/renderer/metal/RTCMTLVideoView.h",
+# UI Customization Begin
+          #"objc/components/renderer/metal/RTCMTLVideoView.h",
+# UI Customization End
           "objc/components/renderer/opengl/RTCEAGLVideoView.h",
           "objc/components/renderer/opengl/RTCVideoViewShading.h",
           "objc/components/video_codec/RTCCodecSpecificInfoH264.h",
@@ -1315,7 +1326,9 @@ if (is_ios || is_mac) {
           "objc/components/video_codec/RTCVideoEncoderFactoryH264.h",
           "objc/components/video_codec/RTCVideoEncoderH264.h",
           "objc/components/video_frame_buffer/RTCCVPixelBuffer.h",
-          "objc/helpers/RTCCameraPreviewView.h",
+# UI Customization Begin
+          #"objc/helpers/RTCCameraPreviewView.h",
+# UI Customization End
           "objc/helpers/RTCDispatcher.h",
           "objc/helpers/UIDevice+RTCDevice.h",
           "objc/api/peerconnection/RTCAudioSource.h",
@@ -1367,7 +1380,15 @@ if (is_ios || is_mac) {
           "objc/api/video_frame_buffer/RTCNativeI420Buffer.h",
           "objc/api/video_frame_buffer/RTCNativeMutableI420Buffer.h",
         ]
-
+# UI Customization Begin
+        if(ios_device_name == "iphone") {
+          common_objc_headers += [
+            "objc/components/renderer/metal/RTCMTLVideoView.h",
+            "objc/components/capturer/RTCCameraVideoCapturer.h",
+            "objc/helpers/RTCCameraPreviewView.h"
+          ]
+        }
+# UI Customization End
         if (!build_with_chromium) {
           common_objc_headers += [
             "objc/api/logging/RTCCallbackLogger.h",
@@ -1388,14 +1409,26 @@ if (is_ios || is_mac) {
           ":audio_objc",
           ":base_objc",
           ":default_codec_factory_objc",
-          ":metal_objc",
+# UI Customization Begin
+          #":metal_objc",
+# UI Customization End
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
-          ":videocapture_objc",
+# UI Customization Begin
+          #":videocapture_objc",
+# UI Customization Begin
           ":videocodec_objc",
           ":videotoolbox_objc",
         ]
+# UI Customization Begin
+        if (ios_device_name != "appletv") {
+          deps += [
+            ":metal_objc",
+            ":videocapture_objc",
+          ]
+        }
+# UI Customization End
         if (!build_with_chromium) {
           deps += [
             ":callback_logger_objc",
