@@ -620,11 +620,19 @@ if (is_ios || is_mac) {
         ":videoframebuffer_objc",
       ]
 # UI Customization Begin
-      if(ios_device_name != "appletv") {
+    if (is_ios) {
+      if (ios_device_name != "appletv") {
         deps += [
           ":metal_objc",
         ]
       }
+    }
+
+    if (is_mac) {
+      deps += [
+        ":metal_objc",
+      ]
+    }
 # UI Customization End
     }
 
@@ -698,11 +706,13 @@ if (is_ios || is_mac) {
         "objc/components/capturer/RTCFileVideoCapturer.m",
       ]
 # UI Customization Begin
-      if (ios_device_name != "appletv") {
-        sources += [
-            "objc/components/capturer/RTCCameraVideoCapturer.h",
-            "objc/components/capturer/RTCCameraVideoCapturer.m",
-        ]
+      if(is_ios) {
+        if (ios_device_name != "appletv") {
+          sources += [
+              "objc/components/capturer/RTCCameraVideoCapturer.h",
+              "objc/components/capturer/RTCCameraVideoCapturer.m",
+          ]
+        }
       }
       
       if (is_mac) {
