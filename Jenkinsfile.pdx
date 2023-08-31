@@ -216,22 +216,6 @@ pipeline {
                         }
                     }
                 }
-                                    
-                stage('MacOS Build') {
-                    stages {
-                        stage('MacOS Library') {
-                            steps {
-                                node(label: 'rix-macos-amd64') {
-                                    deleteDir()
-                                    unstash 'workspace'
-                                    script {
-                                        sh label: 'build', script: "${doMacOSBuild}"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 
             }
         }
