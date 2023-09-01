@@ -561,7 +561,14 @@ if (!build_with_chromium) {
         "api/audio_codecs:builtin_audio_encoder_factory",
       ]
     }
-
+# UI Customization Begin
+    if (rtc_include_builtin_video_codecs) {
+      deps += [
+        "api/video_codecs:builtin_video_decoder_factory",
+        "api/video_codecs:builtin_video_encoder_factory",
+      ]
+    }
+# UI Customization End
     if (build_with_mozilla) {
       deps += [
         "api/video:video_frame",
