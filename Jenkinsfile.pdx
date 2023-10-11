@@ -110,17 +110,17 @@ pipeline {
                 parallel(
                     'docker:arm64': {
                         script {
-                            DOCKER_ARM64 = docker.build("${APP}_arm64:${HASH}", "--pull -f ./docker/Dockerfile.debian.11.arm64 ./docker")
+                            DOCKER_ARM64 = docker.build("${APP}_arm64:${HASH}", "--progress=plain --pull -f ./docker/Dockerfile.debian.11.arm64 ./docker")
                         }
                     },
                     'docker:amd64': {
                         script {
-                            DOCKER_AMD64 = docker.build("${APP}_amd64:${HASH}", "--pull -f ./docker/Dockerfile.debian.11.amd64 ./docker")
+                            DOCKER_AMD64 = docker.build("${APP}_amd64:${HASH}", "--progress=plain --pull -f ./docker/Dockerfile.debian.11.amd64 ./docker")
                         }
                     },
                     'docker:ubuntu_22_04_amd64': {
                         script {
-                            DOCKER_UBUNTU_22_04_AMD64 = docker.build("${APP}_ubuntu_22_04_amd64:${HASH}", "--pull -f ./docker/Dockerfile.ubuntu.22.04.amd64 ./docker")
+                            DOCKER_UBUNTU_22_04_AMD64 = docker.build("${APP}_ubuntu_22_04_amd64:${HASH}", "--progress=plain --pull -f ./docker/Dockerfile.ubuntu.22.04.amd64 ./docker")
                         }
                     }
                 )
