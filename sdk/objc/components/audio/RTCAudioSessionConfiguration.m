@@ -86,7 +86,6 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     _outputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
     // UI Customization Begin
     _isMicrophoneEnabled = false;
-    _isMicrophoneMuted = true;
     // UI Customization End
   }
   return self;
