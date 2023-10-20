@@ -81,9 +81,6 @@ RTC_OBJC_EXPORT
 
 // UI Customization Begin
 - (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession
-    didChangeMicrophoneEnabled:(BOOL)isMicrophoneEnabled;
-
-- (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession
     didChangeMicrophoneMuted:(BOOL)isMicrophoneMuted;
 // UI Customization End
 
@@ -170,8 +167,6 @@ RTC_OBJC_EXPORT
  */
 @property(nonatomic, assign) BOOL isAudioEnabled;
 
-// UI customization - for runtime retrieve the microphone permission
-@property(nonatomic, assign) BOOL isMicrophoneEnabled;
 // UI customization - for runtime mute/unmute microphone
 @property(nonatomic, assign) BOOL isMicrophoneMuted;
 
