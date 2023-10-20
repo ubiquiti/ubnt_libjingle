@@ -105,10 +105,7 @@ AudioDeviceIOS::AudioDeviceIOS(bool bypass_voice_processing)
       num_detected_playout_glitches_(0),
       last_playout_time_(0),
       num_playout_callbacks_(0),
-      last_output_volume_change_time_(0),
-// UI Customization Begin
-      is_microphone_muted_(true) {
-// UI Customization End
+      last_output_volume_change_time_(0) {
   LOGI() << "ctor" << ios::GetCurrentThreadDescription()
          << ",bypass_voice_processing=" << bypass_voice_processing_;
   io_thread_checker_.Detach();
@@ -377,17 +374,14 @@ void AudioDeviceIOS::OnChangedOutputVolume() {
   RTC_DCHECK(thread_);
   thread_->PostTask(SafeTask(safety_, [this] { HandleOutputVolumeChange(); }));
 }
-// UI Customization Begin
-void AudioDeviceIOS::OnMicrophoneEnabledChange(bool is_microphone_enabled) {
-  RTC_DCHECK(thread_);
-  thread_->PostTask(SafeTask(safety_, [this, is_microphone_enabled] { HandleMicrophoneEnabledChange(is_microphone_enabled); }));
-}
 
+// UI Customization Begin
 void AudioDeviceIOS::OnMicrophoneMutedChange(bool is_microphone_muted) {
   RTC_DCHECK(thread_);
   thread_->PostTask(SafeTask(safety_, [this, is_microphone_muted] { HandleMicrophoneMutedChange(is_microphone_muted); }));
 }
 // UI Customization End
+
 OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
                                                const AudioTimeStamp* time_stamp,
                                                UInt32 bus_number,
@@ -395,9 +389,6 @@ OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags
                                                AudioBufferList* /* io_data */) {
   RTC_DCHECK_RUN_ON(&io_thread_checker_);
   OSStatus result = noErr;
-// UI Customization Begin
-  if (is_microphone_muted_) return result;
-// UI Customization End
   // Simply return if recording is not enabled.
   if (!recording_.load(std::memory_order_acquire)) return result;
 
@@ -665,13 +656,16 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
   // glitches too close in time to this event.
   last_output_volume_change_time_ = rtc::TimeMillis();
 }
+
 // UI Customization Begin
-void AudioDeviceIOS::HandleMicrophoneEnabledChange(bool is_microphone_enabled) {
+void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
   RTC_DCHECK_RUN_ON(thread_);
-  RTCLog(@"Handling MicrophoneEnabled change to %d", is_microphone_enabled);
+  RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);
   // Recording won't be initialized if playback has already been initialized, and vice versa. 
-  // So we must stop both recording and playback before enabling and disabling microphone.
-  if (is_microphone_enabled) {
+  // So we must stop both recording and playback before muting or unmuting microphone.
+  if (!is_microphone_muted) {
+    // there could be an audio stream track added so that cause the recording flag is set to true but the mic related part in Audio Unit is not actually created yet
+    StopRecording();
     StopPlayout();
     InitRecording();
     StartRecording();
@@ -683,13 +677,8 @@ void AudioDeviceIOS::HandleMicrophoneEnabledChange(bool is_microphone_enabled) {
     StartPlayout();
   }
 }
-
-void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
-  RTC_DCHECK_RUN_ON(thread_);
-  RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);
-  is_microphone_muted_ = is_microphone_muted;
-}
 // UI Customization End
+
 void AudioDeviceIOS::UpdateAudioDeviceBuffer() {
   LOGI() << "UpdateAudioDevicebuffer";
   // AttachAudioBuffer() is called at construction by the main class but check

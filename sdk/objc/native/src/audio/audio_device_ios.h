@@ -148,7 +148,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void OnCanPlayOrRecordChange(bool can_play_or_record) override;
   void OnChangedOutputVolume() override;
   // UI Customization Begin
-  void OnMicrophoneEnabledChange(bool is_microphone_enabled) override;
   void OnMicrophoneMutedChange(bool is_microphone_muted) override;
   // UI Customization End
 
@@ -303,9 +302,7 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
 
   // Contains the time for when the last output volume change was detected.
   int64_t last_output_volume_change_time_ RTC_GUARDED_BY(thread_);
-  // UI Customization Begin
-  bool is_microphone_muted_;
-  // UI Customization Begin
+
   // Avoids running pending task after `this` is Terminated.
   rtc::scoped_refptr<PendingTaskSafetyFlag> safety_ =
       PendingTaskSafetyFlag::Create();

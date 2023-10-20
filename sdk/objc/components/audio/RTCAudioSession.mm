@@ -56,7 +56,6 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   BOOL _canPlayOrRecord;
   BOOL _isInterrupted;
   // UI Customization Begin
-  BOOL _isMicrophoneEnabled;
   BOOL _isMicrophoneMuted;
   // UI Customization End
 }
@@ -198,32 +197,8 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
     return _isAudioEnabled;
   }
 }
+
 // UI Customization Begin
-- (void)setIsMicrophoneEnabled:(BOOL)isMicrophoneEnabled {
-  @synchronized(self) {
-    if (_isMicrophoneEnabled == isMicrophoneEnabled) {
-      return;
-    }
-    _isMicrophoneEnabled = isMicrophoneEnabled;
-  }
-  [self notifyDidChangeMicrophoneEnabled];
-}
-
-- (BOOL)isMicrophoneEnabled {
-  @synchronized(self) {
-    return _isMicrophoneEnabled;
-  }
-}
-
-- (void)notifyDidChangeMicrophoneEnabled {
-  for (auto delegate : self.delegates) {
-    SEL sel = @selector(audioSession:didChangeMicrophoneEnabled:);
-    if ([delegate respondsToSelector:sel]) {
-      [delegate audioSession:self didChangeMicrophoneEnabled:self.isMicrophoneEnabled];
-    }
-  }
-}
-
 - (void)setIsMicrophoneMuted:(BOOL)isMicrophoneMuted {
   @synchronized(self) {
     if (_isMicrophoneMuted == isMicrophoneMuted) {
@@ -249,6 +224,7 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   }
 }
 // UI Customization End
+
 - (void)setIgnoresPreferredAttributeConfigurationErrors:
     (BOOL)ignoresPreferredAttributeConfigurationErrors {
   @synchronized(self) {
