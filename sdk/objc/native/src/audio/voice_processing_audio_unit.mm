@@ -122,7 +122,7 @@ bool VoiceProcessingAudioUnit::Init() {
   // Enable input on the input scope of the input element.
 // UI Customization Begin
   if (webRTCConfiguration.isMicrophoneEnabled) {
-    RTCLog("@Enable input on the input scope of the input element.");
+    RTCLog(@"Enable input on the input scope of the input element.");
     UInt32 enable_input = 1;
     result = AudioUnitSetProperty(vpio_unit_, kAudioOutputUnitProperty_EnableIO,
                                   kAudioUnitScope_Input, kInputBus, &enable_input,
@@ -135,7 +135,7 @@ bool VoiceProcessingAudioUnit::Init() {
       return false;
     }
   } else {
-    RTCLog("@NOT Enable input on the input scope of the input element.");
+    RTCLog(@"NOT Enable input on the input scope of the input element.");
   }
 // UI Customization End
   // Enable output on the output scope of the output element.
@@ -171,7 +171,7 @@ bool VoiceProcessingAudioUnit::Init() {
   // TODO(henrika): not sure that it actually saves resource to make this call.
 // UI Customization Begin
   if (webRTCConfiguration.isMicrophoneEnabled) {
-    RTCLog("@Disable AU buffer allocation for the recorder, we allocate our own.");
+    RTCLog(@"Disable AU buffer allocation for the recorder, we allocate our own.");
     UInt32 flag = 0;
     result = AudioUnitSetProperty(
         vpio_unit_, kAudioUnitProperty_ShouldAllocateBuffer,
@@ -184,7 +184,7 @@ bool VoiceProcessingAudioUnit::Init() {
       return false;
     }
   } else {
-    RTCLog("@NOT Disable AU buffer allocation for the recorder.");
+    RTCLog(@"NOT Disable AU buffer allocation for the recorder.");
   }
 // UI Customization End
   // Specify the callback to be called by the I/O thread to us when input audio
@@ -192,7 +192,7 @@ bool VoiceProcessingAudioUnit::Init() {
   // AudioUnitRender() method.
 // UI Customization Begin
   if (webRTCConfiguration.isMicrophoneEnabled) {
-    RTCLog("@Specify the callback to be called by the I/O thread to us when input audio");
+    RTCLog(@"Specify the callback to be called by the I/O thread to us when input audio");
         
     AURenderCallbackStruct input_callback;
     input_callback.inputProc = OnDeliverRecordedData;
@@ -209,7 +209,7 @@ bool VoiceProcessingAudioUnit::Init() {
       return false;
     }
   } else {
-    RTCLog("@NOT Specify the callback to be called by the I/O thread to us.");   
+    RTCLog(@"NOT Specify the callback to be called by the I/O thread to us.");   
   }
 // UI Customization End
   state_ = kUninitialized;
@@ -233,7 +233,7 @@ bool VoiceProcessingAudioUnit::Initialize(Float64 sample_rate) {
 // UI Customization Begin
   RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
   if (webRTCConfiguration.isMicrophoneEnabled) {
-    RTCLog("@Setting the format on the output scope of the input element/bus because it's not movie mode");
+    RTCLog(@"Setting the format on the output scope of the input element/bus because it's not movie mode");
     // Set the format on the output scope of the input element/bus.
     result =
         AudioUnitSetProperty(vpio_unit_, kAudioUnitProperty_StreamFormat,
@@ -245,7 +245,7 @@ bool VoiceProcessingAudioUnit::Initialize(Float64 sample_rate) {
       return false;
     }
   } else {
-    RTCLog("@NOT setting the format on the output scope of the input element because it's movie mode");
+    RTCLog(@"NOT setting the format on the output scope of the input element because it's movie mode");
   }
 // UI Customization End
   // Set the format on the input scope of the output element/bus.
