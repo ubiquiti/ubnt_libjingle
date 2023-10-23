@@ -17,6 +17,9 @@
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
+// UI Customization Begin
+#include "api/peer_connection_interface.h"
+// UI Customization End
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/transport/goog_cc_factory.h"
@@ -100,7 +103,10 @@ RtpTransportControllerSend::RtpTransportControllerSend(
       network_available_(false),
       congestion_window_size_(DataSize::PlusInfinity()),
       is_congested_(false),
-      retransmission_rate_limiter_(&env_.clock(), kRetransmitWindowSizeMs) {
+      retransmission_rate_limiter_(&env_.clock(), kRetransmitWindowSizeMs),
+// UI Customization Begin
+      , transport_controller_observer_(config.transport_controller_observer) {
+// UI Customization End
   ParseFieldTrial(
       {&relay_bandwidth_cap_},
       env_.field_trials().Lookup("WebRTC-Bwe-NetworkRouteConstraints"));
@@ -699,6 +705,10 @@ void RtpTransportControllerSend::UpdateControllerWithTimeInterval() {
   msg.at_time = Timestamp::Millis(env_.clock().TimeInMilliseconds());
   if (add_pacing_to_cwin_)
     msg.pacer_queue = pacer_.QueueSizeData();
+// UI Customization Begin
+  if (transport_controller_observer_.get())
+    transport_controller_observer_->OnPacerStateUpdate(pacer_.QueueSizeData().bytes_or(0), pacer_.ExpectedQueueTime().ms());
+// UI Customization End
   PostUpdates(controller_->OnProcessInterval(msg));
 }
 

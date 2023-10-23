@@ -208,6 +208,10 @@ class RtpTransportControllerSend final
   RateLimiter retransmission_rate_limiter_;
 
   ScopedTaskSafety safety_;
+
+// UI Customization Begin
+  std::shared_ptr<TransportControllerObserver> transport_controller_observer_;
+// UI Customization End
 };
 
 }  // namespace webrtc
