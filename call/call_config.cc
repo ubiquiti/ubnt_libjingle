@@ -39,6 +39,9 @@ RtpTransportConfig CallConfig::ExtractTransportConfig() const {
       network_state_predictor_factory;
   transportConfig.task_queue_factory = task_queue_factory;
   transportConfig.trials = trials;
+// UI Customization Begin
+  transportConfig.transport_controller_observer = transport_controller_observer;
+// UI Customization End
 
   return transportConfig;
 }

@@ -21,6 +21,9 @@
 #include "rtc_base/task_queue.h"
 
 namespace webrtc {
+// UI Customization Begin
+class TransportControllerObserver;
+// UI Customization End
 
 struct RtpTransportConfig {
   // Bitrate config used until valid bitrate estimates are calculated. Also
@@ -44,6 +47,9 @@ struct RtpTransportConfig {
   // Key-value mapping of internal configurations to apply,
   // e.g. field trials.
   const FieldTrialsView* trials = nullptr;
+// UI Customization Begin
+  std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+// UI Customization End
 };
 }  // namespace webrtc
 

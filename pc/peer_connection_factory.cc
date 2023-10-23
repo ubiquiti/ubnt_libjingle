@@ -346,6 +346,9 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
   call_config.rtp_transport_controller_send_factory =
       transport_controller_send_factory_.get();
   call_config.metronome = metronome_.get();
+// UI Customization Begin
+  call_config.transport_controller_observer = configuration.transport_controller_observer;
+// UI Customization End
   return context_->call_factory()->CreateCall(call_config);
 }
 
