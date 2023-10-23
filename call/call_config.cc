@@ -32,6 +32,9 @@ RtpTransportConfig CallConfig::ExtractTransportConfig() const {
   transportConfig.task_queue_factory = task_queue_factory;
   transportConfig.trials = trials;
   transportConfig.pacer_burst_interval = pacer_burst_interval;
+// UI Customization Begin
+  transportConfig.transport_controller_observer = transport_controller_observer;
+// UI Customization End
 
   return transportConfig;
 }
