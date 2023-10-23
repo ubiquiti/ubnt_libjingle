@@ -209,6 +209,10 @@ class RtpTransportControllerSend final
   ScopedTaskSafety safety_;
 
   const FieldTrialsView& field_trials_;
+
+// UI Customization Begin
+  std::shared_ptr<TransportControllerObserver> transport_controller_observer_;
+// UI Customization End
 };
 
 }  // namespace webrtc
