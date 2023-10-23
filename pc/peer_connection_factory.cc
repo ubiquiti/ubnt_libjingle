@@ -344,6 +344,9 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
       transport_controller_send_factory_.get();
   call_config.metronome = metronome_.get();
   call_config.pacer_burst_interval = configuration.pacer_burst_interval;
+// UI Customization Begin
+  call_config.transport_controller_observer = configuration.transport_controller_observer;
+// UI Customization End
   return context_->call_factory()->CreateCall(call_config);
 }
 
