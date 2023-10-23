@@ -911,6 +911,36 @@ class CustomProcessing {
   virtual ~CustomProcessing() {}
 };
 
+// UI Customization Begin
+class UnifiCapturePostProcessing : public CustomProcessing {
+ public:
+  class Observer {
+   public:
+    virtual ~Observer() {
+    }
+    virtual void OnUpdateAudioIndicator(int average, int peak) {
+		}
+  };
+
+  virtual void Initialize(int sample_rate_hz, int num_channels) {}
+  virtual void Process(AudioBuffer* audio) {}
+  virtual std::string ToString() const { return "UnifiCapturePostProcessing"; }
+  virtual void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting) {}
+  void SetObserver(std::shared_ptr<Observer> observer) {
+    observer_ = observer;
+  }
+  void UpdateAudioIndicator(int average, int peak) {
+    if (observer_)
+      observer_->OnUpdateAudioIndicator(average, peak);
+  }
+
+  virtual ~UnifiCapturePostProcessing() { observer_.reset(); }
+
+ private:
+  std::shared_ptr<Observer> observer_;
+};
+// UI Customization End
+
 // Interface for an echo detector submodule.
 class EchoDetector : public rtc::RefCountInterface {
  public:

@@ -422,6 +422,10 @@ if (is_ios || is_mac) {
         "objc/native/src/objc_audio_device.mm",
         "objc/native/src/objc_audio_device_delegate.h",
         "objc/native/src/objc_audio_device_delegate.mm",
+# UI Customization Begin
+        "objc/native/src/unifi_capture_post_processing.h",
+        "objc/native/src/unifi_capture_post_processing.mm",
+# UI Customization End
       ]
 
       deps = [
@@ -453,6 +457,10 @@ if (is_ios || is_mac) {
       sources = [
         "objc/native/api/objc_audio_device_module.h",
         "objc/native/api/objc_audio_device_module.mm",
+# UI Customization Begin
+        "objc/native/api/objc_audio_processing.h",
+        "objc/native/api/objc_audio_processing.mm",
+# UI Customization End
       ]
 
       deps = [
@@ -1322,6 +1330,9 @@ if (is_ios || is_mac) {
           "objc/base/RTCVideoRenderer.h",
           "objc/base/RTCYUVPlanarBuffer.h",
           "objc/components/audio/RTCAudioDevice.h",
+# UI Customization Begin
+           "objc/components/audio/RTCAudioProcessing.h",
+# UI Customization End
           "objc/components/audio/RTCAudioSession.h",
           "objc/components/audio/RTCAudioSessionConfiguration.h",
           "objc/components/capturer/RTCFileVideoCapturer.h",
