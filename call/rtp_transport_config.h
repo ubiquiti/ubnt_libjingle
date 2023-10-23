@@ -21,6 +21,9 @@
 #include "rtc_base/task_queue.h"
 
 namespace webrtc {
+// UI Customization Begin
+class TransportControllerObserver;
+// UI Customization End
 
 struct RtpTransportConfig {
   // Bitrate config used until valid bitrate estimates are calculated. Also
@@ -47,6 +50,10 @@ struct RtpTransportConfig {
 
   // The burst interval of the pacer, see TaskQueuePacedSender constructor.
   absl::optional<TimeDelta> pacer_burst_interval;
+
+// UI Customization Begin
+  std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+// UI Customization End
 };
 }  // namespace webrtc
 
