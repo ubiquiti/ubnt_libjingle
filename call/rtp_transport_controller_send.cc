@@ -638,7 +638,7 @@ void RtpTransportControllerSend::UpdateControllerWithTimeInterval() {
   if (add_pacing_to_cwin_)
     msg.pacer_queue = pacer_.QueueSizeData();
 // UI Customization Begin
-  if (transport_controller_observer_ && transport_controller_observer_.get())
+  if (transport_controller_observer_.get())
     transport_controller_observer_->OnPacerStateUpdate(pacer_.QueueSizeData().bytes_or(0), pacer_.ExpectedQueueTime().ms());
 // UI Customization End
   PostUpdates(controller_->OnProcessInterval(msg));
