@@ -1759,10 +1759,7 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
       RmsLevel::Levels levels = capture_output_rms_.AverageAndPeak();
 // UI Customization Begin
       if (submodules_.capture_post_processor) {
-        auto capture_post_processor = dynamic_cast<UnifiCapturePostProcessing*>(submodules_.capture_post_processor.get());
-        if (capture_post_processor) {
-          capture_post_processor->UpdateAudioIndicator(levels.average, levels.peak);
-        }
+        submodules_.capture_post_processor->UpdateAudioIndicator(levels.average, levels.peak);
       }
 // UI Customization End
       RTC_HISTOGRAM_COUNTS_LINEAR(
