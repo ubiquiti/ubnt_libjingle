@@ -24,6 +24,8 @@ class UnifiCapturePostProcessing : public CustomProcessing {
 
  private:
   id<RTC_OBJC_TYPE(RTCAudioProcessing)> audio_processing_;
+  int sample_rate_hz_ = 0;
+  int num_channels_ = 0;
 };
 
 }  // namespace webrtc
