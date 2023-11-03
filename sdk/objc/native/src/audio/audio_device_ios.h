@@ -175,7 +175,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void HandlePlayoutGlitchDetected();
   void HandleOutputVolumeChange();
   // UI Customization Begin
-  void HandleMicrophoneEnabledChange(bool is_microphone_enabled);
   void HandleMicrophoneMutedChange(bool is_microphone_muted);
   // UI Customization End
 
