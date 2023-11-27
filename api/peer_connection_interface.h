@@ -182,6 +182,8 @@ class RTC_EXPORT TransportControllerObserver {
   }
   virtual void OnPacerStateUpdate(int64_t queueSizeInBytes, int64_t expectedQueueTimeMs) {
   }
+  virtual void OnFirstSentPacketTime(int64_t firstPacketSendTimeMs) {
+  }
 };
 // UI Customization End
 
