@@ -402,11 +402,11 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
       media_config.video.periodic_alr_bandwidth_probing = enable;
     }
 
-    void set_transport_controller_observer(std::shared_ptr<TransportControllerObserver> observer) {
+    void set_transport_controller_observer(std::weak_ptr<TransportControllerObserver> observer) {
       transport_controller_observer = observer;
     }
 
-    std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+    std::weak_ptr<TransportControllerObserver> transport_controller_observer;
 // UI Customization End
 
     // Settings for the port allcoator. Applied only if the port allocator is

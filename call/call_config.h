@@ -89,7 +89,7 @@ struct CallConfig {
   bool enable_send_packet_batching = false;
 
 // UI Customization Begin
-  std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+  std::weak_ptr<TransportControllerObserver> transport_controller_observer;
 // UI Customization End
 };
 
