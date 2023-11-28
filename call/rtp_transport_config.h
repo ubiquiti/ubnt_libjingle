@@ -48,7 +48,7 @@ struct RtpTransportConfig {
   // e.g. field trials.
   const FieldTrialsView* trials = nullptr;
 // UI Customization Begin
-  std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+  std::weak_ptr<TransportControllerObserver> transport_controller_observer;
 // UI Customization End
 };
 }  // namespace webrtc

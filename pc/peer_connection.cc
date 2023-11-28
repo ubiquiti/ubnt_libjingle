@@ -465,7 +465,7 @@ bool PeerConnectionInterface::RTCConfiguration::operator==(
     PortAllocatorConfig port_allocator_config;
     absl::optional<TimeDelta> pacer_burst_interval;
 // UI Customization Begin
-    std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+    std::weak_ptr<TransportControllerObserver> transport_controller_observer;
 // UI Customization End
   };
   static_assert(sizeof(stuff_being_tested_for_equality) == sizeof(*this),
@@ -533,7 +533,7 @@ bool PeerConnectionInterface::RTCConfiguration::operator==(
          port_allocator_config.flags == o.port_allocator_config.flags &&
          pacer_burst_interval == o.pacer_burst_interval
 // UI Customization Begin
-         && transport_controller_observer == o.transport_controller_observer
+         && transport_controller_observer.lock().get() == o.transport_controller_observer.lock().get()
 // UI Customization End
          ;
 }
