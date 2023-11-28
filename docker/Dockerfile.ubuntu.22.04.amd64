@@ -83,8 +83,6 @@ RUN apt-get install -y --no-install-recommends ant
 RUN apt-get install -y --no-install-recommends openjdk-17-jdk
 RUN apt-get install -y --no-install-recommends nasm
 RUN apt-get install -y --no-install-recommends tree
-RUN apt-get install -y --no-install-recommends nasm
-RUN apt-get install -y --no-install-recommends tree
 RUN apt-get install -y --no-install-recommends pip
 RUN apt-get install -y --no-install-recommends python-setuptools
 
