@@ -210,7 +210,8 @@ class RtpTransportControllerSend final
   ScopedTaskSafety safety_;
 
 // UI Customization Begin
-  std::shared_ptr<TransportControllerObserver> transport_controller_observer_;
+  std::weak_ptr<TransportControllerObserver> transport_controller_observer_;
+  uint64_t last_pacer_state_checking_time_;
 // UI Customization End
 };
 

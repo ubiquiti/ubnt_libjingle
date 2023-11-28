@@ -42,7 +42,7 @@ struct RtpTransportConfig {
   // The burst interval of the pacer, see TaskQueuePacedSender constructor.
   absl::optional<TimeDelta> pacer_burst_interval;
 // UI Customization Begin
-  std::shared_ptr<TransportControllerObserver> transport_controller_observer;
+  std::weak_ptr<TransportControllerObserver> transport_controller_observer;
 // UI Customization End
 };
 }  // namespace webrtc
