@@ -120,7 +120,7 @@ pipeline {
                     },
                     'docker:ubuntu_22_04_amd64': {
                         script {
-                            DOCKER_UBUNTU_22_04_AMD64 = docker.build("${APP}_ubuntu_22_04_amd64:${HASH}", "--progress=plain --pull -f ./docker/Dockerfile.ubuntu.22.04.amd64 ./docker")
+                            DOCKER_UBUNTU_22_04_AMD64 = docker.build("${APP}_ubuntu_22_04_amd64:${HASH}", "--progress=plain --pull --no-cache -f ./docker/Dockerfile.ubuntu.22.04.amd64 ./docker")
                         }
                     }
                 )
