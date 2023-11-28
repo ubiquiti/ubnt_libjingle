@@ -38,6 +38,9 @@ namespace webrtc {
 namespace {
 static const int64_t kRetransmitWindowSizeMs = 500;
 static const size_t kMaxOverheadBytes = 500;
+// UI Customization Begin
+static const uint64_t kPacerStateUpdateTimeMs = 1000;
+// UI Customization End
 
 constexpr TimeDelta kPacerQueueUpdateInterval = TimeDelta::Millis(25);
 
@@ -110,6 +113,7 @@ RtpTransportControllerSend::RtpTransportControllerSend(
       field_trials_(*config.trials)
 // UI Customization Begin
       , transport_controller_observer_(config.transport_controller_observer)
+      , last_pacer_state_checking_time_(0)
 // UI Customization End
       {
   ParseFieldTrial({&relay_bandwidth_cap_},
@@ -369,7 +373,19 @@ int64_t RtpTransportControllerSend::GetPacerQueuingDelayMs() const {
 }
 absl::optional<Timestamp> RtpTransportControllerSend::GetFirstPacketTime()
     const {
+// UI Customization Begin
+#ifdef UI_CUSTOMIZATION
+  auto firstSentPacketTime = pacer_.FirstSentPacketTime();
+  auto observer = transport_controller_observer_.lock();
+  if (observer) {
+    RTC_LOG(LS_INFO) << "First packet sent time=" << firstSentPacketTime->ms() << " ms.";
+    observer->OnFirstSentPacketTime(firstSentPacketTime->ms());
+  }
+  return firstSentPacketTime;
+#else
   return pacer_.FirstSentPacketTime();
+#endif
+// UI Customization End
 }
 void RtpTransportControllerSend::EnablePeriodicAlrProbing(bool enable) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
@@ -638,8 +654,20 @@ void RtpTransportControllerSend::UpdateControllerWithTimeInterval() {
   if (add_pacing_to_cwin_)
     msg.pacer_queue = pacer_.QueueSizeData();
 // UI Customization Begin
-  if (transport_controller_observer_.get())
-    transport_controller_observer_->OnPacerStateUpdate(pacer_.QueueSizeData().bytes_or(0), pacer_.ExpectedQueueTime().ms());
+#ifdef UI_CUSTOMIZATION
+  if (last_pacer_state_checking_time_ == 0)
+    last_pacer_state_checking_time_ = rtc::TimeMillis();
+  else {
+    uint64_t now = rtc::TimeMillis();
+    uint64_t elapse_time = now - last_pacer_state_checking_time_;
+    if (elapse_time > kPacerStateUpdateTimeMs) {
+      last_pacer_state_checking_time_ = now;
+      auto observer = transport_controller_observer_.lock();
+      if (observer)
+        observer->OnPacerStateUpdate(pacer_.QueueSizeData().bytes_or(0), pacer_.ExpectedQueueTime().ms());
+    }
+  }
+#endif
 // UI Customization End
   PostUpdates(controller_->OnProcessInterval(msg));
 }
