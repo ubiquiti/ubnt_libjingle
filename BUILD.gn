@@ -550,10 +550,6 @@ if (!build_with_chromium) {
       "video",
     ]
 
-# UI Customization Begin
-    deps += ["rtc_base:rtc_json",]
-# UI Customization End
-
     if (rtc_include_builtin_audio_codecs) {
       deps += [
         "api/audio_codecs:builtin_audio_decoder_factory",
