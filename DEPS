@@ -51,8 +51,10 @@ deps = {
   # TODO(kjellander): Move this to be Android-only.
   'src/base':
     'https://chromium.googlesource.com/chromium/src/base@1546e3adb67bb711ca2fd39c3913cb56bd889748',
+  # UI Customization Begin
   'src/build':
-    'https://chromium.googlesource.com/chromium/src/build@a21fc6065131d0442e8a54c3ca2638e393b69438',
+    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@v0.0.28',
+  # UI Customization End
   'src/buildtools':
     'https://chromium.googlesource.com/chromium/src/buildtools@6f834e2039daedfc68a2749c217922b26d5e8497',
   # Gradle 6.6.1. Used for testing Android Studio project generation for WebRTC.
