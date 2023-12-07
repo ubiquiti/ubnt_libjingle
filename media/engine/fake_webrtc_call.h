@@ -40,6 +40,10 @@
 #include "rtc_base/buffer.h"
 #include "test/scoped_key_value_config.h"
 
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+#include "call/rtp_stream_receiver_controller.h"
+#endif
+
 namespace cricket {
 class FakeAudioSendStream final : public webrtc::AudioSendStream {
  public:
@@ -414,6 +418,10 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
   }
 
   const webrtc::FieldTrialsView& trials() const override { return *trials_; }
+
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+  RtpStreamReceiverController* receiver_controller() override {return nullptr;}
+#endif
 
  private:
   webrtc::AudioSendStream* CreateAudioSendStream(
