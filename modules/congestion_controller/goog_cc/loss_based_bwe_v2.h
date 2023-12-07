@@ -82,6 +82,10 @@ class LossBasedBweV2 {
   };
 
   struct Config {
+// UI Customization Begin
+    // workaround for fixing the compilation issue on Linux platform
+    Config() {}
+// UI Customization End
     double bandwidth_rampup_upper_bound_factor = 0.0;
     double rampup_acceleration_max_factor = 0.0;
     TimeDelta rampup_acceleration_maxout_time = TimeDelta::Zero();
