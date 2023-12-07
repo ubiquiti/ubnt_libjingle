@@ -232,6 +232,9 @@ class RTC_EXPORT NetworkManagerBase : public NetworkManager {
   const std::vector<Network*>& GetNetworksInternal() const { return networks_; }
 
   std::unique_ptr<Network> CreateNetwork(absl::string_view name,
+// UI Customization Begin
+                                         int index,
+// UI Customization End
                                          absl::string_view description,
                                          const IPAddress& prefix,
                                          int prefix_length,
@@ -380,16 +383,25 @@ class RTC_EXPORT BasicNetworkManager : public NetworkManagerBase,
 class RTC_EXPORT Network {
  public:
   Network(absl::string_view name,
+// UI Customization Begin
+          int index,
+// UI Customization End
           absl::string_view description,
           const IPAddress& prefix,
           int prefix_length)
       : Network(name,
+// UI Customization Begin
+                index,
+// UI Customization End
                 description,
                 prefix,
                 prefix_length,
                 rtc::ADAPTER_TYPE_UNKNOWN) {}
 
   Network(absl::string_view name,
+// UI Customization Begin
+          int index,
+// UI Customization End
           absl::string_view description,
           const IPAddress& prefix,
           int prefix_length,
@@ -420,7 +432,12 @@ class RTC_EXPORT Network {
 
   // Returns the name of the interface this network is associated with.
   const std::string& name() const { return name_; }
-
+// UI Customization Begin
+  // Returns the interface index as obtained by if_nametoindex
+  int index() const {
+    return index_;
+  }
+// UI Customization End
   // Returns the OS-assigned name for this network. This is useful for
   // debugging but should not be sent over the wire (for privacy reasons).
   const std::string& description() const { return description_; }
@@ -579,6 +596,9 @@ class RTC_EXPORT Network {
   const DefaultLocalAddressProvider* default_local_address_provider_ = nullptr;
   const MdnsResponderProvider* mdns_responder_provider_ = nullptr;
   std::string name_;
+// UI Customization Begin
+  int index_;
+// UI Customization End
   std::string description_;
   IPAddress prefix_;
   int prefix_length_;

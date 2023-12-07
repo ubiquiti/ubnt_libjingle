@@ -35,6 +35,9 @@ class RTC_EXPORT BasicPacketSocketFactory : public PacketSocketFactory {
   ~BasicPacketSocketFactory() override;
 
   AsyncPacketSocket* CreateUdpSocket(const SocketAddress& local_address,
+// UI Customization Begin
+                                     int interfaceIndex,
+// UI Customization End
                                      uint16_t min_port,
                                      uint16_t max_port) override;
   AsyncListenSocket* CreateServerTcpSocket(const SocketAddress& local_address,
@@ -54,6 +57,9 @@ class RTC_EXPORT BasicPacketSocketFactory : public PacketSocketFactory {
  private:
   int BindSocket(Socket* socket,
                  const SocketAddress& local_address,
+// UI Customization Begin
+                 int interfaceIndex,
+// UI Customization End
                  uint16_t min_port,
                  uint16_t max_port);
 

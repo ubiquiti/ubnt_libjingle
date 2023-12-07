@@ -265,7 +265,9 @@ class VideoSendStream {
   virtual Stats GetStats() = 0;
 
   virtual void GenerateKeyFrame(const std::vector<std::string>& rids) = 0;
-
+  // UI Customization Begin
+  virtual void SuspendBelowMinBitrate(bool suspend_below_min_bitrate) {}
+  // UI Customization End
  protected:
   virtual ~VideoSendStream() {}
 };

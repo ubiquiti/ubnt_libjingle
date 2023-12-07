@@ -1349,8 +1349,11 @@ void VideoStreamEncoder::ReconfigureEncoder() {
   force_disable_frame_dropper_ =
       field_trials_.IsDisabled(kFrameDropperFieldTrial) ||
       (num_layers > 1 && codec.mode == VideoCodecMode::kScreensharing);
-
-  const VideoEncoder::EncoderInfo info = encoder_->GetEncoderInfo();
+// UI Customization Begin
+  // UI customization - never drop frames to avoid artifacts
+  force_disable_frame_dropper_ = true;
+// UI Customization End
+  VideoEncoder::EncoderInfo info = encoder_->GetEncoderInfo();
   if (rate_control_settings_.UseEncoderBitrateAdjuster()) {
     bitrate_adjuster_ =
         std::make_unique<EncoderBitrateAdjuster>(codec, field_trials_);
@@ -1541,6 +1544,17 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
   bool cwnd_frame_drop =
       cwnd_frame_drop_interval_ &&
       (cwnd_frame_counter_++ % cwnd_frame_drop_interval_.value() == 0);
+
+// UI Customization Begin
+  // UI customization - never drop frames to avoid artifacts
+  if (cwnd_frame_drop) {
+    RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
+                      << " cwnd_frame_drop=" << cwnd_frame_drop
+                      << ". Avoid dropping frame";
+    cwnd_frame_drop = false;
+  }
+// UI Customization End
+
   if (!queue_overload && !cwnd_frame_drop) {
     MaybeEncodeVideoFrame(incoming_frame, post_time.us());
   } else {
@@ -1800,6 +1814,12 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
   }
 
   if (DropDueToSize(video_frame.size())) {
+// UI Customization Begin - never drop frames to avoid artifacts
+    RTC_LOG(LS_VERBOSE) << "   VideoStreamEncoder::" << __func__
+                      << "  Too large for target bitrate size="
+                      << video_frame.size() << ". Avoid dropping frame";
+#if 0
+// UI Customization End
     RTC_LOG(LS_INFO) << "Dropping frame. Too large for target bitrate.";
     stream_resource_manager_.OnFrameDroppedDueToSize();
     // Storing references to a native buffer risks blocking frame capture.
@@ -1814,6 +1834,10 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
           video_frame, VideoStreamEncoderObserver::DropReason::kEncoderQueue);
     }
     return;
+// UI Customization Begin
+#endif
+// UI Customization End
+
   }
   stream_resource_manager_.OnMaybeEncodeFrame();
 
@@ -2296,6 +2320,10 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
     RTC_LOG(LS_INFO) << "Video suspend state changed to: "
                      << (video_is_suspended ? "suspended" : "not suspended");
     encoder_stats_observer_->OnSuspendChange(video_is_suspended);
+#ifdef UI_CUSTOMIZATION
+    if (encoder_)
+      encoder_->OnSuspendChange(video_is_suspended);
+#endif
 
     if (!video_is_suspended && pending_frame_ &&
         !DropDueToSize(pending_frame_->size())) {
