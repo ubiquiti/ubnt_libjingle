@@ -23,13 +23,21 @@
 #include "api/rtp_packet_info.h"
 #include "api/video/video_frame_type.h"
 #include "common_video/h264/h264_common.h"
+#ifdef WEBRTC_USE_H265
+#include "common_video/h265/h265_common.h"
+#endif
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
+#ifdef WEBRTC_USE_H265
+#include "modules/video_coding/codecs/h265/include/h265_globals.h"
+#endif
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
+
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace video_coding {
@@ -50,6 +58,9 @@ PacketBuffer::PacketBuffer(size_t start_buffer_size, size_t max_buffer_size)
       is_cleared_to_first_seq_num_(false),
       buffer_(start_buffer_size),
       sps_pps_idr_is_h264_keyframe_(false) {
+  
+  //RTC_LOG(LS_WARNING) << "   PacketBuffer::PacketBuffer() start_buffer_size=" << start_buffer_size << " max_buffer_size=" << max_buffer_size;
+
   RTC_DCHECK_LE(start_buffer_size, max_buffer_size);
   // Buffer size must always be a power of 2.
   RTC_DCHECK((start_buffer_size & (start_buffer_size - 1)) == 0);
@@ -67,12 +78,16 @@ PacketBuffer::InsertResult PacketBuffer::InsertPacket(
   uint16_t seq_num = packet->seq_num;
   size_t index = seq_num % buffer_.size();
 
+  //RTC_LOG(LS_WARNING) << "   PacketBuffer::" << __func__ << " seq_num=" << seq_num << " index=" << index << " buffer_.size()=" << buffer_.size();
+
   if (!first_packet_received_) {
     first_seq_num_ = seq_num;
     first_packet_received_ = true;
+    //RTC_LOG(LS_WARNING) << "   PacketBuffer::" << __func__ << " seq_num=" << seq_num << " index=" << index << " first_packet_received_=" << first_packet_received_;
   } else if (AheadOf(first_seq_num_, seq_num)) {
     // If we have explicitly cleared past this packet then it's old,
     // don't insert it, just silently ignore it.
+    //RTC_LOG(LS_WARNING) << "   PacketBuffer::" << __func__ << " seq_num=" << seq_num << " index=" << index << " first_packet_received_=" << first_packet_received_ << " AheadOf(first_seq_num_, seq_num)=" << AheadOf(first_seq_num_, seq_num);
     if (is_cleared_to_first_seq_num_) {
       return result;
     }
@@ -90,6 +105,7 @@ PacketBuffer::InsertResult PacketBuffer::InsertPacket(
   if (buffer_[index] != nullptr) {
     // Duplicate packet, just delete the payload.
     if (buffer_[index]->seq_num == packet->seq_num) {
+      RTC_LOG(LS_WARNING) << "   PacketBuffer::" << __func__ << " seq_num=" << seq_num << " index=" << index << " first_packet_received_=" << first_packet_received_ << " Duplicate packet, just delete the payload.";
       return result;
     }
 
@@ -102,7 +118,7 @@ PacketBuffer::InsertResult PacketBuffer::InsertPacket(
     if (buffer_[index] != nullptr) {
       // Clear the buffer, delete payload, and return false to signal that a
       // new keyframe is needed.
-      RTC_LOG(LS_WARNING) << "Clear PacketBuffer and request key frame.";
+      RTC_LOG(LS_WARNING) << "   PacketBuffer::" << __func__ << " Packet buffer is still full since we were unable to expand the buffer .Clear PacketBuffer and request key frame.";
       ClearInternal();
       result.buffer_cleared = true;
       return result;
@@ -119,10 +135,15 @@ PacketBuffer::InsertResult PacketBuffer::InsertPacket(
       received_padding_.lower_bound(seq_num - (buffer_.size() / 4)));
 
   result.packets = FindFrames(seq_num);
+
+  //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__ << " missing packets=" << missing_packets_.size() << " result.packets.size()=" << result.packets.size();
   return result;
 }
 
 void PacketBuffer::ClearTo(uint16_t seq_num) {
+  
+  //RTC_LOG(LS_WARNING) << "#-> PacketBuffer::" << __func__ << " seq_num=" << seq_num;
+
   // We have already cleared past this sequence number, no need to do anything.
   if (is_cleared_to_first_seq_num_ &&
       AheadOf<uint16_t>(first_seq_num_, seq_num)) {
@@ -156,6 +177,7 @@ void PacketBuffer::ClearTo(uint16_t seq_num) {
 
   received_padding_.erase(received_padding_.begin(),
                           received_padding_.lower_bound(seq_num));
+  //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__ << " seq_num=" << seq_num;
 }
 
 void PacketBuffer::Clear() {
@@ -163,10 +185,15 @@ void PacketBuffer::Clear() {
 }
 
 PacketBuffer::InsertResult PacketBuffer::InsertPadding(uint16_t seq_num) {
+  
+  //RTC_LOG(LS_WARNING) << "#-> PacketBuffer::" << __func__ << " seq_num=" << seq_num;
+
   PacketBuffer::InsertResult result;
   UpdateMissingPackets(seq_num);
   received_padding_.insert(seq_num);
   result.packets = FindFrames(static_cast<uint16_t>(seq_num + 1));
+  
+  RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__ << " seq_num=" << seq_num;
   return result;
 }
 
@@ -179,6 +206,7 @@ void PacketBuffer::ResetSpsPpsIdrIsH264Keyframe() {
 }
 
 void PacketBuffer::ClearInternal() {
+  //RTC_LOG(LS_WARNING) << "PacketBuffer ################## CLEAR INTERNAL ####################################";
   for (auto& entry : buffer_) {
     entry = nullptr;
   }
@@ -192,8 +220,7 @@ void PacketBuffer::ClearInternal() {
 
 bool PacketBuffer::ExpandBufferSize() {
   if (buffer_.size() == max_size_) {
-    RTC_LOG(LS_WARNING) << "PacketBuffer is already at max size (" << max_size_
-                        << "), failed to increase size.";
+    RTC_LOG(LS_WARNING) << "PacketBuffer is already at max size (" << max_size_ << "), failed to increase size. ######################################################";
     return false;
   }
 
@@ -205,31 +232,52 @@ bool PacketBuffer::ExpandBufferSize() {
     }
   }
   buffer_ = std::move(new_buffer);
-  RTC_LOG(LS_INFO) << "PacketBuffer size expanded to " << new_size;
+  
+  RTC_LOG(LS_WARNING) << "PacketBuffer size expanded to " << new_size << " ######################################################";
+
   return true;
 }
 
 bool PacketBuffer::PotentialNewFrame(uint16_t seq_num) const {
   size_t index = seq_num % buffer_.size();
   int prev_index = index > 0 ? index - 1 : buffer_.size() - 1;
+
+  //RTC_LOG(LS_WARNING) << "#-> PacketBuffer::" << __func__ << " seq_num=" << seq_num << " index=" << index << " prev_index=" << prev_index;
+
   const auto& entry = buffer_[index];
   const auto& prev_entry = buffer_[prev_index];
 
-  if (entry == nullptr)
+  if (entry == nullptr) {
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " entry at buffer_[" << index << "] == nullptr => FALSE";
     return false;
-  if (entry->seq_num != seq_num)
-    return false;
-  if (entry->is_first_packet_in_frame())
-    return true;
-  if (prev_entry == nullptr)
-    return false;
-  if (prev_entry->seq_num != static_cast<uint16_t>(entry->seq_num - 1))
-    return false;
-  if (prev_entry->timestamp != entry->timestamp)
-    return false;
-  if (prev_entry->continuous)
-    return true;
+  }
 
+  if (entry->seq_num != seq_num){
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< "  entry at buffer_[" << index << "].seq_num=" << seq_num << " != seq_num " << seq_num << " => FALSE";
+    return false;
+  }
+
+  if (entry->is_first_packet_in_frame()) {
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " (entry->is_first_packet_in_frame() => TRUE";
+    return true;
+  }
+  if (prev_entry == nullptr) {
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " prev_entry at buffer_[" << prev_index << "] == nullptr => FALSE";
+    return false;
+  }
+  if (prev_entry->seq_num != static_cast<uint16_t>(entry->seq_num - 1)) {
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " (prev_entry->seq_num " << prev_entry->seq_num << " != static_cast<uint16_t>(entry->seq_num - 1)) " << static_cast<uint16_t>(entry->seq_num - 1) << " => FALSE";
+    return false;
+  }
+  if (prev_entry->timestamp != entry->timestamp) {
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " (prev_entry->timestamp " << prev_entry->timestamp << " != entry->timestamp " << entry->timestamp << ") => FALSE  prev_entry->seq_num=" << prev_entry->seq_num;
+    return false;
+  }
+  if (prev_entry->continuous) {
+    //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " (prev_entry->continuous) => TRUE   (prev_entry->timestamp " << prev_entry->timestamp << " prev_entry->seq_num=" << prev_entry->seq_num;
+    return true;
+  }
+  //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__<< " default => FALSE";
   return false;
 }
 
@@ -238,13 +286,33 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
   std::vector<std::unique_ptr<PacketBuffer::Packet>> found_frames;
   auto start = seq_num;
 
+  //RTC_LOG(LS_WARNING) << "#-> PacketBuffer::" << __func__ << " seq_num=" << seq_num << " buffer_.size()=" << buffer_.size();
+
+  /*
   for (size_t i = 0; i < buffer_.size(); ++i) {
+    if(buffer_[i]==nullptr)continue;
+    RTC_LOG(LS_WARNING) << "                " <<  i << ") " 
+            << " seq_num=" << buffer_[i]->seq_num
+            << " timestamp=" << buffer_[i]->timestamp
+            << " continuous=" << buffer_[i]->continuous 
+            << " is_first_packet_in_frame=" << buffer_[i]->is_first_packet_in_frame()
+            << " is_last_packet_in_frame=" << buffer_[i]->is_last_packet_in_frame();
+  }
+  */
+
+
+  for (size_t i = 0; i < buffer_.size(); ++i) {
+    
+    //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << " " << i << "] seq_num=" << seq_num;
+
     if (received_padding_.find(seq_num) != received_padding_.end()) {
       seq_num += 1;
+      //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << " " << i << "] continue seq_num=" << seq_num << " received_padding_.find(seq_num) != received_padding_.end() => continue";
       continue;
     }
 
     if (!PotentialNewFrame(seq_num)) {
+      //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__ << " seq_num=" << seq_num << " not a new frame. return found_frames.size()=" << found_frames.size();
       break;
     }
 
@@ -258,7 +326,11 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
 
       // Find the start index by searching backward until the packet with
       // the `frame_begin` flag is set.
+
       int start_index = index;
+      
+      //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << " seq_num=" << seq_num << " last packet in frame  timestamp=" << buffer_[start_index]->timestamp << ". Find the start index by searching backward";
+
       size_t tested_packets = 0;
       int64_t frame_timestamp = buffer_[start_index]->timestamp;
 
@@ -270,16 +342,30 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
       bool has_h264_pps = false;
       bool has_h264_idr = false;
       bool is_h264_keyframe = false;
+
+      bool is_h265 = false;
+#ifdef WEBRTC_USE_H265
+      is_h265 = buffer_[start_index]->codec() == kVideoCodecH265;
+      bool has_h265_sps = false;
+      bool has_h265_pps = false;
+      bool has_h265_idr = false;
+      bool is_h265_keyframe = false;
+#endif
+
       int idr_width = -1;
       int idr_height = -1;
       bool full_frame_found = false;
       while (true) {
         ++tested_packets;
 
-        if (!is_h264_descriptor) {
+        //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") "<< " seq_num=" << buffer_[start_index]->seq_num <<" index=" << start_index << " timestamp=" << buffer_[start_index]->timestamp;
+
+        if (!is_h264 && !is_h265) {
           if (buffer_[start_index] == nullptr ||
               buffer_[start_index]->is_first_packet_in_frame()) {
             full_frame_found = buffer_[start_index] != nullptr;
+            
+            //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") index=" << start_index << " Found the start index or emty frame by searching backward. full_frame_found=" << full_frame_found << " break ####################### FOUND! #############################";
             break;
           }
         }
@@ -314,9 +400,47 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
             }
           }
         }
+#ifdef WEBRTC_USE_H265
+        if (is_h265 && !is_h265_keyframe) {
+          const auto* h265_header = absl::get_if<RTPVideoHeaderH265>(
+              &buffer_[start_index]->video_header.video_type_header);
+          if (!h265_header || h265_header->nalus_length >= kMaxNalusPerPacket) {
+            RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") index=" << start_index << " h265_header->nalus_length=" << h265_header->nalus_length << " reached kMaxNalusPerPacket=" << kMaxNalusPerPacket << "  break";
+            return found_frames;
+          }
+          for (size_t j = 0; j < h265_header->nalus_length; ++j) {
+            
+            //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "                  j=" << j << "/" << h265_header->nalus_length << " nalu_type=" << h265_header->nalus[j].type;
 
-        if (tested_packets == buffer_.size())
+            if (h265_header->nalus[j].type == H265::NaluType::kSps) {
+              has_h265_sps = true;
+            } else if (h265_header->nalus[j].type == H265::NaluType::kPps) {
+              has_h265_pps = true;
+            } else if (h265_header->nalus[j].type == H265::NaluType::kIdrWRadl
+                       || h265_header->nalus[j].type == H265::NaluType::kIdrNLp
+                       || h265_header->nalus[j].type == H265::NaluType::kCra) {
+              has_h265_idr = true;
+            }
+          }
+          
+          //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") h265_header->nalus_length=" << h265_header->nalus_length << " index=" << start_index << " has_h265_sps=" << has_h265_sps << " has_h265_pps=" << has_h265_pps << " has_h265_idr=" << has_h265_idr;
+
+
+          if (has_h265_sps && has_h265_pps && has_h265_idr) {
+            is_h265_keyframe = true;
+            if (buffer_[start_index]->width() > 0 &&
+                buffer_[start_index]->height() > 0) {
+              idr_width = buffer_[start_index]->width();
+              idr_height = buffer_[start_index]->height();
+            }
+          }
+        }
+#endif
+
+        if (tested_packets == buffer_.size()) {
+          //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") index=" << start_index << " ALL PACKETS checked => break";
           break;
+        }
 
         start_index = start_index > 0 ? start_index - 1 : buffer_.size() - 1;
 
@@ -326,9 +450,13 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
         // the timestamp of that packet is the same as this one. This may cause
         // the PacketBuffer to hand out incomplete frames.
         // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=7106
-        if (is_h264_descriptor &&
-            (buffer_[start_index] == nullptr ||
-             buffer_[start_index]->timestamp != frame_timestamp)) {
+        if ((is_h264 || is_h265) && (buffer_[start_index] == nullptr)) {
+          //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") index=" << start_index << " buffer_[start_index] == nullptr. break";
+          break;
+        }
+
+        if ((is_h264 || is_h265) && (buffer_[start_index]->timestamp != frame_timestamp)) {
+          //RTC_LOG(LS_WARNING) << "    PacketBuffer::" << __func__ << "     " << tested_packets << ") index=" << start_index << " buffer_[start_index]->timestamp " << buffer_[start_index]->timestamp << " != frame_timestamp " << frame_timestamp << ". break";
           break;
         }
 
@@ -373,9 +501,49 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
         }
       }
 
-      if (is_h264_descriptor || full_frame_found) {
+#ifdef WEBRTC_USE_H265
+      if (is_h265) {
+        // Warn if this is an unsafe frame.
+        if (has_h265_idr && (!has_h265_sps || !has_h265_pps)) {
+          RTC_LOG(LS_WARNING)
+              << "Received H.265-IDR frame "
+              << "(SPS: " << has_h265_sps << ", PPS: " << has_h265_pps << "). "
+              << "Treating as delta frame since "
+              << "WebRTC-SpsPpsIdrIsH265Keyframe is always enabled.";
+        }
+
+        // Now that we have decided whether to treat this frame as a key frame
+        // or delta frame in the frame buffer, we update the field that
+        // determines if the RtpFrameObject is a key frame or delta frame.
+        const size_t first_packet_index = start_seq_num % buffer_.size();
+        if (is_h265_keyframe) {
+          buffer_[first_packet_index]->video_header.frame_type =
+              VideoFrameType::kVideoFrameKey;
+          if (idr_width > 0 && idr_height > 0) {
+            // IDR frame was finalized and we have the correct resolution for
+            // IDR; update first packet to have same resolution as IDR.
+            buffer_[first_packet_index]->video_header.width = idr_width;
+            buffer_[first_packet_index]->video_header.height = idr_height;
+          }
+        } else {
+          buffer_[first_packet_index]->video_header.frame_type =
+              VideoFrameType::kVideoFrameDelta;
+        }
+
+        // If this is not a key frame, make sure there are no gaps in the
+        // packet sequence numbers up until this point.
+        if (!is_h265_keyframe && missing_packets_.upper_bound(start_seq_num) !=
+                missing_packets_.begin()) {
+          return found_frames;
+        }
+      }
+#endif
+      if (is_h264 || is_h265 || full_frame_found) {
         const uint16_t end_seq_num = seq_num + 1;
         // Use uint16_t type to handle sequence number wrap around case.
+        
+        //RTC_LOG(LS_WARNING) << " ================================== FULL FRAME FOUND ==== start_seq_num=" << start_seq_num << "  end_seq_num=" << end_seq_num << " ================================== ";
+
         uint16_t num_packets = end_seq_num - start_seq_num;
         found_frames.reserve(found_frames.size() + num_packets);
         for (uint16_t i = start_seq_num; i != end_seq_num; ++i) {
@@ -400,6 +568,9 @@ std::vector<std::unique_ptr<PacketBuffer::Packet>> PacketBuffer::FindFrames(
 }
 
 void PacketBuffer::UpdateMissingPackets(uint16_t seq_num) {
+
+  //RTC_LOG(LS_WARNING) << "#-> PacketBuffer::" << __func__ << " seq_num=" << seq_num ;
+
   if (!newest_inserted_seq_num_)
     newest_inserted_seq_num_ = seq_num;
 
@@ -422,6 +593,8 @@ void PacketBuffer::UpdateMissingPackets(uint16_t seq_num) {
   } else {
     missing_packets_.erase(seq_num);
   }
+
+  //RTC_LOG(LS_WARNING) << "<-# PacketBuffer::" << __func__ << " seq_num=" << seq_num ;
 }
 
 }  // namespace video_coding

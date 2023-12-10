@@ -153,6 +153,9 @@ absl::optional<int64_t> VideoStreamBufferController::InsertFrame(
   RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
   FrameMetadata metadata(*frame);
   int complete_units = buffer_->GetTotalNumberOfContinuousTemporalUnits();
+
+  //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__ << " " << frame->capture_time_ms_ << "  complete_units=" << complete_units << " buffer_->GetTotalNumberOfContinuousTemporalUnits()=" << buffer_->GetTotalNumberOfContinuousTemporalUnits() ;
+
   if (buffer_->InsertFrame(std::move(frame))) {
     RTC_DCHECK(metadata.receive_time) << "Frame receive time must be set!";
     if (!metadata.delayed_by_retransmission && metadata.receive_time &&
@@ -191,6 +194,10 @@ void VideoStreamBufferController::StartNextDecode(bool keyframe_required) {
   if (keyframe_required_) {
     timeout_tracker_.SetWaitingForKeyframe();
   }
+
+
+  //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__ << " decoder_ready_for_new_frame_ = true ";
+
   decoder_ready_for_new_frame_ = true;
   MaybeScheduleFrameForRelease();
 }
@@ -203,6 +210,10 @@ int VideoStreamBufferController::Size() {
 void VideoStreamBufferController::OnFrameReady(
     absl::InlinedVector<std::unique_ptr<EncodedFrame>, 4> frames,
     Timestamp render_time) {
+
+
+  //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__ << " render_time=" << render_time.ms() << " frames.size()=" << frames.size();
+
   RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
   RTC_CHECK(!frames.empty())
       << "Callers must ensure there is at least one frame to decode.";
@@ -292,6 +303,10 @@ void VideoStreamBufferController::OnTimeout(TimeDelta delay) {
 
 void VideoStreamBufferController::FrameReadyForDecode(uint32_t rtp_timestamp,
                                                       Timestamp render_time) {
+  
+  //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__ << " render_time=" << render_time.ms() << " rtp_timestamp=" << rtp_timestamp;
+
+
   RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
   // Check that the frame to decode is still valid before passing the frame for
   // decoding.
@@ -369,6 +384,10 @@ bool VideoStreamBufferController::IsTooManyFramesQueued() const
 
 void VideoStreamBufferController::ForceKeyFrameReleaseImmediately()
     RTC_RUN_ON(&worker_sequence_checker_) {
+
+  //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__ ;
+
+
   RTC_DCHECK(keyframe_required_);
   // Iterate through the frame buffer until there is a complete keyframe and
   // release this right away.
@@ -381,6 +400,7 @@ void VideoStreamBufferController::ForceKeyFrameReleaseImmediately()
     }
     // Found keyframe - decode right away.
     if (next_frame.front()->is_keyframe()) {
+      //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__  << " found keyframe. Decoding right away.";
       auto render_time = timing_->RenderTime(next_frame.front()->RtpTimestamp(),
                                              clock_->CurrentTime());
       OnFrameReady(std::move(next_frame), render_time);
@@ -391,6 +411,9 @@ void VideoStreamBufferController::ForceKeyFrameReleaseImmediately()
 
 void VideoStreamBufferController::MaybeScheduleFrameForRelease()
     RTC_RUN_ON(&worker_sequence_checker_) {
+
+  //RTC_LOG(LS_ERROR) << "VideoStreamBufferController::" << __func__ ;
+
   auto decodable_tu_info = buffer_->DecodableTemporalUnitsInfo();
   if (!decoder_ready_for_new_frame_ || !decodable_tu_info) {
     return;

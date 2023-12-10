@@ -13,6 +13,8 @@ package org.webrtc;
 import static org.webrtc.MediaCodecUtils.EXYNOS_PREFIX;
 import static org.webrtc.MediaCodecUtils.INTEL_PREFIX;
 import static org.webrtc.MediaCodecUtils.QCOM_PREFIX;
+import static org.webrtc.MediaCodecUtils.HISI_PREFIX;
+import static org.webrtc.MediaCodecUtils.IMG_PREFIX;
 
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
@@ -46,6 +48,9 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
   @Nullable private final EglBase14.Context sharedContext;
   private final boolean enableIntelVp8Encoder;
   private final boolean enableH264HighProfile;
+  private final String  extraMediaCodecFile = "sdcard/mediaCodec.xml";
+  private final VideoCapabilityParser vcp = new VideoCapabilityParser();
+
   @Nullable private final Predicate<MediaCodecInfo> codecAllowedPredicate;
 
   /**
@@ -94,6 +99,9 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
   @Nullable
   @Override
   public VideoEncoder createEncoder(VideoCodecInfo input) {
+
+    Logging.w(TAG, "#-> HardwareVideoEncoderFactory::createEncoder() " + input.getName());
+
     VideoCodecMimeType type = VideoCodecMimeType.valueOf(input.getName());
     MediaCodecInfo info = findCodecForType(type);
 
@@ -121,6 +129,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
         return null;
       }
     }
+    Logging.w(TAG, "<-# HardwareVideoEncoderFactory::createEncoder() " + input.getName());
 
     return new HardwareVideoEncoder(new MediaCodecWrapperFactoryImpl(), codecName, type,
         surfaceColorFormat, yuvColorFormat, input.params, PERIODIC_KEY_FRAME_INTERVAL_S,
@@ -130,6 +139,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
 
   @Override
   public VideoCodecInfo[] getSupportedCodecs() {
+    Logging.w(TAG, "#-> HardwareVideoEncoderFactory::getSupportedCodecs() ");    
     List<VideoCodecInfo> supportedCodecInfos = new ArrayList<VideoCodecInfo>();
     // Generate a list of supported codecs in order of preference:
     // VP8, VP9, H264 (high profile), H264 (baseline profile), AV1 and H265.
@@ -150,11 +160,12 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
             name, MediaCodecUtils.getCodecProperties(type, /* highProfile= */ false)));
       }
     }
-
+    Logging.w(TAG, "<-# HardwareVideoEncoderFactory::getSupportedCodecs() ");    
     return supportedCodecInfos.toArray(new VideoCodecInfo[supportedCodecInfos.size()]);
   }
 
   private @Nullable MediaCodecInfo findCodecForType(VideoCodecMimeType type) {
+    Logging.w(TAG, "HardwareVideoEncoderFactory::findCodecForType() " + type );
     for (int i = 0; i < MediaCodecList.getCodecCount(); ++i) {
       MediaCodecInfo info = null;
       try {
@@ -176,6 +187,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
 
   // Returns true if the given MediaCodecInfo indicates a supported encoder for the given type.
   private boolean isSupportedCodec(MediaCodecInfo info, VideoCodecMimeType type) {
+    Logging.w(TAG, "HardwareVideoEncoderFactory::isSupportedCodec() " + type );
     if (!MediaCodecUtils.codecSupportsType(info, type)) {
       return false;
     }
@@ -191,6 +203,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
   // Returns true if the given MediaCodecInfo indicates a hardware module that is supported on the
   // current SDK.
   private boolean isHardwareSupportedInCurrentSdk(MediaCodecInfo info, VideoCodecMimeType type) {
+    Logging.w(TAG, "#-> HardwareVideoEncoderFactory::isHardwareSupportedInCurrentSdk() " + type );
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       return info.isHardwareAccelerated();
     }
@@ -203,6 +216,7 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
       case H264:
         return isHardwareSupportedInCurrentSdkH264(info);
       case H265:
+        return isHardwareSupportedInCurrentSdkH265(info);
       case AV1:
         return false;
     }
@@ -234,6 +248,23 @@ public class HardwareVideoEncoderFactory implements VideoEncoderFactory {
     String name = info.getName();
     // QCOM and Exynos H264 encoders are always supported.
     return name.startsWith(QCOM_PREFIX) || name.startsWith(EXYNOS_PREFIX);
+  }
+
+  private boolean isHardwareSupportedInCurrentSdkH265(MediaCodecInfo info) {
+    String name = info.getName();
+    Logging.w(TAG, "#-> HardwareVideoEncoderFactory::isHardwareSupportedInCurrentSdkH265() name=" + name + " Build.VERSION.SDK_INT=" + Build.VERSION.SDK_INT );
+    // QCOM H265 encoder is supported in KITKAT or later.
+    boolean ret = (name.startsWith(QCOM_PREFIX) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT)
+           // Exynos H265 encoder is supported in LOLLIPOP or later.
+           || (name.startsWith(EXYNOS_PREFIX)
+               && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+           // Hisi VP8 encoder seems to be supported. Needs more testing.
+           || (name.startsWith(HISI_PREFIX) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT)
+           || (name.startsWith(IMG_PREFIX) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT)
+           || vcp.isExtraHardwareSupported(name, "video/hevc", vcp.parseWithTag(vcp.loadWithDom(extraMediaCodecFile), "Decoders"));
+    
+    Logging.w(TAG, "<-# HardwareVideoEncoderFactory::isHardwareSupportedInCurrentSdkH265() = " + ret);
+    return ret;
   }
 
   private boolean isMediaCodecAllowed(MediaCodecInfo info) {

@@ -820,11 +820,8 @@ void VideoReceiveStream2::OnDecodableFrameTimeout(TimeDelta wait) {
        rtp_video_stream_receiver_.IsDecryptable())) {
     absl::optional<uint32_t> last_timestamp =
         rtp_video_stream_receiver_.LastReceivedFrameRtpTimestamp();
-    RTC_LOG(LS_WARNING) << "No decodable frame in " << wait
-                        << " requesting keyframe. Last RTP timestamp "
-                        << (last_timestamp ? rtc::ToString(*last_timestamp)
-                                           : "<not set>")
-                        << ".";
+(??)    RTC_LOG(LS_WARNING) << "No decodable frame in " << wait
+(??)                        << ", requesting keyframe.";
     RequestKeyFrame(now);
   }
 

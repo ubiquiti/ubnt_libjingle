@@ -339,6 +339,10 @@ void ChannelReceive::OnReceivedPayloadData(
   }
 
   // Push the incoming payload (parsed and ready for decoding) into the ACM
+
+
+  //RTC_LOG(LS_ERROR) << "    ChannelReceive::OnReceivedPayloadData timestamp=" << rtpHeader.timestamp << " ssrc=" << rtpHeader.ssrc << " seq=" << rtpHeader.sequenceNumber;
+
   if (acm_receiver_.InsertPacket(rtpHeader, payload) != 0) {
     RTC_DLOG(LS_ERROR) << "ChannelReceive::OnReceivedPayloadData() unable to "
                           "push data to the ACM";
@@ -648,6 +652,10 @@ void ChannelReceive::OnRtpPacket(const RtpPacketReceived& packet) {
 
   last_received_rtp_timestamp_ = packet.Timestamp();
   last_received_rtp_system_time_ms_ = now_ms;
+
+
+  RTC_LOG(LS_ERROR) << "    ChannelReceive::OnRtpPacket seq=" << packet.SequenceNumber() 
+    << " packet.Timestamp()=" << packet.Timestamp() << " ssrc=" << packet.Ssrc();
 
   // Store playout timestamp for the received RTP packet
   UpdatePlayoutTimestamp(false, now_ms);
