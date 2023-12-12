@@ -2,7 +2,6 @@ def APP = 'googlewebrtc'
 
 def doAndroidAll='''
 env
-git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
 #./install_deps.sh
@@ -11,7 +10,6 @@ make WEBRTC_BRANCH=$BRANCH_NAME artifactory
 
 def doUbuntuAmd64='''
 env
-git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
 make WEBRTC_PLATFORM=Ubuntu WEBRTC_BRANCH=$BRANCH_NAME artifactory
@@ -19,7 +17,6 @@ make WEBRTC_PLATFORM=Ubuntu WEBRTC_BRANCH=$BRANCH_NAME artifactory
 
 def doDebianAmd64='''
 env
-git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
 make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=x86_64 WEBRTC_BRANCH=$BRANCH_NAME artifactory
@@ -27,7 +24,6 @@ make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=x86_64 WEBRTC_BRANCH=$BRANCH_NAME
 
 def doDebianArm64='''
 env
-git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
 make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=aarch64 WEBRTC_BRANCH=$BRANCH_NAME artifactory
@@ -35,7 +31,6 @@ make WEBRTC_PLATFORM=Debian DEBIAN_TARGET_ARCH=aarch64 WEBRTC_BRANCH=$BRANCH_NAM
 
 def doiOSBuild='''
 env
-git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
 export BranchName=$BRANCH_NAME
@@ -44,7 +39,6 @@ export BranchName=$BRANCH_NAME
 
 def doMacOSBuild='''
 env
-git clean -dxff
 git clone https://$GITTOKEN@github.com/ubiquiti/libjingle-build
 cd libjingle-build
 export BranchName=$BRANCH_NAME
@@ -100,8 +94,6 @@ pipeline {
                       HASH = sh(returnStdout: true, script: 'git rev-parse HEAD').trim().take(8)
                       if (BRANCH.startsWith('origin/')) BRANCH = BRANCH.substring('origin/'.length())
                 }
-
-                stash(includes: '**/*', name: 'workspace', useDefaultExcludes: false)
             }
         }
     
@@ -135,7 +127,6 @@ pipeline {
                             steps {
                                 node('docker') {
                                     deleteDir()
-                                    unstash 'workspace'
                                     script {
                                         DOCKER_UBUNTU_22_04_AMD64.inside() {
                                             sh label: 'build', script: "${doAndroidAll}"
@@ -153,7 +144,6 @@ pipeline {
                             steps {
                                 node('docker') {
                                     deleteDir()
-                                    unstash 'workspace'
                                     script {
                                         DOCKER_UBUNTU_22_04_AMD64.inside() {
                                             sh label: 'build', script: "${doUbuntuAmd64}"
@@ -171,7 +161,6 @@ pipeline {
                             steps {
                                 node('docker') {
                                     deleteDir()
-                                    unstash 'workspace'
                                     script {
                                         DOCKER_ARM64.inside() {
                                             sh label: 'build', script: "${doDebianArm64}"
@@ -189,7 +178,6 @@ pipeline {
                             steps {
                                 node('docker') {
                                     deleteDir()
-                                    unstash 'workspace'
                                     script {
                                         DOCKER_AMD64.inside() {
                                             sh label: 'build', script: "${doDebianAmd64}"
@@ -207,7 +195,6 @@ pipeline {
                             steps {
                                 node(label: 'rix-macos-arm64') {
                                     deleteDir()
-                                    unstash 'workspace'
                                     script {
                                         sh label: 'build', script: "${doiOSBuild}"
                                     }
