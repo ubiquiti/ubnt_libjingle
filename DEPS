@@ -53,7 +53,7 @@ deps = {
     'https://chromium.googlesource.com/chromium/src/base@1546e3adb67bb711ca2fd39c3913cb56bd889748',
 # UI Customization Begin
   'src/build':
-    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@77143e11901eda4031293a13e819aaf542a882d8',
+    'https://github.com/ubiquiti/ubnt_libjingle_component_src_build.git@v0.0.30',
 # UI Customization End
   'src/buildtools':
     'https://chromium.googlesource.com/chromium/src/buildtools@6f834e2039daedfc68a2749c217922b26d5e8497',
