@@ -82,6 +82,9 @@ class LossBasedBweV2 {
   };
 
   struct Config {
+#ifdef UI_CUSTOMIZATION
+    Config() {}
+#endif
     double bandwidth_rampup_upper_bound_factor = 0.0;
     double rampup_acceleration_max_factor = 0.0;
     TimeDelta rampup_acceleration_maxout_time = TimeDelta::Zero();
