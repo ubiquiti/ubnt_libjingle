@@ -861,7 +861,9 @@ config("rtc_json_suppressions") {
 }
 
 rtc_library("rtc_json") {
-  testonly = true
+# UI CUSTOMIZATION - Begin
+  # testonly = true
+# UI CUSTOMIZATION - End
   public_configs = [ ":rtc_json_suppressions" ]
   defines = []
   sources = [
