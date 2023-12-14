@@ -137,7 +137,7 @@ bool StreamResetHandler::ValidateReqSeqNbr(
 // UI Customization Begin - check if req_seq_nbr is less than the last completed reset
     // req_seq_nbr, i.e. it has left from deferred mode or not.
 #ifdef UI_CUSTOMIZATION
-    if (req_seq_nbr <= reassembly_queue_->lcr_request_sequence_number()) {
+    if (req_seq_nbr.Wrap() <= reassembly_queue_->lcr_request_sequence_number()) {
       RTC_DLOG(LS_VERBOSE) << log_prefix_ << "req=" << *req_seq_nbr
                            << " already completed, last_completed_reset_req_seq_nbr="
                            << *reassembly_queue_->lcr_request_sequence_number();
