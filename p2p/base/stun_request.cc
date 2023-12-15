@@ -37,7 +37,7 @@ const int STUN_INITIAL_RTO = 250;  // milliseconds
 // This has been 8 for years (not sure why).
 // UI Customization Begin - to make 'server_addresses_.size() == servers_done_bind_request)'
 // more sooner
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_STUN_RETRANS_TIMEOUT
 const int STUN_MAX_RETRANSMISSIONS = 5;           // Total sends: 6
 #else
 const int STUN_MAX_RETRANSMISSIONS = 8;           // Total sends: 9

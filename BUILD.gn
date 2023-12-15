@@ -306,8 +306,20 @@ config("common_config") {
   defines = []
 
   # UI customization
-  if (rtc_enable_unifi_customization) {
-    defines += [ "UI_CUSTOMIZATION" ]
+  if (rtc_enable_unifi_datachannel_fix) {
+    defines += [ "UI_CUSTOMIZATION_DATACHANNEL_FIX" ]
+  }
+
+  if (rtc_enable_unifi_state_report) {
+    defines += [ "UI_CUSTOMIZATION_STATE_REPORT" ]
+  }
+
+  if (rtc_enable_unifi_absl_build_fix) {
+    defines += [ "UI_CUSTOMIZATION_ABSL_BUILD_FIX" ]
+  }
+
+  if (rtc_enable_unifi_stun_retrans_timeout) {
+    defines += [ "UI_CUSTOMIZATION_STUN_RETRANS_TIMEOUT" ]
   }
 
   if (rtc_enable_unifi_audio_stream_api) {

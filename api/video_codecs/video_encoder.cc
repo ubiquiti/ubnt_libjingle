@@ -330,7 +330,7 @@ void VideoEncoder::OnRttUpdate(int64_t rtt_ms) {}
 void VideoEncoder::OnLossNotification(
     const LossNotification& loss_notification) {}
 
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_STATE_REPORT
 void VideoEncoder::OnSuspendChange(const bool& suspended) {}
 #endif
 
