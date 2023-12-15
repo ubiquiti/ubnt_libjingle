@@ -370,7 +370,7 @@ int64_t RtpTransportControllerSend::GetPacerQueuingDelayMs() const {
 absl::optional<Timestamp> RtpTransportControllerSend::GetFirstPacketTime()
     const {
 // UI Customization Begin
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_STATE_REPORT
   auto firstSentPacketTime = pacer_.FirstSentPacketTime();
   auto observer = transport_controller_observer_.lock();
   if (observer) {
@@ -650,7 +650,7 @@ void RtpTransportControllerSend::UpdateControllerWithTimeInterval() {
   if (add_pacing_to_cwin_)
     msg.pacer_queue = pacer_.QueueSizeData();
 // UI Customization Begin
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_STATE_REPORT
   if (last_pacer_state_checking_time_ == 0)
     last_pacer_state_checking_time_ = rtc::TimeMillis();
   else {

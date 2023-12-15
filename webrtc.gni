@@ -241,7 +241,10 @@ declare_args() {
   rtc_include_dav1d_in_internal_decoder_factory = true
 
   # UI customization
-  rtc_enable_unifi_customization = false
+  rtc_enable_unifi_datachannel_fix = false
+  rtc_enable_unifi_state_report = false
+  rtc_enable_unifi_absl_build_fix = false
+  rtc_enable_unifi_stun_retrans_timeout = false
   rtc_enable_unifi_unsanitize_ip = false
   rtc_enable_unifi_bitrate_recovery = false
   rtc_enable_unifi_audio_stream_api = false

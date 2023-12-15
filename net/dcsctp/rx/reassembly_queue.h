@@ -128,7 +128,7 @@ class ReassemblyQueue {
   void RestoreFromState(const DcSctpSocketHandoverState& state);
 
 // UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
   ReconfigRequestSN lcr_request_sequence_number() const {
     return last_completed_reset_req_seq_nbr_;
   }

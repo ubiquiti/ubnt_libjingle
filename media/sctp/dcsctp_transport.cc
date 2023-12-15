@@ -544,7 +544,7 @@ void DcSctpTransport::OnStreamsResetPerformed(
     auto it = stream_states_.find(stream_id);
     if (it == stream_states_.end()) {
       // Ignoring an outgoing stream reset for a closed stream
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
       // UI customization
       RTC_LOG(LS_ERROR) << debug_name_
                        << "->OnStreamsResetPerformed(...): Ignoring an "
@@ -557,12 +557,12 @@ void DcSctpTransport::OnStreamsResetPerformed(
     }
 
     StreamState& stream_state = it->second;
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
     // UI customization
     if (stream_state.closure_initiated) {
 #endif
       stream_state.outgoing_reset_done = true;
-#ifdef UI_CUSTOMIZATION
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
     } else {
       RTC_LOG(LS_ERROR) << debug_name_
                        << "->OnStreamsResetPerformed(...): Ignoring an "
