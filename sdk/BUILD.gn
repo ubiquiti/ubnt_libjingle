@@ -690,7 +690,13 @@ if (is_ios || is_mac) {
         "objc/components/capturer/RTCFileVideoCapturer.m",
       ]
 # UI Customization Begin
-      if ((is_ios || is_mac) && ios_device_name != "appletv") {
+      if (is_ios && ios_device_name != "appletv") {
+        sources += [
+          "objc/components/capturer/RTCCameraVideoCapturer.h",
+          "objc/components/capturer/RTCCameraVideoCapturer.m",
+        ]
+      }
+      if (is_mac) {
         sources += [
           "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCCameraVideoCapturer.m",
