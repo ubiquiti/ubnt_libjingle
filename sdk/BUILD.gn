@@ -280,19 +280,16 @@ if (is_ios || is_mac) {
           #":metal_objc",
 # UI Customization End
           ":opengl_objc",
-          ":videocapture_objc",
+# UI Customization Begin
+          # ":videocapture_objc",
+# UI Customization End
           ":videoframebuffer_objc",
         ]
 # UI Customization Begin
-        if (is_ios && ios_device_name != "appletv") {
+        if (ios_device_name != "appletv") {
           deps += [
             ":metal_objc",
-          ]
-        }
-
-        if (is_mac) {
-          deps += [
-            ":metal_objc",
+            ":videocapture_objc",
           ]
         }
 # UI Customization End
@@ -693,17 +690,10 @@ if (is_ios || is_mac) {
         "objc/components/capturer/RTCFileVideoCapturer.m",
       ]
 # UI Customization Begin
-      if (is_ios && ios_device_name != "appletv") {
+      if ((is_ios || is_mac) && ios_device_name != "appletv") {
         sources += [
           "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCCameraVideoCapturer.m",
-        ]
-      }
-
-      if (is_mac) {
-        sources += [
-            "objc/components/capturer/RTCCameraVideoCapturer.h",
-            "objc/components/capturer/RTCCameraVideoCapturer.m",
         ]
       }
 # UI Customization End
@@ -1387,7 +1377,7 @@ if (is_ios || is_mac) {
           "objc/api/video_frame_buffer/RTCNativeMutableI420Buffer.h",
         ]
 # UI Customization Begin
-        if(ios_device_name == "iphone") {
+        if (ios_device_name == "iphone") {
           common_objc_headers += [
             "objc/components/renderer/metal/RTCMTLVideoView.h",
             "objc/components/capturer/RTCCameraVideoCapturer.h",
@@ -1423,7 +1413,7 @@ if (is_ios || is_mac) {
           ":peerconnectionfactory_base_objc",
 # UI Customization Begin
           #":videocapture_objc",
-# UI Customization Begin
+# UI Customization End
           ":videocodec_objc",
           ":videotoolbox_objc",
         ]
