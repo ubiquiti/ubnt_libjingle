@@ -20,7 +20,6 @@ void UnifiCapturePostProcessing::Initialize(int sample_rate_hz, int num_channels
 }
 
 void UnifiCapturePostProcessing::Process(AudioBuffer* audio) {
-  [audio_processing_ process:audio->channels()[0]];
 }
 
 std::string UnifiCapturePostProcessing::ToString() const {
