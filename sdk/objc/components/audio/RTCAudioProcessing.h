@@ -9,8 +9,6 @@ RTC_OBJC_EXPORT @protocol RTC_OBJC_TYPE
 
 - (void)initialize:(int)sample_rate_hz channels:(int)num_channels;
 
-- (void)process:(const float*)data;
-
 - (void)updateAudioIndicator:(int)average peak:(int)peak;
 
 @end
