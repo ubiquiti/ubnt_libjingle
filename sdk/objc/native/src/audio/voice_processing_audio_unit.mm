@@ -96,10 +96,10 @@ bool VoiceProcessingAudioUnit::Init() {
   AudioComponentDescription vpio_unit_description;
   vpio_unit_description.componentType = kAudioUnitType_Output;
 // UI Customization Begin
-  if (webRTCConfiguration.isMicrophoneEnabled)
+  // if (webRTCConfiguration.isMicrophoneEnabled)
     vpio_unit_description.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
-  else
-    vpio_unit_description.componentSubType = kAudioUnitSubType_RemoteIO;
+  // else
+    // vpio_unit_description.componentSubType = kAudioUnitSubType_RemoteIO;
   // vpio_unit_description.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
 // UI Customization End
   vpio_unit_description.componentManufacturer = kAudioUnitManufacturer_Apple;
