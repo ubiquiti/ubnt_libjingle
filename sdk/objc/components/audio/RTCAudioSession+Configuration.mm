@@ -49,7 +49,7 @@
   // everything we can.
   NSError *error = nil;
 
-  if (self.category != AVAudioSessionCategoryPlayAndRecord || self.mode != configuration.mode ||
+  if (self.category != configuration.category || self.mode != configuration.mode ||
       self.categoryOptions != configuration.categoryOptions) {
     NSError *configuringError = nil;
     if (![self setCategory:configuration.category
