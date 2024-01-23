@@ -666,10 +666,13 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
 void AudioDeviceIOS::HandleOutScopeChange() {
   RTC_DCHECK_RUN_ON(thread_);
   RTCLog(@"Handling OutScope changed");
-  StopRecording();
-  StopPlayout();
-  InitPlayout();
-  StartPlayout();
+  RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
+  if (!webRTCConfiguration.isMicrophoneEnabled) {
+    StopRecording();
+    StopPlayout();
+    InitPlayout();
+    StartPlayout();
+  }
 }
 
 void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
