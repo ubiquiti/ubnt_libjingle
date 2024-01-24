@@ -82,6 +82,7 @@ RTC_OBJC_EXPORT
 // UI Customization Begin
 - (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession
     didChangeMicrophoneMuted:(BOOL)isMicrophoneMuted;
+- (void)audioSessionDidChangeOutScope:(RTC_OBJC_TYPE(RTCAudioSession) *)session;
 // UI Customization End
 
 /** Called when the audio device detects a playout glitch. The argument is the
@@ -219,6 +220,9 @@ RTC_OBJC_EXPORT
 - (void)lockForConfiguration;
 /** Relinquishes exclusive access to the audio session. */
 - (void)unlockForConfiguration;
+
+// UI customization
+- (void)notifyDidChangeOutScope;
 
 /** If `active`, activates the audio session if it isn't already active.
  *  Successful calls must be balanced with a setActive:NO when activation is no

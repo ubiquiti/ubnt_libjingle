@@ -376,6 +376,11 @@ void AudioDeviceIOS::OnChangedOutputVolume() {
 }
 
 // UI Customization Begin
+void AudioDeviceIOS::OnOutScopeChange() {
+  RTC_DCHECK(thread_);
+  thread_->PostTask(SafeTask(safety_, [this] { HandleOutScopeChange(); }));
+}
+
 void AudioDeviceIOS::OnMicrophoneMutedChange(bool is_microphone_muted) {
   RTC_DCHECK(thread_);
   thread_->PostTask(SafeTask(safety_, [this, is_microphone_muted] { HandleMicrophoneMutedChange(is_microphone_muted); }));
@@ -658,6 +663,18 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
 }
 
 // UI Customization Begin
+void AudioDeviceIOS::HandleOutScopeChange() {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTCLog(@"Handling OutScope changed");
+  RTCAudioSessionConfiguration* webRTCConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
+  if (!webRTCConfiguration.isMicrophoneEnabled) {
+    StopRecording();
+    StopPlayout();
+    InitPlayout();
+    StartPlayout();
+  }
+}
+
 void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
   RTC_DCHECK_RUN_ON(thread_);
   RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);

@@ -91,5 +91,8 @@
     didChangeMicrophoneMuted:(BOOL)isMicrophoneMuted {
   _observer->OnMicrophoneMutedChange(isMicrophoneMuted);
 }
+- (void)audioSessionDidChangeOutScope:(RTC_OBJC_TYPE(RTCAudioSession) *)session {
+  _observer->OnOutScopeChange();
+}
 // UI Customization End
 @end

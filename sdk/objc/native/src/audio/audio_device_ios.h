@@ -148,6 +148,7 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void OnCanPlayOrRecordChange(bool can_play_or_record) override;
   void OnChangedOutputVolume() override;
   // UI Customization Begin
+  void OnOutScopeChange() override;
   void OnMicrophoneMutedChange(bool is_microphone_muted) override;
   // UI Customization End
 
@@ -175,6 +176,7 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void HandlePlayoutGlitchDetected();
   void HandleOutputVolumeChange();
   // UI Customization Begin
+  void HandleOutScopeChange();
   void HandleMicrophoneMutedChange(bool is_microphone_muted);
   // UI Customization End
 
