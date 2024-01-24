@@ -223,6 +223,15 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
     }
   }
 }
+
+- (void)notifyDidChangeOutScope {
+  for (auto delegate : self.delegates) {
+    SEL sel = @selector(audioSessionDidChangeOutScope:);
+    if ([delegate respondsToSelector:sel]) {
+      [delegate audioSessionDidChangeOutScope:self];
+    }
+  }
+}
 // UI Customization End
 
 - (void)setIgnoresPreferredAttributeConfigurationErrors:
