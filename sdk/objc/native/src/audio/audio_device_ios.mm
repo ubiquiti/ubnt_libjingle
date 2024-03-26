@@ -686,9 +686,14 @@ void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
     StopRecording();
     StopPlayout();
     result = InitRecording();
-    if (result < 0)
+    if (result < 0) {
       RTCLogError(@"Failed to init audio capture device, reason %d", result);
-    else
+      result = InitPlayout();
+      if (result < 0) {
+        RTCLogError(@"Failed to init audio playout, reason %d", result);
+        return;
+      }
+    } else
       StartRecording();
     StartPlayout();
   } else {
