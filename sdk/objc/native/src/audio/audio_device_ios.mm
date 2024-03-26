@@ -680,18 +680,25 @@ void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
   RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);
   // Recording won't be initialized if playback has already been initialized, and vice versa. 
   // So we must stop both recording and playback before muting or unmuting microphone.
+  int32_t result = 0;
   if (!is_microphone_muted) {
     // there could be an audio stream track added so that cause the recording flag is set to true but the mic related part in Audio Unit is not actually created yet
     StopRecording();
     StopPlayout();
-    InitRecording();
-    StartRecording();
+    result = InitRecording();
+    if (result < 0)
+      RTCLogError(@"Failed to init audio capture device, reason %d", result);
+    else
+      StartRecording();
     StartPlayout();
   } else {
     StopRecording();
     StopPlayout();
-    InitPlayout();
-    StartPlayout();
+    result = InitPlayout();
+    if (result < 0)
+      RTCLogError(@"Failed to init audio playout, reason %d", result);
+    else
+      StartPlayout();
   }
 }
 // UI Customization End
@@ -769,6 +776,7 @@ bool AudioDeviceIOS::CreateAudioUnit() {
 
   audio_unit_.reset(new VoiceProcessingAudioUnit(bypass_voice_processing_, this));
   if (!audio_unit_->Init()) {
+    RTCLogError(@"Failed to init iOS audio unit");
     audio_unit_.reset();
     return false;
   }
@@ -925,6 +933,7 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
 
   // There should be no audio unit at this point.
   if (!CreateAudioUnit()) {
+    RTCLogError(@"Failed to create audio unit");
     return false;
   }
 
@@ -951,6 +960,9 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
       // audio session during or after a Media Services failure.
       // See AVAudioSessionErrorCodeMediaServicesFailed for details.
       [session unlockForConfiguration];
+      RTCLogError(@"Failed to configure audio session, One possible reason for failure 
+        is if an attempt was made to use the audio session during or after a Media Services failure. 
+        See AVAudioSessionErrorCodeMediaServicesFailed for details.");
       audio_unit_.reset();
       return false;
     }
