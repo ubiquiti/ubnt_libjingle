@@ -693,17 +693,19 @@ void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
         RTCLogError(@"Failed to init audio playout, reason %d", result);
         return;
       }
-    } else
+    } else {
       StartRecording();
+    }
     StartPlayout();
   } else {
     StopRecording();
     StopPlayout();
     result = InitPlayout();
-    if (result < 0)
+    if (result < 0) {
       RTCLogError(@"Failed to init audio playout, reason %d", result);
-    else
+    } else {
       StartPlayout();
+    }
   }
 }
 // UI Customization End
