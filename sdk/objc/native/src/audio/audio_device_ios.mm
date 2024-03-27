@@ -967,9 +967,7 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
       // audio session during or after a Media Services failure.
       // See AVAudioSessionErrorCodeMediaServicesFailed for details.
       [session unlockForConfiguration];
-      RTCLogError(@"Failed to configure audio session, One possible reason for failure 
-        is if an attempt was made to use the audio session during or after a Media Services failure. 
-        See AVAudioSessionErrorCodeMediaServicesFailed for details.");
+      RTCLogError(@"Failed to configure audio session. See AVAudioSessionErrorCodeMediaServicesFailed for details.");
       audio_unit_.reset();
       return false;
     }
