@@ -789,27 +789,27 @@ std::vector<const rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
   networks.insert(networks.end(), ipv6_networks.begin(), ipv6_networks.end());
 // UI Customization Begin
   //if we don't have the network in the list of active interfaces, remove it
-  const std::map<std::string, bool> &active=allocator_->GetActiveInterfaces();
-  if(active.size()!=0){
-    fprintf(stderr,"----- Allowed interfaces! ------\n");
-    for(const auto &allowed:active){
-      fprintf(stderr,"%s\n",allowed.first.c_str());
+  const std::map<std::string, bool> &active = allocator_->GetActiveInterfaces();
+  if (!active.empty()) {
+    RTC_LOG(LS_INFO) << "----- Allowed interfaces! ------";
+    for (const auto &allowed : active) {
+      RTC_LOG(LS_INFO) << allowed.first.c_str();
     }
 
-    fprintf(stderr,"----- Available interfaces ------\n");
-    for(const auto &network:networks){
-      fprintf(stderr,"%s\n",network->name().c_str());
+    RTC_LOG(LS_INFO) << "----- Available interfaces! ------";
+    for (const auto &network : networks) {
+      RTC_LOG(LS_INFO) << network->name().c_str();
     }
     for (auto it = networks.begin(); it != networks.end();) {
-      if(active.find((*it)->name())==active.end())
-        it=networks.erase(it);
+      if (active.find((*it)->erasename()) == active.end())
+        it = networks.erase(it);
       else
         ++it;
     }
 
-    fprintf(stderr,"----- Remaining interfaces ------\n");
-    for(const auto &network:networks){
-      fprintf(stderr,"%s\n",network->name().c_str());
+    RTC_LOG(LS_INFO) << "----- Remaining interfaces ------";
+    for (const auto &network : networks) {
+      RTC_LOG(LS_INFO) << network->ToString();
     }
   }
 // UI Customization End
