@@ -106,7 +106,7 @@ RtpTransportControllerSend::RtpTransportControllerSend(
       network_available_(false),
       congestion_window_size_(DataSize::PlusInfinity()),
       is_congested_(false),
-      retransmission_rate_limiter_(&env_.clock(), kRetransmitWindowSizeMs),
+      retransmission_rate_limiter_(&env_.clock(), kRetransmitWindowSizeMs)
 // UI Customization Begin
       , transport_controller_observer_(config.transport_controller_observer),
       last_pacer_state_checking_time_(0) {

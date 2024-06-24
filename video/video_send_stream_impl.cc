@@ -454,12 +454,12 @@ VideoSendStreamImpl::VideoSendStreamImpl(
           GetInitialEncoderMaxBitrate(encoder_config.max_bitrate_bps)),
       encoder_target_rate_bps_(0),
       encoder_bitrate_priority_(encoder_config.bitrate_priority),
-      // UI Customization Begin
-      suspend_below_min_bitrate_(config->suspend_below_min_bitrate),
-      // UI Customization End
       encoder_av1_priority_bitrate_override_bps_(
           GetEncoderPriorityBitrate(config_.rtp.payload_name,
                                     env_.field_trials())),
+      // UI Customization Begin
+      suspend_below_min_bitrate_(config_.suspend_below_min_bitrate),
+      // UI Customization End
       configured_pacing_factor_(
           GetConfiguredPacingFactor(config_,
                                     content_type_,
