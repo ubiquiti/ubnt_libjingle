@@ -107,8 +107,9 @@ class RTC_EXPORT Socket {
   // Returns the address to which the socket is connected.  If the socket is
   // not connected, then the any-address is returned.
   virtual SocketAddress GetRemoteAddress() const = 0;
-
-  virtual int Bind(const SocketAddress& addr) = 0;
+// UI Customization Begin
+  virtual int Bind(const SocketAddress& addr, int interfaceIndex) = 0;
+// UI Customization End
   virtual int Connect(const SocketAddress& addr) = 0;
   virtual int Send(const void* pv, size_t cb) = 0;
   virtual int SendTo(const void* pv, size_t cb, const SocketAddress& addr) = 0;
@@ -153,6 +154,10 @@ class RTC_EXPORT Socket {
     OPT_TCP_KEEPIDLE,      // Set TCP keep alive idle time in seconds
     OPT_TCP_KEEPINTVL,     // Set TCP keep alive interval in seconds
     OPT_TCP_USER_TIMEOUT,  // Set TCP user timeout
+// UI Customization Begin
+    OPT_TTL,                   // socket time to live
+    OPT_IFACE_BIND,            // what interface to bind on
+// UI Customization End
   };
   virtual int GetOption(Option opt, int* value) = 0;
   virtual int SetOption(Option opt, int value) = 0;

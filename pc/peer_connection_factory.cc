@@ -255,7 +255,9 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
 
   dependencies.allocator->SetNetworkIgnoreMask(options().network_ignore_mask);
   dependencies.allocator->SetVpnList(configuration.vpn_list);
-
+// UI Customization Begin
+  dependencies.allocator->SetActiveInterfaces(options().activeInterfaces);
+// UI Customization End
   std::unique_ptr<Call> call =
       worker_thread()->BlockingCall([this, &env, &configuration] {
         return CreateCall_w(env, configuration);

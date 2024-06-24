@@ -305,6 +305,23 @@ config("common_config") {
   cflags_objc = []
   defines = []
 
+  # UI customization
+  if (rtc_enable_unifi_customization) {
+    defines += [ "UI_CUSTOMIZATION" ]
+  }
+
+  if (rtc_enable_unifi_audio_stream_api) {
+    defines += [ "UI_CUSTOMIZED_AUDIO_STREAM_API" ]
+  }
+
+  if (rtc_enable_unifi_unsanitize_ip) {
+    defines += [ "UI_CUSTOMIZED_UNSANITIZE_IP" ]
+  }
+
+  if (rtc_enable_unifi_bitrate_recovery) {
+    defines += [ "UI_BITRATE_RECOVERY" ]
+  }
+
   if (rtc_enable_protobuf) {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {
@@ -566,6 +583,10 @@ if (!build_with_chromium) {
       "sdk",
       "video",
     ]
+
+# UI Customization Begin
+    deps += ["rtc_base:rtc_json",]
+# UI Customization End
 
     if (rtc_include_builtin_audio_codecs) {
       deps += [

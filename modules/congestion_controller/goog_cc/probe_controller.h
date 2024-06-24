@@ -194,6 +194,9 @@ class ProbeController {
   int32_t next_probe_cluster_id_ = 1;
 
   ProbeControllerConfig config_;
+// #ifdef UI_BITRATE_RECOVERY
+//   Timestamp last_probing_time_ = Timestamp::Zero();
+// #endif
 };
 
 }  // namespace webrtc

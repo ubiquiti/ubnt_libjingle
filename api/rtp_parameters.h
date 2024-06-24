@@ -650,12 +650,17 @@ struct RTC_EXPORT RtpParameters {
   // degrading resolution or degrading framerate, degradationPreference
   // indicates which is preferred. Only for video tracks.
   absl::optional<DegradationPreference> degradation_preference;
-
+  // UI Customization Begin
+  bool suspend_below_min_bitrate = false;
+  // UI Customization End
   bool operator==(const RtpParameters& o) const {
-    return mid == o.mid && codecs == o.codecs &&
-           header_extensions == o.header_extensions &&
-           encodings == o.encodings && rtcp == o.rtcp &&
-           degradation_preference == o.degradation_preference;
+      return mid == o.mid && codecs == o.codecs &&
+             header_extensions == o.header_extensions &&
+             encodings == o.encodings && rtcp == o.rtcp &&
+             degradation_preference == o.degradation_preference &&
+  // UI Customization Begin
+             suspend_below_min_bitrate == o.suspend_below_min_bitrate;
+  // UI Customization End
   }
   bool operator!=(const RtpParameters& o) const { return !(*this == o); }
 };

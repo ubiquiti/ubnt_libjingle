@@ -460,6 +460,14 @@ void PacingController::ProcessPackets() {
     std::unique_ptr<RtpPacketToSend> rtp_packet =
         GetPendingPacket(pacing_info, target_send_time, now);
     if (rtp_packet == nullptr) {
+// #ifdef UI_BITRATE_RECOVERY
+      // Check if we already have video or audio data, if no, then it is in case 
+      // of a video paused and audio muted situation.
+      // We forced activate bandwidth probing in such case for quickly bitrate
+      // recovery when resuming video.
+//       if (!is_probing && data_sent == DataSize::Zero())
+//         prober_.activateProbe();
+// #endif
       // No packet available to send, check if we should send padding.
       if (now - target_send_time > kMaxPaddingReplayDuration) {
         // The target send time is more than `kMaxPaddingReplayDuration` behind
