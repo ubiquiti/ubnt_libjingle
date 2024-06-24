@@ -340,12 +340,12 @@ deps = {
     'url': Var('chromium_git') + '/chromium/third_party/instrumented_libraries.git' + '@' + '0172d67d98df2d30bd2241959d0e9569ada25abe',
     'condition': 'checkout_instrumented_libraries',
   },
-# UI Customization Begin
+
   # Used by boringssl.
   'src/third_party/nasm': {
-      'url': 'https://github.com/ubiquiti/ubnt_libjingle_third_party_nasm@v0.0.1'
+      'url': 'https://chromium.googlesource.com/chromium/deps/nasm.git@f477acb1049f5e043904b87b825c5915084a9a29'
   },
-# UI Customization End
+
   'src/third_party/openh264/src':
     'https://chromium.googlesource.com/external/github.com/cisco/openh264@09a4f3ec842a8932341b195c5b01e141c8a16eb7',
 
