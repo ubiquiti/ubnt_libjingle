@@ -214,6 +214,7 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
   RTC_DCHECK_RUN_ON(signaling_thread());
 
   EnvironmentFactory env_factory(context_->env());
+  RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError";
 
   // Field trials active for this PeerConnection is the first of:
   // a) Specified in the PeerConnectionDependencies
@@ -222,13 +223,17 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
   env_factory.Set(std::move(dependencies.trials));
 
   if (event_log_factory_ != nullptr) {
+    RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " worker_thread()->BlockingCall";
     worker_thread()->BlockingCall([&] {
       Environment env_for_rtc_event_log = env_factory.Create();
       env_factory.Set(event_log_factory_->Create(env_for_rtc_event_log));
     });
+    RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " worker_thread()->BlockingCall";
   }
 
+  RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " env_factory.Create";
   const Environment env = env_factory.Create();
+  RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " env_factory.Create";
 
   // Set internal defaults if optional dependencies are not set.
   if (!dependencies.cert_generator) {
@@ -237,6 +242,7 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
                                                        network_thread());
   }
   if (!dependencies.allocator) {
+    RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " BasicPortAllocator";
     dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
         context_->default_network_manager(), context_->default_socket_factory(),
         configuration.turn_customizer, /*relay_port_factory=*/nullptr,
@@ -246,11 +252,14 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
         configuration.port_allocator_config.max_port);
     dependencies.allocator->set_flags(
         configuration.port_allocator_config.flags);
+    RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " BasicPortAllocator";
   }
 
   if (!dependencies.ice_transport_factory) {
+    RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " DefaultIceTransportFactory";
     dependencies.ice_transport_factory =
         std::make_unique<DefaultIceTransportFactory>();
+    RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " DefaultIceTransportFactory";
   }
 
   dependencies.allocator->SetNetworkIgnoreMask(options().network_ignore_mask);
@@ -258,13 +267,17 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
 // UI Customization Begin
   dependencies.allocator->SetActiveInterfaces(options().activeInterfaces);
 // UI Customization End
+  RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " CreateCall_w";
   std::unique_ptr<Call> call =
       worker_thread()->BlockingCall([this, &env, &configuration] {
         return CreateCall_w(env, configuration);
       });
+  RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " CreateCall_w";
 
+  RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " PeerConnection::Create";
   auto result = PeerConnection::Create(env, context_, options_, std::move(call),
                                        configuration, std::move(dependencies));
+  RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " PeerConnection::Create";
   if (!result.ok()) {
     return result.MoveError();
   }
@@ -274,9 +287,13 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
   // which will point to the network thread (and not the factory's
   // worker_thread()).  All such methods have thread checks though, so the code
   // should still be clear (outside of macro expansion).
+  RTC_LOG(LS_INFO)  << "#-> PeerConnectionFactory::CreatePeerConnectionOrError" << " PeerConnectionProxy::Create";
   rtc::scoped_refptr<PeerConnectionInterface> result_proxy =
       PeerConnectionProxy::Create(signaling_thread(), network_thread(),
                                   result.MoveValue());
+  RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError" << " PeerConnectionProxy::Create";
+
+  RTC_LOG(LS_INFO)  << "<-# PeerConnectionFactory::CreatePeerConnectionOrError";
   return result_proxy;
 }
 

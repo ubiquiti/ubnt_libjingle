@@ -796,9 +796,11 @@ const IceConfig& P2PTransportChannel::config() const {
 // PeerConnection::SetConfiguration.
 // Static
 RTCError P2PTransportChannel::ValidateIceConfig(const IceConfig& config) {
+  RTC_LOG(LS_INFO)  << "#-> P2PTransportChannel::ValidateIceConfig";
   if (config.ice_check_interval_strong_connectivity_or_default() <
       config.ice_check_interval_weak_connectivity.value_or(
           GetWeakPingIntervalInFieldTrial(nullptr))) {
+    RTC_LOG(LS_INFO)  << "<-# P2PTransportChannel::ValidateIceConfig ice_check_interval_strong_connectivity_or_default";
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "Ping interval of candidate pairs is shorter when ICE is "
                     "strongly connected than that when ICE is weakly "
@@ -808,6 +810,7 @@ RTCError P2PTransportChannel::ValidateIceConfig(const IceConfig& config) {
   if (config.receiving_timeout_or_default() <
       std::max(config.ice_check_interval_strong_connectivity_or_default(),
                config.ice_check_min_interval_or_default())) {
+    RTC_LOG(LS_INFO)  << "<-# P2PTransportChannel::ValidateIceConfig receiving_timeout_or_default";
     return RTCError(
         RTCErrorType::INVALID_PARAMETER,
         "Receiving timeout is shorter than the minimal ping interval.");
@@ -815,6 +818,7 @@ RTCError P2PTransportChannel::ValidateIceConfig(const IceConfig& config) {
 
   if (config.backup_connection_ping_interval_or_default() <
       config.ice_check_interval_strong_connectivity_or_default()) {
+    RTC_LOG(LS_INFO)  << "<-# P2PTransportChannel::ValidateIceConfig backup_connection_ping_interval_or_default";
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "Ping interval of backup candidate pairs is shorter than "
                     "that of general candidate pairs when ICE is strongly "
@@ -823,6 +827,7 @@ RTCError P2PTransportChannel::ValidateIceConfig(const IceConfig& config) {
 
   if (config.stable_writable_connection_ping_interval_or_default() <
       config.ice_check_interval_strong_connectivity_or_default()) {
+    RTC_LOG(LS_INFO)  << "<-# P2PTransportChannel::ValidateIceConfig stable_writable_connection_ping_interval_or_default";
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "Ping interval of stable and writable candidate pairs is "
                     "shorter than that of general candidate pairs when ICE is "
@@ -831,11 +836,12 @@ RTCError P2PTransportChannel::ValidateIceConfig(const IceConfig& config) {
 
   if (config.ice_unwritable_timeout_or_default() >
       config.ice_inactive_timeout_or_default()) {
+    RTC_LOG(LS_INFO)  << "<-# P2PTransportChannel::ValidateIceConfig ice_unwritable_timeout_or_default";
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "The timeout period for the writability state to become "
                     "UNRELIABLE is longer than that to become TIMEOUT.");
   }
-
+  RTC_LOG(LS_INFO)  << "<-# P2PTransportChannel::ValidateIceConfig";
   return RTCError::OK();
 }
 

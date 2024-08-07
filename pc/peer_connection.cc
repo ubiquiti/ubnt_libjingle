@@ -528,12 +528,14 @@ RTCErrorOr<rtc::scoped_refptr<PeerConnection>> PeerConnection::Create(
     std::unique_ptr<Call> call,
     const PeerConnectionInterface::RTCConfiguration& configuration,
     PeerConnectionDependencies dependencies) {
+  RTC_LOG(LS_INFO)  << "#-> PeerConnection::Create";
   // TODO(https://crbug.com/webrtc/13528): Remove support for kPlanB.
   if (configuration.sdp_semantics == SdpSemantics::kPlanB_DEPRECATED) {
     RTC_LOG(LS_WARNING)
         << "PeerConnection constructed with legacy SDP semantics!";
   }
 
+  RTC_LOG(LS_INFO)  << "#-> PeerConnection::Create" << " cricket::P2PTransportChannel::ValidateIceConfig";
   RTCError config_error = cricket::P2PTransportChannel::ValidateIceConfig(
       ParseIceConfig(configuration));
   if (!config_error.ok()) {
@@ -541,6 +543,7 @@ RTCErrorOr<rtc::scoped_refptr<PeerConnection>> PeerConnection::Create(
                       << config_error.message();
     return config_error;
   }
+  RTC_LOG(LS_INFO)  << "<-# PeerConnection::Create" << " cricket::P2PTransportChannel::ValidateIceConfig";
 
   if (!dependencies.allocator) {
     RTC_LOG(LS_ERROR)
@@ -572,11 +575,15 @@ RTCErrorOr<rtc::scoped_refptr<PeerConnection>> PeerConnection::Create(
   auto pc = rtc::make_ref_counted<PeerConnection>(
       env, context, options, is_unified_plan, std::move(call), dependencies,
       dtls_enabled);
+  RTC_LOG(LS_INFO)  << "#-> PeerConnection::Initialize";
   RTCError init_error = pc->Initialize(configuration, std::move(dependencies));
   if (!init_error.ok()) {
     RTC_LOG(LS_ERROR) << "PeerConnection initialization failed";
     return init_error;
   }
+  RTC_LOG(LS_INFO)  << "<-# PeerConnection::Initialize";
+
+  RTC_LOG(LS_INFO)  << "<-# PeerConnection::Create";
   return pc;
 }
 
