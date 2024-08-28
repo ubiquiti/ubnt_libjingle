@@ -1542,6 +1542,12 @@ void VideoStreamEncoder::OnFrame(Timestamp post_time,
                         << ". Avoid dropping frame";
     cwnd_frame_drop = false;
   }
+  if (queue_overload) {
+    RTC_LOG(LS_VERBOSE) << "    VideoStreamEncoder::" << __func__
+                        << " queue_overload=" << queue_overload
+                        << ". Avoid dropping frame";
+    queue_overload = false;
+  }
 // UI Customization End
 
   if (!queue_overload && !cwnd_frame_drop) {
