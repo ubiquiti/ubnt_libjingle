@@ -7,7 +7,9 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+// UI Customization Begin
+#import "TargetConditionals.h"
+// UI Customization End
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
@@ -142,6 +144,12 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
 #if !defined(NDEBUG)
   LogDeviceInfo();
 #endif
+// UI Customization Begin
+#if TARGET_OS_TV || TARGET_OS_MACCATALYST
+  initialized_ = true;
+  return InitStatus::OK;
+#else /* TARGET_OS_TV || TARGET_OS_MACCATALYST*/
+// UI Customization End
   // Store the preferred sample rate and preferred number of channels already
   // here. They have not been set and confirmed yet since configureForWebRTC
   // is not called until audio is about to start. However, it makes sense to
@@ -157,6 +165,9 @@ AudioDeviceGeneric::InitStatus AudioDeviceIOS::Init() {
   UpdateAudioDeviceBuffer();
   initialized_ = true;
   return InitStatus::OK;
+// UI Customization Begin
+#endif /* TARGET_OS_TV */
+// UI Customization End
 }
 
 int32_t AudioDeviceIOS::Terminate() {
@@ -232,7 +243,9 @@ int32_t AudioDeviceIOS::StartPlayout() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
-      RTCLogError(@"StartPlayout failed to start audio unit, reason %d", result);
+// UI Customization Begin
+      RTCLogError(@"StartPlayout failed to start audio unit, reason %d", (int)result);
+// UI Customization End
       return -1;
     }
     RTC_LOG(LS_INFO) << "Voice-Processing I/O audio unit is now started";
@@ -288,7 +301,9 @@ int32_t AudioDeviceIOS::StartRecording() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
-      RTCLogError(@"StartRecording failed to start audio unit, reason %d", result);
+// UI Customization Begin
+      RTCLogError(@"StartRecording failed to start audio unit, reason %d", (int)result);
+// UI Customization End
       return -1;
     }
     RTC_LOG(LS_INFO) << "Voice-Processing I/O audio unit is now started";
@@ -363,6 +378,13 @@ void AudioDeviceIOS::OnChangedOutputVolume() {
   RTC_DCHECK(thread_);
   thread_->PostTask(SafeTask(safety_, [this] { HandleOutputVolumeChange(); }));
 }
+
+// UI Customization Begin
+void AudioDeviceIOS::OnMicrophoneMutedChange(bool is_microphone_muted) {
+  RTC_DCHECK(thread_);
+  thread_->PostTask(SafeTask(safety_, [this, is_microphone_muted] { HandleMicrophoneMutedChange(is_microphone_muted); }));
+}
+// UI Customization End
 
 OSStatus AudioDeviceIOS::OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
                                                const AudioTimeStamp* time_stamp,
@@ -601,9 +623,11 @@ void AudioDeviceIOS::HandleSampleRateChange() {
     if (result != noErr) {
       RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
       [session notifyAudioUnitStartFailedWithError:result];
+// UI Customization Begin
       RTCLogError(@"Failed to start audio unit with sample rate: %d, reason %d",
                   playout_parameters_.sample_rate(),
-                  result);
+                  (int)result);
+// UI Customization End
       return;
     }
   }
@@ -642,6 +666,42 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
   // glitches too close in time to this event.
   last_output_volume_change_time_ = rtc::TimeMillis();
 }
+
+// UI Customization Begin
+void AudioDeviceIOS::HandleMicrophoneMutedChange(bool is_microphone_muted) {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTCLog(@"Handling MicrophoneMuted change to %d", is_microphone_muted);
+  // Recording won't be initialized if playback has already been initialized, and vice versa. 
+  // So we must stop both recording and playback before muting or unmuting microphone.
+  int32_t result = 0;
+  if (!is_microphone_muted) {
+    // there could be an audio stream track added so that cause the recording flag is set to true but the mic related part in Audio Unit is not actually created yet
+    StopRecording();
+    StopPlayout();
+    result = InitRecording();
+    if (result < 0) {
+      RTCLogError(@"Failed to init audio capture device, reason %d", result);
+      result = InitPlayout();
+      if (result < 0) {
+        RTCLogError(@"Failed to init audio playout, reason %d", result);
+        return;
+      }
+    } else {
+      StartRecording();
+    }
+    StartPlayout();
+  } else {
+    StopRecording();
+    StopPlayout();
+    result = InitPlayout();
+    if (result < 0) {
+      RTCLogError(@"Failed to init audio playout, reason %d", result);
+    } else {
+      StartPlayout();
+    }
+  }
+}
+// UI Customization End
 
 void AudioDeviceIOS::UpdateAudioDeviceBuffer() {
   LOGI() << "UpdateAudioDevicebuffer";
@@ -716,6 +776,7 @@ bool AudioDeviceIOS::CreateAudioUnit() {
 
   audio_unit_.reset(new VoiceProcessingAudioUnit(bypass_voice_processing_, this));
   if (!audio_unit_->Init()) {
+    RTCLogError(@"Failed to init iOS audio unit");
     audio_unit_.reset();
     return false;
   }
@@ -788,7 +849,9 @@ void AudioDeviceIOS::UpdateAudioUnit(bool can_play_or_record) {
     OSStatus result = audio_unit_->Start();
     if (result != noErr) {
       [session notifyAudioUnitStartFailedWithError:result];
-      RTCLogError(@"Failed to start audio unit, reason %d", result);
+// UI Customization Begin
+      RTCLogError(@"Failed to start audio unit, reason %d", (int)result);
+// UI Customization End
       return;
     }
   }
@@ -870,6 +933,7 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
 
   // There should be no audio unit at this point.
   if (!CreateAudioUnit()) {
+    RTCLogError(@"Failed to create audio unit");
     return false;
   }
 
@@ -896,6 +960,7 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
       // audio session during or after a Media Services failure.
       // See AVAudioSessionErrorCodeMediaServicesFailed for details.
       [session unlockForConfiguration];
+      RTCLogError(@"Failed to configure audio session. See AVAudioSessionErrorCodeMediaServicesFailed for details.");
       audio_unit_.reset();
       return false;
     }

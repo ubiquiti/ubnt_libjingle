@@ -220,14 +220,23 @@ std::vector<ProbeClusterConfig> ProbeController::SetBitrates(
 std::vector<ProbeClusterConfig> ProbeController::OnMaxTotalAllocatedBitrate(
     DataRate max_total_allocated_bitrate,
     Timestamp at_time) {
+#ifndef UI_BITRATE_RECOVERY
+  // When the maximum required bandwidth changes, in order to reach the target 
+  // bandwidth as soon as possible, we use the probe to quickly achieve, and 
+  // exclude the case of ALR so that we can make it possible under any circumstances.
   const bool in_alr = alr_start_time_.has_value();
   const bool allow_allocation_probe = in_alr;
+#endif
+
   if (config_.probe_on_max_allocated_bitrate_change &&
       state_ == State::kProbingComplete &&
       max_total_allocated_bitrate != max_total_allocated_bitrate_ &&
       estimated_bitrate_ < max_bitrate_ &&
-      estimated_bitrate_ < max_total_allocated_bitrate &&
-      allow_allocation_probe) {
+      estimated_bitrate_ < max_total_allocated_bitrate
+#ifndef UI_BITRATE_RECOVERY
+      && allow_allocation_probe
+#endif
+      ) {
     max_total_allocated_bitrate_ = max_total_allocated_bitrate;
 
     if (!config_.first_allocation_probe_scale)
@@ -415,6 +424,13 @@ std::vector<ProbeClusterConfig> ProbeController::RequestProbe(
             "WebRTC.BWE.BweDropProbingIntervalInS",
             (at_time - last_bwe_drop_probing_time_).seconds());
         last_bwe_drop_probing_time_ = at_time;
+#ifdef UI_BITRATE_RECOVERY
+        RTC_LOG(LS_INFO) << "suggested_probe:" << suggested_probe
+                         << " min_expected_probe_result:" << min_expected_probe_result
+                         << " estimated_bitrate:" << estimated_bitrate_
+                         << " time_since_drop:" << time_since_drop
+                         << " time_since_probe:" << time_since_probe;
+#endif
         return InitiateProbing(at_time, {suggested_probe}, false);
       }
     }

@@ -55,6 +55,9 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
   BOOL _isAudioEnabled;
   BOOL _canPlayOrRecord;
   BOOL _isInterrupted;
+  // UI Customization Begin
+  BOOL _isMicrophoneMuted;
+  // UI Customization End
 }
 
 @synthesize session = _session;
@@ -79,7 +82,9 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
 - (instancetype)initWithAudioSession:(id)audioSession {
   if (self = [super init]) {
     _session = audioSession;
-
+    // UI Customization Begin
+    _isMicrophoneMuted = YES;
+    // UI Customization End
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self
                selector:@selector(handleInterruptionNotification:)
@@ -192,6 +197,33 @@ ABSL_CONST_INIT thread_local bool mutex_locked = false;
     return _isAudioEnabled;
   }
 }
+
+// UI Customization Begin
+- (void)setIsMicrophoneMuted:(BOOL)isMicrophoneMuted {
+  @synchronized(self) {
+    if (_isMicrophoneMuted == isMicrophoneMuted) {
+      return;
+    }
+    _isMicrophoneMuted = isMicrophoneMuted;
+  }
+  [self notifyDidChangeMicrophoneMuted];
+}
+
+- (BOOL)isMicrophoneMuted {
+  @synchronized(self) {
+    return _isMicrophoneMuted;
+  }
+}
+
+- (void)notifyDidChangeMicrophoneMuted {
+  for (auto delegate : self.delegates) {
+    SEL sel = @selector(audioSession:didChangeMicrophoneMuted:);
+    if ([delegate respondsToSelector:sel]) {
+      [delegate audioSession:self didChangeMicrophoneMuted:self.isMicrophoneMuted];
+    }
+  }
+}
+// UI Customization End
 
 - (void)setIgnoresPreferredAttributeConfigurationErrors:
     (BOOL)ignoresPreferredAttributeConfigurationErrors {

@@ -451,7 +451,9 @@ bool TurnPort::CreateTurnClientSocket() {
 
   if (server_address_.proto == PROTO_UDP && !SharedSocket()) {
     socket_ = socket_factory()->CreateUdpSocket(
-        rtc::SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
+// UI Customization Begin
+        rtc::SocketAddress(Network()->GetBestIP(), 0), Network()->index(), min_port(), max_port());
+// UI Customization End
   } else if (server_address_.proto == PROTO_TCP ||
              server_address_.proto == PROTO_TLS) {
     RTC_DCHECK(!SharedSocket());

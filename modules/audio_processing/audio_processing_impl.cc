@@ -1307,10 +1307,25 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
   capture_input_rms_.Analyze(rtc::ArrayView<const float>(
       capture_buffer->channels_const()[0],
       capture_nonlocked_.capture_processing_format.num_frames()));
+// UI Customization Begin
+  const bool update_rms = ++capture_rms_update_interval_counter_ >= 10;
+  RmsLevel::Levels levels;
+  if (update_rms) {
+    capture_rms_update_interval_counter_ = 0;
+    levels = capture_input_rms_.AverageAndPeak();
+    if (submodules_.capture_post_processor) {
+      submodules_.capture_post_processor->UpdateAudioIndicator(-levels.average + 0.5, -levels.peak + 0.5);
+    }
+  }
+// UI Customization End
   const bool log_rms = ++capture_rms_interval_counter_ >= 1000;
   if (log_rms) {
     capture_rms_interval_counter_ = 0;
-    RmsLevel::Levels levels = capture_input_rms_.AverageAndPeak();
+// UI Customization Begin
+    // RmsLevel::Levels levels = capture_input_rms_.AverageAndPeak();
+    if (!update_rms)
+      levels = capture_input_rms_.AverageAndPeak();
+// UI Customization End
     RTC_HISTOGRAM_COUNTS_LINEAR("WebRTC.Audio.ApmCaptureInputLevelAverageRms",
                                 levels.average, 1, RmsLevel::kMinLevelDb, 64);
     RTC_HISTOGRAM_COUNTS_LINEAR("WebRTC.Audio.ApmCaptureInputLevelPeakRms",

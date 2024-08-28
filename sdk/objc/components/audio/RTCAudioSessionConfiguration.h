@@ -30,7 +30,9 @@ RTC_OBJC_EXPORT
 @property(nonatomic, assign) NSTimeInterval ioBufferDuration;
 @property(nonatomic, assign) NSInteger inputNumberOfChannels;
 @property(nonatomic, assign) NSInteger outputNumberOfChannels;
-
+// UI Customization Begin
+@property(nonatomic, assign) bool isMicrophoneEnabled;
+// UI Customization End
 /** Initializes configuration to defaults. */
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
 

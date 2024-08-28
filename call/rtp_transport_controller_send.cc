@@ -17,6 +17,9 @@
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
+// UI Customization Begin
+#include "api/peer_connection_interface.h"
+// UI Customization End
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/transport/goog_cc_factory.h"
@@ -38,6 +41,9 @@ namespace webrtc {
 namespace {
 static const int64_t kRetransmitWindowSizeMs = 500;
 static const size_t kMaxOverheadBytes = 500;
+// UI Customization Begin
+static const uint64_t kPacerStateUpdateTimeMs = 1000;
+// UI Customization End
 
 constexpr TimeDelta kPacerQueueUpdateInterval = TimeDelta::Millis(25);
 
@@ -102,7 +108,11 @@ RtpTransportControllerSend::RtpTransportControllerSend(
       network_available_(false),
       congestion_window_size_(DataSize::PlusInfinity()),
       is_congested_(false),
-      retransmission_rate_limiter_(&env_.clock(), kRetransmitWindowSizeMs) {
+      retransmission_rate_limiter_(&env_.clock(), kRetransmitWindowSizeMs)
+// UI Customization Begin
+      , transport_controller_observer_(config.transport_controller_observer),
+      last_pacer_state_checking_time_(0) {
+// UI Customization End
   ParseFieldTrial(
       {&relay_bandwidth_cap_},
       env_.field_trials().Lookup("WebRTC-Bwe-NetworkRouteConstraints"));
@@ -416,7 +426,19 @@ int64_t RtpTransportControllerSend::GetPacerQueuingDelayMs() const {
 }
 absl::optional<Timestamp> RtpTransportControllerSend::GetFirstPacketTime()
     const {
+// UI Customization Begin
+#ifdef UI_CUSTOMIZATION_STATE_REPORT
+  auto firstSentPacketTime = pacer_.FirstSentPacketTime();
+  auto observer = transport_controller_observer_.lock();
+  if (observer) {
+    RTC_LOG(LS_INFO) << "First packet sent time=" << firstSentPacketTime->ms() << " ms.";
+    observer->OnFirstSentPacketTime(firstSentPacketTime->ms());
+  }
+  return firstSentPacketTime;
+#else
   return pacer_.FirstSentPacketTime();
+#endif
+// UI Customization End
 }
 void RtpTransportControllerSend::EnablePeriodicAlrProbing(bool enable) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
@@ -704,6 +726,22 @@ void RtpTransportControllerSend::UpdateControllerWithTimeInterval() {
   msg.at_time = Timestamp::Millis(env_.clock().TimeInMilliseconds());
   if (add_pacing_to_cwin_)
     msg.pacer_queue = pacer_.QueueSizeData();
+// UI Customization Begin
+#ifdef UI_CUSTOMIZATION_STATE_REPORT
+  if (last_pacer_state_checking_time_ == 0)
+    last_pacer_state_checking_time_ = rtc::TimeMillis();
+  else {
+    uint64_t now = rtc::TimeMillis();
+    uint64_t elapse_time = now - last_pacer_state_checking_time_;
+    if (elapse_time > kPacerStateUpdateTimeMs) {
+      last_pacer_state_checking_time_ = now;
+      auto observer = transport_controller_observer_.lock();
+      if (observer)
+        observer->OnPacerStateUpdate(pacer_.QueueSizeData().bytes_or(0), pacer_.ExpectedQueueTime().ms());
+    }
+  }
+#endif
+// UI Customization End
   PostUpdates(controller_->OnProcessInterval(msg));
 }
 

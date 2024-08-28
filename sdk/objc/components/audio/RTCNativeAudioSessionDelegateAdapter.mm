@@ -86,4 +86,10 @@
   _observer->OnChangedOutputVolume();
 }
 
+// UI Customization Begin
+- (void)audioSession:(RTC_OBJC_TYPE(RTCAudioSession) *)audioSession 
+    didChangeMicrophoneMuted:(BOOL)isMicrophoneMuted {
+  _observer->OnMicrophoneMutedChange(isMicrophoneMuted);
+}
+// UI Customization End
 @end

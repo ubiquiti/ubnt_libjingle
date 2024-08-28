@@ -42,6 +42,10 @@
 #include "test/network/simulated_network.h"
 #include "video/config/video_encoder_config.h"
 
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+#include "call/rtp_stream_receiver_controller.h"
+#endif
+
 namespace webrtc {
 class DegradedCall : public Call, private PacketReceiver {
  public:
@@ -109,7 +113,9 @@ class DegradedCall : public Call, private PacketReceiver {
   void OnUpdateSyncGroup(AudioReceiveStreamInterface& stream,
                          absl::string_view sync_group) override;
   void OnSentPacket(const rtc::SentPacket& sent_packet) override;
-
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+  RtpStreamReceiverController* receiver_controller() override {return nullptr;}
+#endif
  protected:
   // Implements PacketReceiver.
   void DeliverRtpPacket(

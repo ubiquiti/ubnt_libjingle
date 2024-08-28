@@ -167,11 +167,17 @@ if (is_ios || is_mac) {
 
     if (is_ios) {
       sources += [
-        "objc/helpers/RTCCameraPreviewView.h",
-        "objc/helpers/RTCCameraPreviewView.m",
         "objc/helpers/UIDevice+RTCDevice.h",
         "objc/helpers/UIDevice+RTCDevice.mm",
       ]
+# UI Customization Begin
+      if (ios_device_name != "appletv") {
+        sources += [
+          "objc/helpers/RTCCameraPreviewView.h",
+          "objc/helpers/RTCCameraPreviewView.m",
+        ]
+      }
+# UI Customization End
       frameworks += [ "UIKit.framework" ]
     }
   }
@@ -268,11 +274,23 @@ if (is_ios || is_mac) {
         deps = [
           ":base_objc",
           ":helpers_objc",
-          ":metal_objc",
+# UI Customization Begin
+          #":metal_objc",
+# UI Customization End
           ":opengl_objc",
-          ":videocapture_objc",
+# UI Customization Begin
+          # ":videocapture_objc",
+# UI Customization End
           ":videoframebuffer_objc",
         ]
+# UI Customization Begin
+        if (ios_device_name != "appletv") {
+          deps += [
+            ":metal_objc",
+            ":videocapture_objc",
+          ]
+        }
+# UI Customization End
       }
 
       rtc_library("audio_device") {
@@ -483,6 +501,10 @@ if (is_ios || is_mac) {
         "objc/native/src/objc_audio_device.mm",
         "objc/native/src/objc_audio_device_delegate.h",
         "objc/native/src/objc_audio_device_delegate.mm",
+# UI Customization Begin
+        "objc/native/src/unifi_capture_post_processing.h",
+        "objc/native/src/unifi_capture_post_processing.mm",
+# UI Customization End
       ]
 
       deps = [
@@ -514,6 +536,10 @@ if (is_ios || is_mac) {
       sources = [
         "objc/native/api/objc_audio_device_module.h",
         "objc/native/api/objc_audio_device_module.mm",
+# UI Customization Begin
+        "objc/native/api/objc_audio_processing.h",
+        "objc/native/api/objc_audio_processing.mm",
+# UI Customization End
       ]
 
       deps = [
@@ -655,11 +681,23 @@ if (is_ios || is_mac) {
       visibility = [ "*" ]
       allow_poison = [ "audio_codecs" ]  # TODO(bugs.webrtc.org/8396): Remove.
       sources = [
-        "objc/components/capturer/RTCCameraVideoCapturer.h",
-        "objc/components/capturer/RTCCameraVideoCapturer.m",
         "objc/components/capturer/RTCFileVideoCapturer.h",
         "objc/components/capturer/RTCFileVideoCapturer.m",
       ]
+# UI Customization Begin
+      if (is_ios && ios_device_name != "appletv") {
+        sources += [
+          "objc/components/capturer/RTCCameraVideoCapturer.h",
+          "objc/components/capturer/RTCCameraVideoCapturer.m",
+        ]
+      }
+      if (is_mac) {
+        sources += [
+          "objc/components/capturer/RTCCameraVideoCapturer.h",
+          "objc/components/capturer/RTCCameraVideoCapturer.m",
+        ]
+      }
+# UI Customization End
       frameworks = [
         "AVFoundation.framework",
         "CoreVideo.framework",
@@ -1281,12 +1319,19 @@ if (is_ios || is_mac) {
           "objc/base/RTCVideoRenderer.h",
           "objc/base/RTCYUVPlanarBuffer.h",
           "objc/components/audio/RTCAudioDevice.h",
+# UI Customization Begin
+           "objc/components/audio/RTCAudioProcessing.h",
+# UI Customization End
           "objc/components/audio/RTCAudioSession.h",
           "objc/components/audio/RTCAudioSessionConfiguration.h",
-          "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCFileVideoCapturer.h",
+# UI Customization Begin
+          #"objc/components/capturer/RTCCameraVideoCapturer.h",
+# UI Customization End
           "objc/components/network/RTCNetworkMonitor.h",
-          "objc/components/renderer/metal/RTCMTLVideoView.h",
+# UI Customization Begin
+          #"objc/components/renderer/metal/RTCMTLVideoView.h",
+# UI Customization End
           "objc/components/renderer/opengl/RTCEAGLVideoView.h",
           "objc/components/renderer/opengl/RTCVideoViewShading.h",
           "objc/components/video_codec/RTCCodecSpecificInfoH264.h",
@@ -1298,7 +1343,9 @@ if (is_ios || is_mac) {
           "objc/components/video_codec/RTCVideoEncoderFactoryH264.h",
           "objc/components/video_codec/RTCVideoEncoderH264.h",
           "objc/components/video_frame_buffer/RTCCVPixelBuffer.h",
-          "objc/helpers/RTCCameraPreviewView.h",
+# UI Customization Begin
+          #"objc/helpers/RTCCameraPreviewView.h",
+# UI Customization End
           "objc/helpers/RTCDispatcher.h",
           "objc/helpers/UIDevice+RTCDevice.h",
           "objc/api/peerconnection/RTCAudioSource.h",
@@ -1351,7 +1398,15 @@ if (is_ios || is_mac) {
           "objc/api/video_frame_buffer/RTCNativeI420Buffer.h",
           "objc/api/video_frame_buffer/RTCNativeMutableI420Buffer.h",
         ]
-
+# UI Customization Begin
+        if (ios_device_name == "iphone") {
+          common_objc_headers += [
+            "objc/components/renderer/metal/RTCMTLVideoView.h",
+            "objc/components/capturer/RTCCameraVideoCapturer.h",
+            "objc/helpers/RTCCameraPreviewView.h"
+          ]
+        }
+# UI Customization End
         if (!build_with_chromium) {
           common_objc_headers += [
             "objc/api/logging/RTCCallbackLogger.h",
@@ -1372,14 +1427,26 @@ if (is_ios || is_mac) {
           ":audio_objc",
           ":base_objc",
           ":default_codec_factory_objc",
-          ":metal_objc",
+# UI Customization Begin
+          #":metal_objc",
+# UI Customization End
           ":native_api",
           ":native_video",
           ":peerconnectionfactory_base_objc",
-          ":videocapture_objc",
+# UI Customization Begin
+          #":videocapture_objc",
+# UI Customization End
           ":videocodec_objc",
           ":videotoolbox_objc",
         ]
+# UI Customization Begin
+        if (ios_device_name != "appletv") {
+          deps += [
+            ":metal_objc",
+            ":videocapture_objc",
+          ]
+        }
+# UI Customization End
         if (!build_with_chromium) {
           deps += [
             ":callback_logger_objc",

@@ -17,6 +17,9 @@
 #include "api/network_state_predictor.h"
 #include "api/transport/bitrate_settings.h"
 #include "api/transport/network_control.h"
+// UI Customization Begin
+#include "api/peer_connection_interface.h"
+// UI Customization End
 #include "call/audio_state.h"
 #include "call/rtp_transport_config.h"
 #include "call/rtp_transport_controller_send_factory_interface.h"
@@ -76,6 +79,10 @@ struct CallConfig {
 
   // Enables send packet batching from the egress RTP sender.
   bool enable_send_packet_batching = false;
+
+// UI Customization Begin
+  std::weak_ptr<TransportControllerObserver> transport_controller_observer;
+// UI Customization End
 };
 
 }  // namespace webrtc

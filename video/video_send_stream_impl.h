@@ -120,7 +120,9 @@ class VideoSendStreamImpl : public webrtc::VideoSendStream,
   const absl::optional<float>& configured_pacing_factor() const {
     return configured_pacing_factor_;
   }
-
+  // UI Customization Begin
+  void SuspendBelowMinBitrate(bool suspend_below_min_bitrate) override;
+  // UI Customization End
  private:
   friend class test::VideoSendStreamPeer;
   class OnSendPacketObserver : public SendPacketObserver {
@@ -221,6 +223,9 @@ class VideoSendStreamImpl : public webrtc::VideoSendStream,
   double encoder_bitrate_priority_ RTC_GUARDED_BY(thread_checker_);
   const int encoder_av1_priority_bitrate_override_bps_
       RTC_GUARDED_BY(thread_checker_);
+  // UI Customization Begin
+  bool suspend_below_min_bitrate_ RTC_GUARDED_BY(thread_checker_);
+  // UI Customization End
 
   ScopedTaskSafety worker_queue_safety_;
 

@@ -21,6 +21,9 @@
 #include "api/units/time_delta.h"
 
 namespace webrtc {
+// UI Customization Begin
+class TransportControllerObserver;
+// UI Customization End
 
 struct RtpTransportConfig {
   Environment env;
@@ -38,6 +41,9 @@ struct RtpTransportConfig {
 
   // The burst interval of the pacer, see TaskQueuePacedSender constructor.
   absl::optional<TimeDelta> pacer_burst_interval;
+// UI Customization Begin
+  std::weak_ptr<TransportControllerObserver> transport_controller_observer;
+// UI Customization End
 };
 }  // namespace webrtc
 

@@ -35,8 +35,14 @@ const int STUN_INITIAL_RTO = 250;  // milliseconds
 // The timeout doubles each retransmission, up to this many times
 // RFC 5389 says SHOULD retransmit 7 times.
 // This has been 8 for years (not sure why).
-const int STUN_MAX_RETRANSMISSIONS = 8;  // Total sends: 9
-
+// UI Customization Begin - to make 'server_addresses_.size() == servers_done_bind_request)'
+// more sooner
+#ifdef UI_CUSTOMIZATION_STUN_RETRANS_TIMEOUT
+const int STUN_MAX_RETRANSMISSIONS = 5;           // Total sends: 6
+#else
+const int STUN_MAX_RETRANSMISSIONS = 8;           // Total sends: 9
+#endif
+// UI Customization End
 // We also cap the doubling, even though the standard doesn't say to.
 // This has been 1.6 seconds for years, but for networks that
 // experience moments of high RTT (such as 2G networks), this doesn't
