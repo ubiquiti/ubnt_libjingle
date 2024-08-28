@@ -79,7 +79,10 @@ class BitrateAllocatorInterface {
                            MediaStreamAllocationConfig config) = 0;
   virtual void RemoveObserver(BitrateAllocatorObserver* observer) = 0;
   virtual int GetStartBitrate(BitrateAllocatorObserver* observer) const = 0;
-
+  // UI Customization Begin
+  virtual void SuspendBelowMinBitrate(BitrateAllocatorObserver* observer,
+                                      bool suspend_below_min_bitrate) {}
+  // UI Customization End
  protected:
   virtual ~BitrateAllocatorInterface() = default;
 };
@@ -154,7 +157,10 @@ class BitrateAllocator : public BitrateAllocatorInterface {
   // Returns initial bitrate allocated for `observer`. If `observer` is not in
   // the list of added observers, a best guess is returned.
   int GetStartBitrate(BitrateAllocatorObserver* observer) const override;
-
+  // UI Customization Begin
+  void SuspendBelowMinBitrate(BitrateAllocatorObserver* observer,
+                                bool suspend_below_min_bitrate) override;
+  // UI Customization End
  private:
   using AllocatableTrack = bitrate_allocator_impl::AllocatableTrack;
 

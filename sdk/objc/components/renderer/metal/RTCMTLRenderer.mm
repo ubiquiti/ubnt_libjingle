@@ -137,6 +137,16 @@ static const NSInteger kMaxInflightBuffers = 1;
     view.preferredFramesPerSecond = 30;
     view.autoResizeDrawable = NO;
 
+      // UI Customization Begin
+#if TARGET_OS_OSX
+// NSView define : @property (getter=isOpaque, readonly) BOOL opaque;
+#else
+// UIView define : @property(nonatomic,getter=isOpaque) BOOL opaque;
+    view.opaque = false;
+#endif
+
+    view.clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+      // UI Customization End
     [self loadAssets];
 
     float vertexBufferArray[16] = {0};
@@ -325,5 +335,39 @@ static const NSInteger kMaxInflightBuffers = 1;
     }
   }
 }
+// UI Customization Begin
+- (void)clearView {
+  @autoreleasepool {
+    // Wait until the inflight (curently sent to GPU) command buffer
+    // has completed the GPU work.
+    dispatch_semaphore_wait(_inflight_semaphore, DISPATCH_TIME_FOREVER);
 
+    id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+    commandBuffer.label = commandBufferLabel;
+
+    __block dispatch_semaphore_t block_semaphore = _inflight_semaphore;
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull) {
+      // GPU work completed.
+      dispatch_semaphore_signal(block_semaphore);
+    }];
+
+    MTLRenderPassDescriptor *renderPassDescriptor = _view.currentRenderPassDescriptor;
+    if (renderPassDescriptor) {  // Valid drawable.
+      renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+      renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+
+      id<MTLRenderCommandEncoder> renderEncoder =
+          [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+      renderEncoder.label = renderEncoderLabel;
+
+      [renderEncoder endEncoding];
+
+      [commandBuffer presentDrawable:_view.currentDrawable];
+    }
+
+    // CPU work is completed, GPU work can be started.
+    [commandBuffer commit];
+  }
+}
+// UI Customization End
 @end

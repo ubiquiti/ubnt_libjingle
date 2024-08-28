@@ -36,11 +36,17 @@ class AsyncUDPSocket : public AsyncPacketSocket {
   // of `socket`. Returns null if bind() fails (`socket` is destroyed
   // in that case).
   static AsyncUDPSocket* Create(Socket* socket,
-                                const SocketAddress& bind_address);
+                                const SocketAddress& bind_address
+// UI Customization Begin
+                                ,int interfaceIndex);
+// UI Customization End
   // Creates a new socket for sending asynchronous UDP packets using an
   // asynchronous socket from the given factory.
   static AsyncUDPSocket* Create(SocketFactory* factory,
-                                const SocketAddress& bind_address);
+                                const SocketAddress& bind_address
+// UI Customization Begin
+                                ,int interfaceIndex);
+// UI Customization End
   explicit AsyncUDPSocket(Socket* socket);
   ~AsyncUDPSocket() = default;
 

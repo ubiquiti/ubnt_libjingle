@@ -44,6 +44,9 @@
 #include "media/base/media_constants.h"
 
 #include "sdk/objc/native/api/objc_audio_device_module.h"
+// UI Customization Begin
+#include "sdk/objc/native/api/objc_audio_processing.h"
+// UI Customization End
 #include "sdk/objc/native/api/video_decoder_factory.h"
 #include "sdk/objc/native/api/video_encoder_factory.h"
 #include "sdk/objc/native/src/objc_video_decoder_factory.h"
@@ -112,6 +115,21 @@
   return [self initWithMediaAndDependencies:std::move(dependencies)];
 #endif
 }
+
+// UI Customization Begin
+- (instancetype)
+    initWithAudioProcessing:(nullable id<RTC_OBJC_TYPE(RTCAudioProcessing)>)audioProcessing {
+  return [self
+      initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
+              nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
+              nativeVideoEncoderFactory:webrtc::ObjCToNativeVideoEncoderFactory([[RTC_OBJC_TYPE(
+                                            RTCVideoEncoderFactoryH264) alloc] init])
+              nativeVideoDecoderFactory:webrtc::ObjCToNativeVideoDecoderFactory([[RTC_OBJC_TYPE(
+                                            RTCVideoDecoderFactoryH264) alloc] init])
+                      audioDeviceModule:[self audioDeviceModule].get()
+                  audioProcessingModule:webrtc::CreateAudioProcessing(audioProcessing)];
+}
+// UI Customization End
 
 - (instancetype)initWithNativeDependencies:(webrtc::PeerConnectionFactoryDependencies)dependencies {
   self = [super init];

@@ -776,7 +776,9 @@ class CustomProcessing {
   // Handles RuntimeSettings. TODO(webrtc:9262): make pure virtual
   // after updating dependencies.
   virtual void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting);
-
+// UI Customization Begin
+  virtual void UpdateAudioIndicator(int average, int peak) = 0;
+// UI Customization End
   virtual ~CustomProcessing() {}
 };
 

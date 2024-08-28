@@ -304,6 +304,35 @@ config("common_config") {
   cflags_objc = []
   defines = []
 
+  # UI customization
+  if (rtc_enable_unifi_datachannel_fix) {
+    defines += [ "UI_CUSTOMIZATION_DATACHANNEL_FIX" ]
+  }
+
+  if (rtc_enable_unifi_state_report) {
+    defines += [ "UI_CUSTOMIZATION_STATE_REPORT" ]
+  }
+
+  if (rtc_enable_unifi_absl_build_fix) {
+    defines += [ "UI_CUSTOMIZATION_ABSL_BUILD_FIX" ]
+  }
+
+  if (rtc_enable_unifi_stun_retrans_timeout) {
+    defines += [ "UI_CUSTOMIZATION_STUN_RETRANS_TIMEOUT" ]
+  }
+
+  if (rtc_enable_unifi_audio_stream_api) {
+    defines += [ "UI_CUSTOMIZED_AUDIO_STREAM_API" ]
+  }
+
+  if (rtc_enable_unifi_unsanitize_ip) {
+    defines += [ "UI_CUSTOMIZED_UNSANITIZE_IP" ]
+  }
+
+  if (rtc_enable_unifi_bitrate_recovery) {
+    defines += [ "UI_BITRATE_RECOVERY" ]
+  }
+
   if (rtc_enable_protobuf) {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {
@@ -567,13 +596,24 @@ if (!build_with_chromium) {
       "video",
     ]
 
+# UI Customization Begin
+    deps += ["rtc_base:rtc_json",]
+# UI Customization End
+
     if (rtc_include_builtin_audio_codecs) {
       deps += [
         "api/audio_codecs:builtin_audio_decoder_factory",
         "api/audio_codecs:builtin_audio_encoder_factory",
       ]
     }
-
+# UI Customization Begin
+    if (rtc_include_builtin_video_codecs) {
+      deps += [
+        "api/video_codecs:builtin_video_decoder_factory",
+        "api/video_codecs:builtin_video_encoder_factory",
+      ]
+    }
+# UI Customization End
     if (build_with_mozilla) {
       deps += [
         "api/video:video_frame",

@@ -40,6 +40,9 @@ RTC_OBJC_EXPORT
 /** @abstract Wrapped RTCVideoRotation, or nil.
  */
 @property(nonatomic, nullable) NSValue *rotationOverride;
+// UI Customization Begin
+- (void)clearVideoView;
+// UI Customization End
 @end
 
 NS_ASSUME_NONNULL_END

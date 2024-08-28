@@ -125,6 +125,13 @@ class ReassemblyQueue {
   void AddHandoverState(DcSctpSocketHandoverState& state);
   void RestoreFromState(const DcSctpSocketHandoverState& state);
 
+// UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
+  ReconfigRequestSN lcr_request_sequence_number() const {
+    return last_completed_reset_req_seq_nbr_;
+  }
+#endif
+// UI Customization End
  private:
   struct DeferredResetStreams {
     DeferredResetStreams(UnwrappedTSN sender_last_assigned_tsn,
@@ -152,6 +159,14 @@ class ReassemblyQueue {
 
   // If present, "deferred reset processing" mode is active.
   std::optional<DeferredResetStreams> deferred_reset_streams_;
+
+// UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
+  // Contains the last request sequence number of the
+  // OutgoingSSNResetRequestParameter that was performed.
+  ReconfigRequestSN last_completed_reset_req_seq_nbr_;
+#endif
+// UI Customization End
 
   // The number of "payload bytes" that are in this queue, in total.
   size_t queued_bytes_ = 0;

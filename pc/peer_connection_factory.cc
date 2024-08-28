@@ -255,7 +255,9 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
 
   dependencies.allocator->SetNetworkIgnoreMask(options().network_ignore_mask);
   dependencies.allocator->SetVpnList(configuration.vpn_list);
-
+// UI Customization Begin
+  dependencies.allocator->SetActiveInterfaces(options().activeInterfaces);
+// UI Customization End
   std::unique_ptr<NetworkControllerFactoryInterface>
       network_controller_factory =
           std::move(dependencies.network_controller_factory);
@@ -358,6 +360,9 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
   call_config.decode_metronome = decode_metronome_.get();
   call_config.encode_metronome = encode_metronome_.get();
   call_config.pacer_burst_interval = configuration.pacer_burst_interval;
+// UI Customization Begin
+  call_config.transport_controller_observer = configuration.transport_controller_observer;
+// UI Customization End
   return context_->call_factory()->CreateCall(std::move(call_config));
 }
 

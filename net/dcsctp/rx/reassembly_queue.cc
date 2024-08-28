@@ -57,6 +57,11 @@ ReassemblyQueue::ReassemblyQueue(absl::string_view log_prefix,
     : log_prefix_(log_prefix),
       max_size_bytes_(max_size_bytes),
       watermark_bytes_(max_size_bytes * kHighWatermarkLimit),
+// UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
+      last_completed_reset_req_seq_nbr_(ReconfigRequestSN(0)),
+#endif
+// UI Customization End
       streams_(CreateStreams(
           log_prefix_,
           [this](rtc::ArrayView<const UnwrappedTSN> tsns,
@@ -221,10 +226,25 @@ HandoverReadinessStatus ReassemblyQueue::GetHandoverReadiness() const {
 }
 
 void ReassemblyQueue::AddHandoverState(DcSctpSocketHandoverState& state) {
+// UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
+  state.rx.last_completed_deferred_reset_req_sn =
+      last_completed_reset_req_seq_nbr_.value();
+#endif
+// UI Customization End
   streams_->AddHandoverState(state);
 }
 
 void ReassemblyQueue::RestoreFromState(const DcSctpSocketHandoverState& state) {
+// UI Customization Begin - for stream reset handler to get the 'last_completed_reset_req_seq_nbr_'
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
+  // Validate that the component is in pristine state.
+  RTC_DCHECK(last_completed_reset_req_seq_nbr_ == ReconfigRequestSN(0));
+
+  last_completed_reset_req_seq_nbr_ =
+      ReconfigRequestSN(state.rx.last_completed_deferred_reset_req_sn);
+#endif
+// UI Customization End
   streams_->RestoreFromState(state);
 }
 }  // namespace dcsctp

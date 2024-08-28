@@ -186,6 +186,18 @@ enum class SdpSemantics {
   kUnifiedPlan,
 };
 
+// UI Customization Begin
+class RTC_EXPORT TransportControllerObserver {
+ public:
+  virtual ~TransportControllerObserver() {
+  }
+  virtual void OnPacerStateUpdate(int64_t queueSizeInBytes, int64_t expectedQueueTimeMs) {
+  }
+  virtual void OnFirstSentPacketTime(int64_t firstPacketSendTimeMs) {
+  }
+};
+// UI Customization End
+
 class RTC_EXPORT PeerConnectionInterface : public webrtc::RefCountInterface {
  public:
   // See https://w3c.github.io/webrtc-pc/#dom-rtcsignalingstate
@@ -401,6 +413,21 @@ class RTC_EXPORT PeerConnectionInterface : public webrtc::RefCountInterface {
       media_config.video.rtcp_report_interval_ms =
           video_rtcp_report_interval_ms;
     }
+
+// UI Customization Begin
+    bool periodic_alr_bandwidth_probing() const {
+      return media_config.video.periodic_alr_bandwidth_probing;
+    }
+    void set_periodic_alr_bandwidth_probing(bool enable) {
+      media_config.video.periodic_alr_bandwidth_probing = enable;
+    }
+
+    void set_transport_controller_observer(std::weak_ptr<TransportControllerObserver> observer) {
+      transport_controller_observer = observer;
+    }
+
+    std::weak_ptr<TransportControllerObserver> transport_controller_observer;
+// UI Customization End
 
     // Settings for the port allcoator. Applied only if the port allocator is
     // created by PeerConnectionFactory, not if it is injected with
@@ -1524,7 +1551,10 @@ class RTC_EXPORT PeerConnectionFactoryInterface
     // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
     // loopback interfaces.
     int network_ignore_mask = rtc::kDefaultNetworkIgnoreMask;
-
+// UI Customization Begin
+    // when not empty, it will only select the interfaces from it
+    std::map<std::string, bool> activeInterfaces;
+// UI Customization End
     // Sets the maximum supported protocol version. The highest version
     // supported by both ends will be used for the connection, i.e. if one
     // party supports DTLS 1.0 and the other DTLS 1.2, DTLS 1.0 will be used.

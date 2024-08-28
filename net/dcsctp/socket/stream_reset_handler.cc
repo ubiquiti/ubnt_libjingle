@@ -136,6 +136,17 @@ bool StreamResetHandler::ValidateReqSeqNbr(
     UnwrappedReconfigRequestSn req_seq_nbr,
     std::vector<ReconfigurationResponseParameter>& responses) {
   if (req_seq_nbr == last_processed_req_seq_nbr_) {
+// UI Customization Begin - check if req_seq_nbr is less than the last completed reset
+    // req_seq_nbr, i.e. it has left from deferred mode or not.
+#ifdef UI_CUSTOMIZATION_DATACHANNEL_FIX
+    if (req_seq_nbr.Wrap() <= reassembly_queue_->lcr_request_sequence_number()) {
+      RTC_DLOG(LS_VERBOSE) << log_prefix_ << "req=" << *req_seq_nbr
+                           << " already completed, last_completed_reset_req_seq_nbr="
+                           << *reassembly_queue_->lcr_request_sequence_number();
+      return true;
+    }
+#endif
+// UI Customization End
     // https://www.rfc-editor.org/rfc/rfc6525.html#section-5.2.1 "If the
     // received RE-CONFIG chunk contains at least one request and based on the
     // analysis of the Re-configuration Request Sequence Numbers this is the

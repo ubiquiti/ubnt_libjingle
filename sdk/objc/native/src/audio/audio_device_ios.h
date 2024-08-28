@@ -149,6 +149,9 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void OnValidRouteChange() override;
   void OnCanPlayOrRecordChange(bool can_play_or_record) override;
   void OnChangedOutputVolume() override;
+  // UI Customization Begin
+  void OnMicrophoneMutedChange(bool is_microphone_muted) override;
+  // UI Customization End
 
   // VoiceProcessingAudioUnitObserver methods.
   OSStatus OnDeliverRecordedData(AudioUnitRenderActionFlags* flags,
@@ -175,6 +178,9 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   void HandleSampleRateChange();
   void HandlePlayoutGlitchDetected();
   void HandleOutputVolumeChange();
+  // UI Customization Begin
+  void HandleMicrophoneMutedChange(bool is_microphone_muted);
+  // UI Customization End
 
   // Uses current `playout_parameters_` and `record_parameters_` to inform the
   // audio device buffer (ADB) about our internal audio parameters.

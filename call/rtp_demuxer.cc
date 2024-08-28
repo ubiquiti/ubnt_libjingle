@@ -164,7 +164,12 @@ bool RtpDemuxer::AddSink(const RtpDemuxerCriteria& criteria,
 }
 
 bool RtpDemuxer::CriteriaWouldConflict(
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+    const RtpDemuxerCriteria& criteria) {
+#else
     const RtpDemuxerCriteria& criteria) const {
+#endif
+
   if (!criteria.mid().empty()) {
     if (criteria.rsid().empty()) {
       // If the MID is in the known_mids_ set, then there is already a sink
@@ -207,7 +212,12 @@ bool RtpDemuxer::CriteriaWouldConflict(
       RTC_LOG(LS_INFO) << criteria.ToString()
                        << " would conflict with existing sink = "
                        << sink_by_ssrc->second << " binding by SSRC=" << ssrc;
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+      RemoveSink(sink_by_ssrc->second);
+      RTC_LOG(LS_INFO) << "    RtpDemuxer::" << __func__ << " REPLACING sink for ssrc=" << ssrc;
+#else
       return true;
+#endif
     }
   }
 

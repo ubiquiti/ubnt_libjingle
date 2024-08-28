@@ -161,7 +161,12 @@ class RtpDemuxer {
  private:
   // Returns true if adding a sink with the given criteria would cause conflicts
   // with the existing criteria and should be rejected.
+
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+  bool CriteriaWouldConflict(const RtpDemuxerCriteria& criteria);
+#else
   bool CriteriaWouldConflict(const RtpDemuxerCriteria& criteria) const;
+#endif
 
   // Runs the demux algorithm on the given packet and returns the sink that
   // should receive the packet.

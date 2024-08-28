@@ -457,6 +457,9 @@ VideoSendStreamImpl::VideoSendStreamImpl(
       encoder_av1_priority_bitrate_override_bps_(
           GetEncoderPriorityBitrate(config_.rtp.payload_name,
                                     env_.field_trials())),
+      // UI Customization Begin
+      suspend_below_min_bitrate_(config_.suspend_below_min_bitrate),
+      // UI Customization End
       configured_pacing_factor_(
           GetConfiguredPacingFactor(config_,
                                     content_type_,
@@ -779,7 +782,10 @@ MediaStreamAllocationConfig VideoSendStreamImpl::GetAllocationConfig() const {
       encoder_max_bitrate_bps_,
       static_cast<uint32_t>(disable_padding_ ? 0 : max_padding_bitrate_),
       encoder_av1_priority_bitrate_override_bps_,
-      !config_.suspend_below_min_bitrate,
+// UI Customization Begin - different suspending strategies are adopted for different streams
+//      !config_->suspend_below_min_bitrate,
+      !suspend_below_min_bitrate_,
+// UI Customization End
       encoder_bitrate_priority_,
       (content_type_ == VideoEncoderConfig::ContentType::kRealtimeVideo)
           ? std::optional(TrackRateElasticity::kCanConsumeExtraRate)
@@ -831,8 +837,11 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
 
     // TODO(bugs.webrtc.org/10266): Query the VideoBitrateAllocator instead.
     max_padding_bitrate_ = CalculateMaxPadBitrateBps(
-        streams, is_svc, content_type, min_transmit_bitrate_bps,
-        config_.suspend_below_min_bitrate, has_alr_probing_);
+          streams, is_svc, content_type, min_transmit_bitrate_bps,
+// UI Customization Begin
+          /*config_->suspend_below_min_bitrate*/suspend_below_min_bitrate_,
+// UI Customization End
+          has_alr_probing_);
 
     // Clear stats for disabled layers.
     for (size_t i = streams.size(); i < config_.rtp.ssrcs.size(); ++i) {
@@ -952,6 +961,14 @@ std::optional<DataRate> VideoSendStreamImpl::GetUsedRate() const {
   // that can be shared, and this needs to be changed to support that.
   return std::nullopt;
 }
-
+// UI Customization Begin
+void VideoSendStreamImpl::SuspendBelowMinBitrate(bool suspend_below_min_bitrate) {
+  RTC_DCHECK_RUN_ON(&thread_checker_);
+  if (suspend_below_min_bitrate_ != suspend_below_min_bitrate) {
+    suspend_below_min_bitrate_ = suspend_below_min_bitrate;
+    bitrate_allocator_->SuspendBelowMinBitrate(this, suspend_below_min_bitrate);
+  }
+}
+// UI Customization End
 }  // namespace internal
 }  // namespace webrtc

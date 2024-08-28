@@ -34,6 +34,10 @@ NS_ASSUME_NONNULL_BEGIN
 (RTCSSLCertificateVerifier);
 @protocol RTC_OBJC_TYPE
 (RTCAudioDevice);
+// UI Customization Begin
+@protocol RTC_OBJC_TYPE
+(RTCAudioProcessing);
+// UI Customization End
 
 RTC_OBJC_EXPORT
 @interface RTC_OBJC_TYPE (RTCPeerConnectionFactory) : NSObject
@@ -63,6 +67,11 @@ RTC_OBJC_EXPORT
  * kRTCMediaStreamTrackKindVideo.
  */
 - (RTC_OBJC_TYPE(RTCRtpCapabilities) *)rtpReceiverCapabilitiesForKind:(NSString *)kind;
+
+// UI Customization Begin
+- (instancetype)
+    initWithAudioProcessing:(nullable id<RTC_OBJC_TYPE(RTCAudioProcessing)>)audioProcessing;
+// UI Customization End
 
 /** Initialize an RTCAudioSource with constraints. */
 - (RTC_OBJC_TYPE(RTCAudioSource) *)audioSourceWithConstraints:

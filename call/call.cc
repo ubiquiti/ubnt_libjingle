@@ -316,6 +316,12 @@ class Call final : public webrtc::Call,
 
   void SetClientBitratePreferences(const BitrateSettings& preferences) override;
 
+#ifdef UI_CUSTOMIZED_AUDIO_STREAM_API
+  RtpStreamReceiverController* receiver_controller() override {
+    return &audio_receiver_controller_;
+  }
+#endif
+
  private:
   // Thread-compatible class that collects received packet stats and exposes
   // them as UMA histograms on destruction.

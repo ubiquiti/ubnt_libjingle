@@ -7,7 +7,9 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+// UI Customization Begin
+#import "TargetConditionals.h"
+// UI Customization End
 #import "RTCAudioSessionConfiguration.h"
 #import "RTCAudioSession.h"
 
@@ -60,7 +62,14 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // nonmixable, hence activating the session will interrupt any other
     // audio sessions which are also nonmixable.
     _category = AVAudioSessionCategoryPlayAndRecord;
+      
+    // UI Customization Begin
+#if !TARGET_OS_TV
+    // UI Customization End
     _categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth;
+    // UI Customization Begin
+#endif /* !TARGET_OS_TV */
+    // UI Customization End
 
     // Specify mode for two-way voice communication (e.g. VoIP).
     _mode = AVAudioSessionModeVoiceChat;
@@ -76,6 +85,9 @@ static RTC_OBJC_TYPE(RTCAudioSessionConfiguration) *gWebRTCConfiguration = nil;
     // TODO(henrika): add support for stereo if needed.
     _inputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
     _outputNumberOfChannels = kRTCAudioSessionPreferredNumberOfChannels;
+    // UI Customization Begin
+    _isMicrophoneEnabled = false;
+    // UI Customization End
   }
   return self;
 }
