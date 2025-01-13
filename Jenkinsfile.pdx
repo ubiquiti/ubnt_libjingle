@@ -1,4 +1,5 @@
 def APP = 'googlewebrtc'
+def BUILDNODE_LABEL = 'protect-ms'
 
 def doAndroidAll='''
 env
@@ -62,9 +63,7 @@ properties([
 
 pipeline {
 
-    agent {
-        node ('docker')
-    }
+    agent { label BUILDNODE_LABEL }
 
     environment {
         ARTIFACTORY_URL='https://pdx-artifacts.rad.ubnt.com'
@@ -73,6 +72,7 @@ pipeline {
         GITHUB_READ_FILE_TOKEN=credentials('GITHUB_READ_FILE_TOKEN')
         CREDS_ID='karlis.ogsts'
         GITTOKEN=credentials("${env.CREDS_ID}")
+        buildNodeLabel = "${BUILDNODE_LABEL}"
     }
 
     options {
@@ -125,7 +125,7 @@ pipeline {
                     stages {
                        stage('Android All Library') {
                             steps {
-                                node('docker') {
+                                node(buildNodeLabel) {
                                     deleteDir()
                                     script {
                                         DOCKER_UBUNTU_22_04_AMD64.inside() {
@@ -142,7 +142,7 @@ pipeline {
                     stages {
                        stage('Ubuntu Amd64 Library') {
                             steps {
-                                node('docker') {
+                                node(buildNodeLabel) {
                                     deleteDir()
                                     script {
                                         DOCKER_UBUNTU_22_04_AMD64.inside() {
@@ -159,7 +159,7 @@ pipeline {
                     stages {
                         stage('Debian Aarm64 Library') {
                             steps {
-                                node('docker') {
+                                node(buildNodeLabel) {
                                     deleteDir()
                                     script {
                                         DOCKER_ARM64.inside() {
@@ -176,7 +176,7 @@ pipeline {
                     stages {
                         stage('Debian Amd64 Library') {
                             steps {
-                                node('docker') {
+                                node(buildNodeLabel) {
                                     deleteDir()
                                     script {
                                         DOCKER_AMD64.inside() {
