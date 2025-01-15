@@ -330,6 +330,10 @@ config("common_config") {
     defines += [ "UI_BITRATE_RECOVERY" ]
   }
 
+  if (rtc_enable_unifi_audio_recording_delay) {
+    defines += [ "UI_CUSTOMIZED_AUDIO_RECORDING_DELAY" ]
+  }
+
   if (rtc_enable_protobuf) {
     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
   } else {
