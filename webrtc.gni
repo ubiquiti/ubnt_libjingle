@@ -249,6 +249,8 @@ declare_args() {
   rtc_enable_unifi_unsanitize_ip = false
   rtc_enable_unifi_bitrate_recovery = false
   rtc_enable_unifi_audio_stream_api = false
+  rtc_enable_unifi_audio_recording_delay = false
+
   # When enabled, a run-time check will make sure that all field trial keys have
   # been registered in accordance with the field trial policy, see
   # g3doc/field-trials.md. The value can be set to the following:
