@@ -981,6 +981,15 @@ class WebRtcVoiceSendChannel::WebRtcAudioSendStream : public AudioSource::Sink {
     UpdateSendState();
   }
 
+// UI Customization Begin
+#ifdef UI_CUSTOMIZED_AUDIO_RECORDING_DELAY
+  AudioSource* GetSource() {
+    RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+    return source_;
+  }
+#endif
+// UI Customization End
+
   // Stops sending by setting the sink of the AudioSource to nullptr. No data
   // callback will be received after this method.
   // This method is called on the libjingle worker thread.
@@ -1502,6 +1511,10 @@ void WebRtcVoiceSendChannel::SetSend(bool send) {
   if (send) {
     engine()->ApplyOptions(options_);
 
+// UI Customization Begin
+#ifndef UI_CUSTOMIZED_AUDIO_RECORDING_DELAY
+// UI Customization End
+
     // Initialize the ADM for recording (this may take time on some platforms,
     // e.g. Android).
     if (options_.init_recording_on_send.value_or(true) &&
@@ -1512,6 +1525,11 @@ void WebRtcVoiceSendChannel::SetSend(bool send) {
         RTC_LOG(LS_WARNING) << "Failed to initialize recording";
       }
     }
+
+// UI Customization Begin
+#endif
+// UI Customization End
+
   }
 
   // Change the settings on each send channel.
@@ -1625,6 +1643,36 @@ bool WebRtcVoiceSendChannel::SetLocalSource(uint32_t ssrc,
   } else {
     it->second->ClearSource();
   }
+
+// UI Customization Begin
+#ifdef UI_CUSTOMIZED_AUDIO_RECORDING_DELAY
+  int recording = std::count_if(
+    send_streams_.begin(), 
+    send_streams_.end(),
+    [](auto const& kv) {
+        return kv.second->GetSource() != nullptr;
+    }
+  );
+
+  if (recording > 0) {
+    RTC_LOG(LS_INFO) << "WebRtcVoiceSendChannel::" << __func__ << " Recording stream count " << recording << " -> Start recording";
+    if (!engine()->adm()->RecordingIsInitialized() && !engine()->adm()->Recording()) {
+      if (engine()->adm()->InitRecording() != 0) {
+        RTC_LOG(LS_WARNING) << "WebRtcVoiceSendChannel::" << __func__ << " FAILED! InitRecording() returned error";
+      } else {
+        if (engine()->adm()->StartRecording() != 0) {
+          RTC_LOG(LS_WARNING) << "WebRtcVoiceSendChannel::" << __func__ << " FAILED! StartRecording() returned error";
+        }
+      }
+    }
+  } else {
+      RTC_LOG(LS_INFO) << "WebRtcVoiceSendChannel::" << __func__ << " Recording stream count " << recording << " -> Stop recording";
+      if (engine()->adm()->StopRecording() != 0) {
+          RTC_LOG(LS_WARNING) << "WebRtcVoiceSendChannel::" << __func__ << " FAILED! StopRecording() returned error";
+      }
+  }
+#endif
+// UI Customization End
 
   return true;
 }

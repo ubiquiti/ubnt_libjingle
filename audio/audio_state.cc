@@ -97,6 +97,10 @@ void AudioState::AddSendingStream(webrtc::AudioSendStream* stream,
   properties.num_channels = num_channels;
   UpdateAudioTransportWithSendingStreams();
 
+// UI Customization Begin
+#ifndef UI_CUSTOMIZED_AUDIO_RECORDING_DELAY
+// UI Customization End
+
   // Make sure recording is initialized; start recording if enabled.
   auto* adm = config_.audio_device_module.get();
   if (!adm->Recording()) {
@@ -108,6 +112,11 @@ void AudioState::AddSendingStream(webrtc::AudioSendStream* stream,
       RTC_DLOG_F(LS_ERROR) << "Failed to initialize recording.";
     }
   }
+
+// UI Customization Begin
+#endif
+// UI Customization End
+
 }
 
 void AudioState::RemoveSendingStream(webrtc::AudioSendStream* stream) {
