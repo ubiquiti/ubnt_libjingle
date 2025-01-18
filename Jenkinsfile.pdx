@@ -110,9 +110,9 @@ pipeline {
                             DOCKER_AMD64 = docker.build("${APP}_amd64:${HASH}", "--progress=plain --pull -f ./docker/Dockerfile.debian.11.amd64 ./docker")
                         }
                     },
-                    'docker:ubuntu_22_04_amd64': {
+                    'docker:ubuntu_24_04_amd64': {
                         script {
-                            DOCKER_UBUNTU_22_04_AMD64 = docker.build("${APP}_ubuntu_22_04_amd64:${HASH}", "--progress=plain --pull --no-cache -f ./docker/Dockerfile.ubuntu.22.04.amd64 ./docker")
+                            DOCKER_UBUNTU_24_04_AMD64 = docker.build("${APP}_ubuntu_24_04_amd64:${HASH}", "--progress=plain --pull --no-cache -f ./docker/Dockerfile.ubuntu.24.04.amd64 ./docker")
                         }
                     }
                 )
@@ -128,7 +128,7 @@ pipeline {
                                 node(buildNodeLabel) {
                                     deleteDir()
                                     script {
-                                        DOCKER_UBUNTU_22_04_AMD64.inside() {
+                                        DOCKER_UBUNTU_24_04_AMD64.inside() {
                                             sh label: 'build', script: "${doAndroidAll}"
                                         }
                                     }
@@ -145,7 +145,7 @@ pipeline {
                                 node(buildNodeLabel) {
                                     deleteDir()
                                     script {
-                                        DOCKER_UBUNTU_22_04_AMD64.inside() {
+                                        DOCKER_UBUNTU_24_04_AMD64.inside() {
                                             sh label: 'build', script: "${doUbuntuAmd64}"
                                         }
                                     }
