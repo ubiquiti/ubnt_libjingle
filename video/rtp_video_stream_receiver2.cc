@@ -1319,11 +1319,17 @@ void RtpVideoStreamReceiver2::StartReceive() {
   RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   // |h26x_packet_buffer_| is created here instead of in the ctor because we
   // need to know the value of |sps_pps_id_is_h264_keyframe_|.
-  if (env_.field_trials().IsEnabled("WebRTC-Video-H26xPacketBuffer") &&
-      !h26x_packet_buffer_) {
+
+// UI Customization Begin
+
+  if (!h26x_packet_buffer_) {
     h26x_packet_buffer_ =
         std::make_unique<H26xPacketBuffer>(!sps_pps_idr_is_h264_keyframe_);
   }
+
+// UI Customization End
+
+
   if (!receiving_ && packet_router_) {
     // Change REMB candidate egibility.
     packet_router_->RemoveReceiveRtpModule(rtp_rtcp_.get());

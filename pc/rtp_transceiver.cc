@@ -709,8 +709,16 @@ RTCError RtpTransceiver::SetCodecPreferences(
   } else if (media_type_ == cricket::MEDIA_TYPE_VIDEO) {
     recv_codecs = media_engine()->video().recv_codecs(context()->use_rtx());
   }
+
+// UI Customization Begin
+  /*
+
   result = VerifyCodecPreferences(codecs, recv_codecs,
                                   context()->env().field_trials());
+
+  */
+// UI Customization End
+
 
   if (result.ok()) {
     codec_preferences_ = codecs;
